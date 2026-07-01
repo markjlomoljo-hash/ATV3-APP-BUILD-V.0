@@ -1,0 +1,206 @@
+// Account/data deletion workflow. Every deletion is: requested -> scheduled
+// (retention window, cancellable) -> completed (purged) or cancelled. This
+// keeps deletion safe, auditable, and reversible during the retention
+// window, per the PRD's privacy-first requirement.
+import { and, eq, lte } from "drizzle-orm";
+import { db } from "@/db";
+import {
+  badges,
+  consentSettings,
+  dailyLogs,
+  deletionAuditEvents,
+  deletionRequests,
+  exportFiles,
+  exportRequests,
+  faceAtlasScans,
+  forecastSummaries,
+  profileSections,
+  profileVersionHistory,
+  reportConsentSnapshots,
+  reportFiles,
+  reportJobs,
+  reportRequests,
+  streakState,
+  tasks,
+  treatmentCheckins,
+  treatmentPlans,
+  triggerHypotheses,
+  users,
+  weatherSnapshots,
+} from "@/db/schema";
+import { deleteObject } from "@/lib/storage";
+import { DELETION_RETENTION_WINDOW_DAYS, DeletionRequestRecord, DeletionType } from "@/types/profile";
+import { recordDeletionAuditEvent } from "@/lib/audit";
+
+export async function createDeletionRequest(
+  userId: string,
+  type: DeletionType,
+  exportRequestedFirst: boolean,
+): Promise<DeletionRequestRecord> {
+  const scheduledPurgeAt = new Date();
+  scheduledPurgeAt.setDate(scheduledPurgeAt.getDate() + DELETION_RETENTION_WINDOW_DAYS);
+
+  const [row] = await db
+    .insert(deletionRequests)
+    .values({
+      userId,
+      type,
+      status: "scheduled",
+      scheduledPurgeAt,
+      exportRequestedFirst,
+    })
+    .returning();
+
+  await recordDeletionAuditEvent(row.id, userId, "deletion_requested", {
+    type,
+    scheduledPurgeAt: scheduledPurgeAt.toISOString(),
+    exportRequestedFirst,
+  });
+
+  return toRecord(row);
+}
+
+function toRecord(row: typeof deletionRequests.$inferSelect): DeletionRequestRecord {
+  return {
+    id: row.id,
+    type: row.type as DeletionType,
+    status: row.status as DeletionRequestRecord["status"],
+    requestedAt: row.requestedAt.toISOString(),
+    scheduledPurgeAt: row.scheduledPurgeAt?.toISOString() ?? null,
+    cancelledAt: row.cancelledAt?.toISOString() ?? null,
+    completedAt: row.completedAt?.toISOString() ?? null,
+    exportRequestedFirst: row.exportRequestedFirst,
+  };
+}
+
+export async function listDeletionRequests(userId: string): Promise<DeletionRequestRecord[]> {
+  const rows = await db
+    .select()
+    .from(deletionRequests)
+    .where(eq(deletionRequests.userId, userId));
+  return rows
+    .sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime())
+    .map(toRecord);
+}
+
+export async function cancelDeletionIfAllowed(
+  userId: string,
+  deletionRequestId: string,
+): Promise<{ cancelled: boolean; reason?: string }> {
+  const [row] = await db
+    .select()
+    .from(deletionRequests)
+    .where(and(eq(deletionRequests.id, deletionRequestId), eq(deletionRequests.userId, userId)))
+    .limit(1);
+
+  if (!row) return { cancelled: false, reason: "not_found" };
+  if (row.status !== "scheduled") return { cancelled: false, reason: `cannot_cancel_status_${row.status}` };
+  if (row.scheduledPurgeAt && row.scheduledPurgeAt.getTime() <= Date.now()) {
+    return { cancelled: false, reason: "retention_window_elapsed" };
+  }
+
+  await db
+    .update(deletionRequests)
+    .set({ status: "cancelled", cancelledAt: new Date() })
+    .where(eq(deletionRequests.id, deletionRequestId));
+
+  await recordDeletionAuditEvent(deletionRequestId, userId, "deletion_cancelled", {});
+
+  return { cancelled: true };
+}
+
+async function purgeFaceAtlas(userId: string) {
+  const scans = await db.select().from(faceAtlasScans).where(eq(faceAtlasScans.userId, userId));
+  for (const s of scans) {
+    if (s.imageStorageRef) await deleteObject(s.imageStorageRef);
+  }
+  await db.delete(faceAtlasScans).where(eq(faceAtlasScans.userId, userId));
+}
+
+async function purgeLogs(userId: string) {
+  await db.delete(dailyLogs).where(eq(dailyLogs.userId, userId));
+}
+
+async function purgeReports(userId: string) {
+  const requests = await db.select().from(reportRequests).where(eq(reportRequests.userId, userId));
+  for (const r of requests) {
+    const files = await db.select().from(reportFiles).where(eq(reportFiles.reportRequestId, r.id));
+    for (const f of files) await deleteObject(f.storageRef);
+    await db.delete(reportFiles).where(eq(reportFiles.reportRequestId, r.id));
+    await db.delete(reportJobs).where(eq(reportJobs.reportRequestId, r.id));
+    await db.delete(reportConsentSnapshots).where(eq(reportConsentSnapshots.reportRequestId, r.id));
+  }
+  await db.delete(reportRequests).where(eq(reportRequests.userId, userId));
+}
+
+async function purgeExports(userId: string) {
+  const requests = await db.select().from(exportRequests).where(eq(exportRequests.userId, userId));
+  for (const r of requests) {
+    const files = await db.select().from(exportFiles).where(eq(exportFiles.exportRequestId, r.id));
+    for (const f of files) await deleteObject(f.storageRef);
+    await db.delete(exportFiles).where(eq(exportFiles.exportRequestId, r.id));
+  }
+  await db.delete(exportRequests).where(eq(exportRequests.userId, userId));
+}
+
+async function purgeRemainingAppData(userId: string) {
+  await db.delete(treatmentCheckins).where(eq(treatmentCheckins.userId, userId));
+  await db.delete(treatmentPlans).where(eq(treatmentPlans.userId, userId));
+  await db.delete(triggerHypotheses).where(eq(triggerHypotheses.userId, userId));
+  await db.delete(forecastSummaries).where(eq(forecastSummaries.userId, userId));
+  await db.delete(tasks).where(eq(tasks.userId, userId));
+  await db.delete(streakState).where(eq(streakState.userId, userId));
+  await db.delete(badges).where(eq(badges.userId, userId));
+  await db.delete(weatherSnapshots).where(eq(weatherSnapshots.userId, userId));
+  await db.delete(profileVersionHistory).where(eq(profileVersionHistory.userId, userId));
+  await db.delete(profileSections).where(eq(profileSections.userId, userId));
+}
+
+/**
+ * Executes the actual purge for a single due deletion request. Designed to
+ * be called by a scheduled worker (`purgeDueDeletions`) — kept synchronous
+ * and idempotent so it is safe to run inline in this reference
+ * implementation without a queue.
+ */
+async function executeDeletion(row: typeof deletionRequests.$inferSelect) {
+  const { userId, type } = row;
+
+  if (type === "faceatlas_only") {
+    await purgeFaceAtlas(userId);
+  } else if (type === "logs_only") {
+    await purgeLogs(userId);
+  } else if (type === "reports_only") {
+    await purgeReports(userId);
+  } else if (type === "data" || type === "account") {
+    await purgeFaceAtlas(userId);
+    await purgeLogs(userId);
+    await purgeReports(userId);
+    await purgeExports(userId);
+    await purgeRemainingAppData(userId);
+    if (type === "account") {
+      await db.delete(consentSettings).where(eq(consentSettings.userId, userId));
+      await db.delete(users).where(eq(users.id, userId));
+    }
+  }
+
+  await db
+    .update(deletionRequests)
+    .set({ status: "completed", completedAt: new Date() })
+    .where(eq(deletionRequests.id, row.id));
+
+  await recordDeletionAuditEvent(row.id, userId, "deletion_completed", { type });
+}
+
+/** Intended to be invoked by a cron/background worker on an interval. */
+export async function purgeDueDeletions(): Promise<{ processed: number }> {
+  const due = await db
+    .select()
+    .from(deletionRequests)
+    .where(and(eq(deletionRequests.status, "scheduled"), lte(deletionRequests.scheduledPurgeAt, new Date())));
+
+  for (const row of due) {
+    await executeDeletion(row);
+  }
+
+  return { processed: due.length };
+}
