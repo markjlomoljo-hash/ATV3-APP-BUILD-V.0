@@ -1,0 +1,26 @@
+# Dockerfile for AcneTrex V3 ML Engine
+# This is an example Dockerfile. Customize it based on your ML engine's requirements.
+
+# Use a base image with Python and necessary ML libraries
+FROM python:3.9-slim-buster
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies (if any)
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#     build-essential \
+#     && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file and install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the ML engine code
+COPY . .
+
+# Expose the port your ML engine listens on (if it's a service)
+# EXPOSE 8080
+
+# Command to run the ML engine
+# CMD ["python", "your_ml_engine_script.py"]

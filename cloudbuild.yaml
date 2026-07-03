@@ -1,0 +1,23 @@
+---
+# Cloud Build config for building and pushing ML engine Docker image.
+
+steps:
+  # Build the Docker image using the Docker builder.
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build',
+      '-t',
+      'us-central1-docker.pkg.dev/$PROJECT_ID/acnetrex-ml/ml-engine:$COMMIT_SHA',
+      '.'
+    ]
+
+  # Push the Docker image to Artifact Registry.
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push',
+      'us-central1-docker.pkg.dev/$PROJECT_ID/acnetrex-ml/ml-engine:$COMMIT_SHA'
+    ]
+
+# List the images created by the build.
+images:
+  - 'us-central1-docker.pkg.dev/$PROJECT_ID/acnetrex-ml/ml-engine:$COMMIT_SHA'
