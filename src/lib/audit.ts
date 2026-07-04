@@ -1,4 +1,4 @@
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { deletionAuditEvents, profileAuditEvents } from "@/db/schema";
 
 export async function recordProfileAuditEvent(
@@ -6,6 +6,7 @@ export async function recordProfileAuditEvent(
   eventType: string,
   metadata: Record<string, unknown> = {},
 ) {
+  const db = getDb();
   await db.insert(profileAuditEvents).values({
     userId,
     eventType,
@@ -19,6 +20,7 @@ export async function recordDeletionAuditEvent(
   eventType: string,
   metadata: Record<string, unknown> = {},
 ) {
+  const db = getDb();
   await db.insert(deletionAuditEvents).values({
     deletionRequestId,
     userId,
