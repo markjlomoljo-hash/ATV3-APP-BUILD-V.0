@@ -9,11 +9,17 @@ import { recordProfileAuditEvent } from "@/lib/audit";
 export const dynamic = "force-dynamic";
 
 export const GET = withSession(async (_req, { userId }) => {
+  if (!db) {
+    return NextResponse.json({ ok: false, database: "not_configured" }, { status: 503 });
+  }
   const [row] = await db.select().from(consentSettings).where(eq(consentSettings.userId, userId)).limit(1);
   return NextResponse.json({ ok: true, consent: row ?? null });
 });
 
 export const PATCH = withSession(async (req, { userId }) => {
+  if (!db) {
+    return NextResponse.json({ ok: false, database: "not_configured" }, { status: 503 });
+  }
   let body: unknown;
   try {
     body = await req.json();
