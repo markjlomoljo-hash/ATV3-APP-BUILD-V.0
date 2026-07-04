@@ -1,10 +1,11 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { badges, streakState, tasks } from "@/db/schema";
 import { GamificationSummary } from "@/types/profile";
 
 /** Reads only — Phase 7 surfaces gamification state, it does not compute it. */
 export async function computeGamificationSummary(userId: string): Promise<GamificationSummary> {
+  const db = getDb();
   const streakRows = await db
     .select()
     .from(streakState)
