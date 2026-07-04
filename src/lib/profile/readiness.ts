@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { dailyLogs, faceAtlasScans } from "@/db/schema";
 import { ModelReadinessSummary } from "@/types/profile";
 
@@ -9,6 +9,7 @@ const AVAILABLE_LOG_THRESHOLD = 21;
 const AVAILABLE_SCAN_THRESHOLD = 3;
 
 export async function computeModelReadiness(userId: string): Promise<ModelReadinessSummary> {
+  const db = getDb();
   const logs = await db.select().from(dailyLogs).where(eq(dailyLogs.userId, userId));
   const scans = await db.select().from(faceAtlasScans).where(eq(faceAtlasScans.userId, userId));
 

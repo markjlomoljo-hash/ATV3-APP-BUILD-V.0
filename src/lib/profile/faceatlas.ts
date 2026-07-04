@@ -1,9 +1,10 @@
 import { desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { faceAtlasScans } from "@/db/schema";
 import { FaceAtlasHistorySummary } from "@/types/profile";
 
 export async function computeFaceAtlasSummary(userId: string): Promise<FaceAtlasHistorySummary> {
+  const db = getDb();
   const scans = await db
     .select()
     .from(faceAtlasScans)

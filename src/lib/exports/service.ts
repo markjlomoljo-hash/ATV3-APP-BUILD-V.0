@@ -1,7 +1,7 @@
 import { ZipArchive } from "archiver";
 import { PassThrough } from "stream";
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { exportFiles, exportRequests } from "@/db/schema";
 import { ExportFormat, ExportMetadata, ExportScope } from "@/types/profile";
 import { buildExportStorageRef, getObject, putObject } from "@/lib/storage";
@@ -33,6 +33,7 @@ export async function createAndProcessExport(
   format: ExportFormat,
   scope: ExportScope,
 ): Promise<{ exportRequestId: string; status: string }> {
+  const db = getDb();
   const [request] = await db
     .insert(exportRequests)
     .values({ userId, format, scope, status: "processing" })
@@ -82,6 +83,7 @@ export async function getExportMetadata(
   userId: string,
   exportRequestId: string,
 ): Promise<ExportMetadata | null> {
+  const db = getDb();
   const [request] = await db
     .select()
     .from(exportRequests)
@@ -106,6 +108,7 @@ export async function getExportMetadata(
 }
 
 export async function listExportHistory(userId: string): Promise<ExportMetadata[]> {
+  const db = getDb();
   const requests = await db
     .select()
     .from(exportRequests)
@@ -135,6 +138,7 @@ export async function getExportFile(
   userId: string,
   exportRequestId: string,
 ): Promise<{ buffer: Buffer; mimeType: string } | null> {
+  const db = getDb();
   const [request] = await db
     .select()
     .from(exportRequests)

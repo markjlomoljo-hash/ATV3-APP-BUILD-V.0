@@ -1,9 +1,10 @@
 import { desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { treatmentCheckins, treatmentPlans } from "@/db/schema";
 import { TreatmentSummary } from "@/types/profile";
 
 export async function computeTreatmentSummary(userId: string): Promise<TreatmentSummary> {
+  const db = getDb();
   const plans = await db.select().from(treatmentPlans).where(eq(treatmentPlans.userId, userId));
   const checkins = await db
     .select()

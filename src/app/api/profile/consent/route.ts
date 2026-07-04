@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { consentSettings } from "@/db/schema";
 import { withSession } from "@/lib/session";
 import { consentUpdateSchema } from "@/lib/validation";
@@ -9,6 +9,7 @@ import { recordProfileAuditEvent } from "@/lib/audit";
 export const dynamic = "force-dynamic";
 
 export const GET = withSession(async (_req, { userId }) => {
+  const db = getDb();
   const [row] = await db.select().from(consentSettings).where(eq(consentSettings.userId, userId)).limit(1);
   return NextResponse.json({ ok: true, consent: row ?? null });
 });
@@ -26,6 +27,7 @@ export const PATCH = withSession(async (req, { userId }) => {
     return NextResponse.json({ ok: false, error: "Invalid payload", issues: parsed.error.issues }, { status: 400 });
   }
 
+  const db = getDb();
   const [before] = await db.select().from(consentSettings).where(eq(consentSettings.userId, userId)).limit(1);
 
   const [updated] = await db

@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   consentSettings,
   dailyLogs,
@@ -17,6 +17,7 @@ import { ExportScope } from "@/types/profile";
 export type ExportBundle = Record<string, Array<Record<string, unknown>>>;
 
 async function collectAll(userId: string): Promise<ExportBundle> {
+  const db = getDb();
   const [profile, history, logs, scans, plans, checkins, weather, reports, consent, taskRows] =
     await Promise.all([
       db.select().from(profileSections).where(eq(profileSections.userId, userId)),

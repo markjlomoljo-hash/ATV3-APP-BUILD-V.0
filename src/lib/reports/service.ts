@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   dailyLogs,
   faceAtlasScans,
@@ -23,6 +23,7 @@ import { RawProfileBundle } from "./types";
 import { recordProfileAuditEvent } from "@/lib/audit";
 
 async function buildRawBundle(userId: string): Promise<RawProfileBundle> {
+  const db = getDb();
   const [userRow] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   const sectionRecords = await getSectionRecords(userId);
   const scans = await db
@@ -119,6 +120,7 @@ export async function createAndProcessReport(
   inclusionOptions: ReportInclusionOptions,
   idempotencyKey?: string,
 ): Promise<{ reportRequestId: string; status: string }> {
+  const db = getDb();
   const profile = await getProfessionalProfile(userId);
 
   const [request] = await db
@@ -196,6 +198,7 @@ export async function getReportMetadata(
   userId: string,
   reportRequestId: string,
 ): Promise<ReportMetadata | null> {
+  const db = getDb();
   const [request] = await db
     .select()
     .from(reportRequests)
@@ -227,6 +230,7 @@ export async function getReportMetadata(
 }
 
 export async function listReportHistory(userId: string): Promise<ReportMetadata[]> {
+  const db = getDb();
   const requests = await db
     .select()
     .from(reportRequests)
@@ -256,6 +260,7 @@ export async function getReportFileBuffer(
   userId: string,
   reportRequestId: string,
 ): Promise<Buffer | null> {
+  const db = getDb();
   const [request] = await db
     .select()
     .from(reportRequests)

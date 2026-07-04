@@ -11,12 +11,13 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb, isDatabaseConfigurationError } from "@/db";
 import { consentSettings, streakState, users } from "@/db/schema";
 
 const SESSION_COOKIE = "atx_session_uid";
 
 async function ensureUserRow(userId: string) {
+  const db = getDb();
   const existing = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   if (existing.length > 0) return existing[0];
 
@@ -58,7 +59,14 @@ export function withSession<T = { params?: unknown }>(
       isNew = true;
     }
 
-    await ensureUserRow(userId);
+    try {
+      await ensureUserRow(userId);
+    } catch (error) {
+      if (isDatabaseConfigurationError(error)) {
+        return NextResponse.json({ ok: false, error: "database_not_configured" }, { status: 503 });
+      }
+      return NextResponse.json({ ok: false, error: "database_unavailable" }, { status: 503 });
+    }
 
     const response = await handler(req, { userId }, routeCtx);
 

@@ -1,5 +1,5 @@
 import { and, eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { profileSections, profileVersionHistory } from "@/db/schema";
 import { ProfileSectionKey, ProfileSectionRecord, ProfileVersionEntry } from "@/types/profile";
 import { isVersionedSection, SECTION_METADATA } from "./sections";
@@ -11,6 +11,7 @@ export async function updateProfileSection(
   newValue: Record<string, unknown>,
   options: { reason?: string; includeInReports?: boolean } = {},
 ): Promise<ProfileSectionRecord> {
+  const db = getDb();
   const [existing] = await db
     .select()
     .from(profileSections)
@@ -69,6 +70,7 @@ export async function getSectionHistory(
   userId: string,
   sectionKey: ProfileSectionKey,
 ): Promise<ProfileVersionEntry[]> {
+  const db = getDb();
   const rows = await db
     .select()
     .from(profileVersionHistory)
