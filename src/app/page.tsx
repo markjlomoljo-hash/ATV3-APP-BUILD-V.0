@@ -4,7 +4,14 @@ import { sql } from "drizzle-orm";
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  await db.execute(sql`select 1`);
+  // Attempt a simple DB query if a database is configured.
+  if (db) {
+    try {
+      await db.execute(sql`select 1`);
+    } catch (error) {
+      console.error("[HomePage] database connection test failed", error);
+    }
+  }
 
   return (
     <main className="grid min-h-screen place-items-center px-6 py-12">
