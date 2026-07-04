@@ -3,7 +3,7 @@
 // keeps deletion safe, auditable, and reversible during the retention
 // window, per the PRD's privacy-first requirement.
 import { and, eq, lte } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import {
   badges,
   consentSettings,
@@ -32,11 +32,14 @@ import { deleteObject } from "@/lib/storage";
 import { DELETION_RETENTION_WINDOW_DAYS, DeletionRequestRecord, DeletionType } from "@/types/profile";
 import { recordDeletionAuditEvent } from "@/lib/audit";
 
+type AppDb = ReturnType<typeof getDb>;
+
 export async function createDeletionRequest(
   userId: string,
   type: DeletionType,
   exportRequestedFirst: boolean,
 ): Promise<DeletionRequestRecord> {
+  const db = getDb();
   const scheduledPurgeAt = new Date();
   scheduledPurgeAt.setDate(scheduledPurgeAt.getDate() + DELETION_RETENTION_WINDOW_DAYS);
 
@@ -74,6 +77,7 @@ function toRecord(row: typeof deletionRequests.$inferSelect): DeletionRequestRec
 }
 
 export async function listDeletionRequests(userId: string): Promise<DeletionRequestRecord[]> {
+  const db = getDb();
   const rows = await db
     .select()
     .from(deletionRequests)
@@ -87,6 +91,7 @@ export async function cancelDeletionIfAllowed(
   userId: string,
   deletionRequestId: string,
 ): Promise<{ cancelled: boolean; reason?: string }> {
+  const db = getDb();
   const [row] = await db
     .select()
     .from(deletionRequests)
@@ -109,7 +114,7 @@ export async function cancelDeletionIfAllowed(
   return { cancelled: true };
 }
 
-async function purgeFaceAtlas(userId: string) {
+async function purgeFaceAtlas(db: AppDb, userId: string) {
   const scans = await db.select().from(faceAtlasScans).where(eq(faceAtlasScans.userId, userId));
   for (const s of scans) {
     if (s.imageStorageRef) await deleteObject(s.imageStorageRef);
@@ -117,11 +122,11 @@ async function purgeFaceAtlas(userId: string) {
   await db.delete(faceAtlasScans).where(eq(faceAtlasScans.userId, userId));
 }
 
-async function purgeLogs(userId: string) {
+async function purgeLogs(db: AppDb, userId: string) {
   await db.delete(dailyLogs).where(eq(dailyLogs.userId, userId));
 }
 
-async function purgeReports(userId: string) {
+async function purgeReports(db: AppDb, userId: string) {
   const requests = await db.select().from(reportRequests).where(eq(reportRequests.userId, userId));
   for (const r of requests) {
     const files = await db.select().from(reportFiles).where(eq(reportFiles.reportRequestId, r.id));
@@ -133,7 +138,7 @@ async function purgeReports(userId: string) {
   await db.delete(reportRequests).where(eq(reportRequests.userId, userId));
 }
 
-async function purgeExports(userId: string) {
+async function purgeExports(db: AppDb, userId: string) {
   const requests = await db.select().from(exportRequests).where(eq(exportRequests.userId, userId));
   for (const r of requests) {
     const files = await db.select().from(exportFiles).where(eq(exportFiles.exportRequestId, r.id));
@@ -143,7 +148,7 @@ async function purgeExports(userId: string) {
   await db.delete(exportRequests).where(eq(exportRequests.userId, userId));
 }
 
-async function purgeRemainingAppData(userId: string) {
+async function purgeRemainingAppData(db: AppDb, userId: string) {
   await db.delete(treatmentCheckins).where(eq(treatmentCheckins.userId, userId));
   await db.delete(treatmentPlans).where(eq(treatmentPlans.userId, userId));
   await db.delete(triggerHypotheses).where(eq(triggerHypotheses.userId, userId));
@@ -162,21 +167,21 @@ async function purgeRemainingAppData(userId: string) {
  * and idempotent so it is safe to run inline in this reference
  * implementation without a queue.
  */
-async function executeDeletion(row: typeof deletionRequests.$inferSelect) {
+async function executeDeletion(db: AppDb, row: typeof deletionRequests.$inferSelect) {
   const { userId, type } = row;
 
   if (type === "faceatlas_only") {
-    await purgeFaceAtlas(userId);
+    await purgeFaceAtlas(db, userId);
   } else if (type === "logs_only") {
-    await purgeLogs(userId);
+    await purgeLogs(db, userId);
   } else if (type === "reports_only") {
-    await purgeReports(userId);
+    await purgeReports(db, userId);
   } else if (type === "data" || type === "account") {
-    await purgeFaceAtlas(userId);
-    await purgeLogs(userId);
-    await purgeReports(userId);
-    await purgeExports(userId);
-    await purgeRemainingAppData(userId);
+    await purgeFaceAtlas(db, userId);
+    await purgeLogs(db, userId);
+    await purgeReports(db, userId);
+    await purgeExports(db, userId);
+    await purgeRemainingAppData(db, userId);
     if (type === "account") {
       await db.delete(consentSettings).where(eq(consentSettings.userId, userId));
       await db.delete(users).where(eq(users.id, userId));
@@ -193,13 +198,14 @@ async function executeDeletion(row: typeof deletionRequests.$inferSelect) {
 
 /** Intended to be invoked by a cron/background worker on an interval. */
 export async function purgeDueDeletions(): Promise<{ processed: number }> {
+  const db = getDb();
   const due = await db
     .select()
     .from(deletionRequests)
     .where(and(eq(deletionRequests.status, "scheduled"), lte(deletionRequests.scheduledPurgeAt, new Date())));
 
   for (const row of due) {
-    await executeDeletion(row);
+    await executeDeletion(db, row);
   }
 
   return { processed: due.length };
