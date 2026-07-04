@@ -1,5 +1,5 @@
 import { eq } from "drizzle-orm";
-import { db } from "@/db";
+import { getDb } from "@/db";
 import { consentSettings, profileSections, users } from "@/db/schema";
 import { ProfessionalProfile, ProfileSectionRecord } from "@/types/profile";
 import { allSectionKeys, isVersionedSection, SECTION_METADATA } from "./sections";
@@ -9,6 +9,7 @@ import { computeGamificationSummary } from "./gamification";
 import { computeTreatmentSummary } from "./treatment";
 
 export async function getSectionRecords(userId: string): Promise<ProfileSectionRecord[]> {
+  const db = getDb();
   const rows = await db.select().from(profileSections).where(eq(profileSections.userId, userId));
   const byKey = new Map(rows.map((r) => [r.sectionKey, r]));
 
@@ -36,6 +37,7 @@ export async function getSectionRecords(userId: string): Promise<ProfileSectionR
 }
 
 export async function getProfessionalProfile(userId: string): Promise<ProfessionalProfile> {
+  const db = getDb();
   const [userRow] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
   const [consentRow] = await db
     .select()
