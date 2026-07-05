@@ -1,23 +1,11 @@
 import { getDb, isDatabaseConfigurationError } from "@/db";
+import {
+  classifyCloudRunHealthPayload,
+  summarizeDatabaseSchema,
+} from "@/lib/acnetrex/services/infrastructure-health";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
-
-const criticalTables = [
-  "users",
-  "consent_settings",
-  "profile_sections",
-  "daily_logs",
-  "face_atlas_scans",
-  "treatment_plans",
-  "treatment_checkins",
-  "trigger_hypotheses",
-  "forecast_summaries",
-  "report_requests",
-  "report_files",
-  "deletion_requests",
-  "ml_runtime_events",
-] as const;
 
 function envConfigured(...names: string[]) {
   return names.some((name) => Boolean(process.env[name]));
@@ -45,14 +33,15 @@ async function checkCloudRunHealth() {
     const contentType = response.headers.get("content-type") ?? "";
     const payload = contentType.includes("application/json") ? await response.json().catch(() => null) : null;
 
-    const healthy = isObject(payload) && payload.ok === true;
+    const healthPayload = classifyCloudRunHealthPayload(payload);
 
     return {
       configured: true,
-      status: response.ok && healthy ? ("healthy" as const) : ("degraded" as const),
+      status: response.ok && healthPayload.healthy ? ("healthy" as const) : ("degraded" as const),
       httpStatus: response.status,
       json: Boolean(payload),
       service: isObject(payload) && "service" in payload ? payload.service : undefined,
+      reason: healthPayload.reason,
       receivedKeys: isObject(payload) ? Object.keys(payload).sort() : [],
     };
   } catch (error) {
@@ -90,28 +79,32 @@ export async function GET() {
       from information_schema.tables
       where table_schema = 'public'
     `);
-    const presentTables = new Set(tableRows.rows.map((row) => row.table_name));
-    const missingTables = criticalTables.filter((table) => !presentTables.has(table));
+    const schema = summarizeDatabaseSchema(tableRows.rows.map((row) => row.table_name));
+    const schemaReady = schema.status === "ready";
+    const mlReady = cloudRun.status === "healthy" || cloudRun.status === "not_configured";
+    const ok = schemaReady && mlReady;
 
-    return Response.json({
-      ok: missingTables.length === 0 && (cloudRun.status === "healthy" || cloudRun.status === "not_configured"),
-      app: "acnetrex-v3",
-      database: {
-        configured: true,
-        status: "connected",
-        criticalTablesPresent: criticalTables.length - missingTables.length,
-        criticalTablesExpected: criticalTables.length,
-        missingTables,
+    return Response.json(
+      {
+        ok,
+        app: "acnetrex-v3",
+        database: {
+          configured: true,
+          status: schema.status === "ready" ? "connected" : schema.status,
+          schema,
+        },
+        environment,
+        cloudRun,
+        warnings: [
+          ...schema.warnings,
+          ...(cloudRun.status === "not_configured" ? ["ml_api_not_configured"] : []),
+          ...(cloudRun.status === "offline" || cloudRun.status === "timeout" ? ["ml_api_unreachable"] : []),
+          ...(cloudRun.status === "degraded" ? ["ml_api_degraded"] : []),
+        ],
+        updatedAt: new Date().toISOString(),
       },
-      environment,
-      cloudRun,
-      warnings: [
-        ...(missingTables.length > 0 ? ["critical_tables_missing"] : []),
-        ...(cloudRun.status === "not_configured" ? ["ml_api_not_configured"] : []),
-        ...(cloudRun.status === "offline" || cloudRun.status === "timeout" ? ["ml_api_unreachable"] : []),
-      ],
-      updatedAt: new Date().toISOString(),
-    });
+      { status: ok ? 200 : 503 },
+    );
   } catch (error) {
     if (isDatabaseConfigurationError(error)) {
       return Response.json(

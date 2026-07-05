@@ -277,6 +277,7 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
           { label: "Memory retrieval", status: "not_configured", detail: "Persistent memory remains unavailable until Supabase memory tables are verified." },
           { label: "Evidence retrieval", status: "evidence_unavailable", detail: "CutisAI must state evidence is unavailable instead of inventing citations." },
         ],
+        serviceEndpoint: "/api/cutisai/memory/status",
       };
 
     case "reports":

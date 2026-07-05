@@ -117,3 +117,41 @@ Implemented app-code completion work that does not depend on live Supabase or Cl
 | `npm.cmd run build` | Pass |
 | `npm.cmd run lint` | Pass with 4 pre-existing warnings |
 | `npm.cmd run test:e2e` | Pass: 44 routes |
+
+## 2026-07-05 Live Integration Hardening Pass
+
+Implemented code-level fixes for the current live blockers while preserving fail-closed behavior:
+
+- Verified branch `feat/phase7-profile-reports` was clean and synced with origin at `987a77e`.
+- Verified local `npm.cmd run build` passed before changes.
+- Verified live Supabase project `alobmstvqutteypusmuo` through the Supabase connector:
+  - Existing public tables include `profiles`, `consents`, `sleep_logs`, `food_logs`, `face_scans`, `reports`, `skin_twin_snapshots`, `treatment_plans`, `treatment_tasks`, `trigger_hypotheses`, and `ml_runtime_events`.
+  - RLS is enabled on inspected public tables.
+  - Private storage buckets exist: `face-scans-raw`, `reports`, and `skin-twin`.
+- Confirmed live schema drift: the remote project contains the earlier AcneTrex schema, while the app server expects Phase 7 canonical tables such as `users`, `consent_settings`, `profile_sections`, `daily_logs`, `report_requests`, and `deletion_requests`.
+- Added tracked Supabase migration `supabase/migrations/20260705090000_phase7_memory_ml_contracts.sql` for missing Phase 7, persistent memory, and ML lineage tables with RLS enabled.
+- Added infrastructure health classification so `/api/health` distinguishes:
+  - DB unavailable,
+  - canonical table gaps,
+  - legacy operational table presence,
+  - memory/ML lineage table gaps,
+  - Cloud Run placeholder or unexpected health payloads.
+- Added `/api/cutisai/memory/status` to report persistent memory readiness without fabricating memory availability.
+- Replaced inline browser `localStorage` Supabase auth storage with an explicit adapter and added a native SecureStore-compatible adapter for mobile integration.
+- Verified Vercel production remains deployed but `/api/health` still returns HTTP 503 because the production DB is configured but unavailable from the deployment.
+- Verified Cloud Run `https://mlatv-pudz4xjzxa-ew.a.run.app/health` still serves Google placeholder HTML, not the AcneTrex ML API.
+- Verified `npx supabase` is available, but local `supabase status` is blocked by Docker daemon access. Remote migration application still requires DB credentials or a migration-capable connector.
+
+### Additional validation
+
+| Command | Result |
+|---|---|
+| `npm.cmd test -- infrastructure-health` | RED first, then pass: 3 tests |
+| `npm.cmd test -- supabase-migration-contract` | RED first, then pass: 2 tests |
+| `npm.cmd test -- auth-storage` | RED first, then pass: 3 tests |
+| `npm.cmd test -- readiness auth-storage infrastructure-health supabase-migration-contract` | Pass: 4 files, 10 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd test` | Pass: 9 files, 32 tests |
+| `npm.cmd run build` | Pass |
+| `npm.cmd run lint` | Pass with 4 pre-existing warnings |
+| `npm.cmd run test:e2e` | First attempt server readiness timeout; rerun passed 44 routes |
