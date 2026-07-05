@@ -1,6 +1,6 @@
 # AcneTrex V3 PRD Module Coverage Matrix
 
-This matrix tracks the current code body, not production-live status. A module can be routed and typed while still blocked by live Supabase, Cloud Run, Vertex, native device, or evidence-service validation.
+This matrix tracks the current code body, not production-live status. A module can be routed, typed, and visibly interactive while still blocked by live Supabase, Cloud Run, Vertex, native device, or evidence-service validation.
 
 | Module | Screen/Route | Schema | Service Adapter | Persistence Contract | AI/ML Contract | Tests | Status |
 |---|---|---|---|---|---|---|---|
@@ -22,3 +22,17 @@ This matrix tracks the current code body, not production-live status. A module c
 | Reports/Exports/Profile | `/reports`, `/reports/history`, `/reports/export`, `/export`, `/profile` | report request schema | report/export/profile services | report/export/profile tables | missing-data report contract | schema coverage | partial |
 | Native Mobile/Secure Storage | `/mobile` | module registry | contract only | offline/telemetry targets | local fallback readiness | registry coverage | scaffolded |
 | CI/Security/Release | docs and local scripts | not applicable | local validation | deployment contracts | no-fake policy | pending command results | blocked by external auth |
+
+## Latest app-body upgrade
+
+The 2026-07-05 live-preview pass added module-specific workflow bodies across the catch-all route system:
+
+- Reusable action, form, readiness, history, and operational-boundary panels.
+- Typed workflow models for primary action, form fields, missing-data actions, safety notes, service endpoints, and integration checks.
+- FaceAtlas capture/annotation forms and queued-cloud/no-fake-inference status.
+- Skin Twin scenario form with supported windows/variables and insufficient-data projection boundaries.
+- CutisAI message form with memory/evidence/backend readiness states.
+- Report request, treatment/check-in, task, product/FormulaLens, SleepDerm, and DermDiet form bodies.
+- Expanded `/api/health` diagnostics for database, environment flags, Cloud Run health, and critical tables when reachable.
+
+These additions increase visible module completeness and local preview inspectability, but they do not replace live signed-session persistence, Cloud Run/Vertex inference, native secure storage, or production deployment validation.

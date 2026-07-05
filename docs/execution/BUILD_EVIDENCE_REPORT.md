@@ -37,3 +37,50 @@ Commands were run with local Node tooling from `.tooling/node-v22.23.1-win-x64` 
 - Vercel env/deploy verification requires project linkage/auth.
 - Supabase live migration and RLS verification require CLI/MCP/database credentials.
 - Cloud Run and Vertex verification require authenticated GCP tooling and deployed ML service source.
+
+## 2026-07-05 Live Preview + Module Body Pass
+
+Implemented a second app-body pass focused on making the PRD routes visibly useful in local preview:
+
+- Started the Next dev server with local tooling at `http://localhost:3000`.
+- Verified local preview with system Chrome through Playwright using `http://127.0.0.1:3000`.
+- Added a typed module workflow model for primary action, form fields, history empty state, readiness checks, safety notes, and service endpoint.
+- Added reusable module layout panels for action, forms, readiness, history, and operational boundaries.
+- Replaced generic module route bodies with module-specific form/readiness/history content.
+- Added concrete no-fake surfaces for SleepDerm, DermDiet, FaceAtlas, Skin Twin, CutisAI, reports, treatments, tasks, readiness, and FormulaLens/product workflows.
+- Expanded `/api/health` to report app status, environment configuration flags, database availability, critical table presence when reachable, and Cloud Run health without exposing secret values.
+
+### Preview route evidence
+
+Mobile-width browser smoke checks passed for:
+
+`/`, `/readiness`, `/log/sleep`, `/log/food`, `/face-atlas`, `/face-atlas/capture`, `/face-atlas/annotations`, `/skin-twin`, `/skin-twin/scenarios`, `/cutisai`, `/reports`, `/reports/export`, `/treatments`, `/treatments/checkins`, `/tasks`, `/formula-lens`, `/privacy`, and `/oauth/consent`.
+
+Each checked route returned HTTP 200, rendered an `h1`, avoided `undefined`/`null` body text, and the module routes rendered at least one form plus readiness content.
+
+### Live infrastructure evidence
+
+- Local `/api/health` returned HTTP 503 with `database_not_configured`, `database.configured=false`, and `cloudRun.status=not_configured`, which is the expected fail-closed local state.
+- `https://mlatv-pudz4xjzxa-ew.a.run.app/` returned HTTP 200 but still served Google Cloud Run placeholder HTML.
+- `https://mlatv-pudz4xjzxa-ew.a.run.app/health` also returned placeholder HTML, so the Cloud Run service is still not serving the AcneTrex ML API.
+- `vercel`, `supabase`, and `gcloud` CLIs were not available on PATH in this shell, so production deploy, migration, and Vertex checks remain externally blocked.
+
+### Validation commands
+
+| Command | Result |
+|---|---|
+| `npm.cmd test -- module-service module-registry schemas` | Pass: 3 files, 10 tests |
+| `npm.cmd test` | Pass: 3 files, 10 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass |
+| `npm.cmd run lint` | Pass with 4 pre-existing warnings |
+| `git diff --check` | Pass |
+| `npm.cmd run test:coverage` | Missing script |
+| `npm.cmd run test:e2e` | Missing script |
+
+### Scan classification
+
+- Secret scan: no plaintext production secret added. Findings are env-var names, server-only Supabase key references, and existing auth token handling.
+- Fake-output scan: no fake intelligence path added. Findings are no-fake safety copy, UI placeholder attributes/classes, and existing legacy starter placeholders.
+- localStorage scan: existing browser Supabase client uses `localStorage`; still a native secure-storage blocker and not worsened.
+- Conflict-marker scan: clean.

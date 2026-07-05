@@ -2,6 +2,14 @@ import Link from "next/link";
 import type { AcneTrexModule } from "@/lib/acnetrex/modules/module-registry";
 import { ACNETREX_MODULES, modulesByCategory } from "@/lib/acnetrex/modules/module-registry";
 import { buildModuleReadinessIssues } from "@/lib/acnetrex/modules/readiness";
+import { buildModuleWorkflow } from "@/lib/acnetrex/services/module-service";
+import {
+  ModuleActionCard,
+  ModuleFormSection,
+  ModuleHistoryPanel,
+  ModuleIntegrationStatus,
+  ModuleReadinessPanel,
+} from "@/components/acnetrex/ModuleLayout";
 import { HonestStatePanel, MedicalSafetyNotice, StatusBadge } from "@/components/acnetrex/StatusPanels";
 
 function ModuleCard({ module }: { module: AcneTrexModule }) {
@@ -76,6 +84,7 @@ export function DashboardHome() {
 
 export function ModulePage({ module }: { module: AcneTrexModule }) {
   const issues = buildModuleReadinessIssues(module);
+  const workflow = buildModuleWorkflow(module);
   const related = ACNETREX_MODULES.filter(
     (candidate) => candidate.category === module.category && candidate.id !== module.id,
   ).slice(0, 4);
@@ -104,6 +113,22 @@ export function ModulePage({ module }: { module: AcneTrexModule }) {
         <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_340px]">
           <section className="grid gap-4">
             <MedicalSafetyNotice />
+
+            <ModuleActionCard
+              title={workflow.formTitle}
+              description={workflow.formDescription}
+              action={workflow.primaryAction}
+            />
+
+            <ModuleFormSection
+              title={workflow.formTitle}
+              description={workflow.formDescription}
+              fields={workflow.fields}
+            />
+
+            <ModuleReadinessPanel checks={workflow.integrationChecks} />
+
+            <ModuleHistoryPanel title={workflow.historyTitle} emptyState={workflow.historyEmptyState} />
 
             <HonestStatePanel status={module.serviceStatus} title="Service boundary">
               <p>
@@ -157,6 +182,12 @@ export function ModulePage({ module }: { module: AcneTrexModule }) {
                 ))}
               </div>
             </section>
+
+            <ModuleIntegrationStatus
+              endpoint={workflow.serviceEndpoint}
+              missingDataActions={workflow.missingDataActions}
+              safetyNotes={workflow.safetyNotes}
+            />
           </section>
 
           <aside className="grid content-start gap-4">
