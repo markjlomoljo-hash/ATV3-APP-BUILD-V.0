@@ -3,12 +3,11 @@
 // keeps deletion safe, auditable, and reversible during the retention
 // window, per the PRD's privacy-first requirement.
 import { and, eq, lte } from "drizzle-orm";
-import { AppDb, getDb } from "@/db";
+import { getDb, type AppDb } from "@/db";
 import {
   badges,
   consentSettings,
   dailyLogs,
-  deletionAuditEvents,
   deletionRequests,
   exportFiles,
   exportRequests,
@@ -76,13 +75,8 @@ function toRecord(row: typeof deletionRequests.$inferSelect): DeletionRequestRec
 
 export async function listDeletionRequests(userId: string): Promise<DeletionRequestRecord[]> {
   const db = getDb();
-  const rows = await db
-    .select()
-    .from(deletionRequests)
-    .where(eq(deletionRequests.userId, userId));
-  return rows
-    .sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime())
-    .map(toRecord);
+  const rows = await db.select().from(deletionRequests).where(eq(deletionRequests.userId, userId));
+  return rows.sort((a, b) => b.requestedAt.getTime() - a.requestedAt.getTime()).map(toRecord);
 }
 
 export async function cancelDeletionIfAllowed(
@@ -114,8 +108,8 @@ export async function cancelDeletionIfAllowed(
 
 async function purgeFaceAtlas(db: AppDb, userId: string) {
   const scans = await db.select().from(faceAtlasScans).where(eq(faceAtlasScans.userId, userId));
-  for (const s of scans) {
-    if (s.imageStorageRef) await deleteObject(s.imageStorageRef);
+  for (const scan of scans) {
+    if (scan.imageStorageRef) await deleteObject(scan.imageStorageRef);
   }
   await db.delete(faceAtlasScans).where(eq(faceAtlasScans.userId, userId));
 }
@@ -126,22 +120,22 @@ async function purgeLogs(db: AppDb, userId: string) {
 
 async function purgeReports(db: AppDb, userId: string) {
   const requests = await db.select().from(reportRequests).where(eq(reportRequests.userId, userId));
-  for (const r of requests) {
-    const files = await db.select().from(reportFiles).where(eq(reportFiles.reportRequestId, r.id));
-    for (const f of files) await deleteObject(f.storageRef);
-    await db.delete(reportFiles).where(eq(reportFiles.reportRequestId, r.id));
-    await db.delete(reportJobs).where(eq(reportJobs.reportRequestId, r.id));
-    await db.delete(reportConsentSnapshots).where(eq(reportConsentSnapshots.reportRequestId, r.id));
+  for (const request of requests) {
+    const files = await db.select().from(reportFiles).where(eq(reportFiles.reportRequestId, request.id));
+    for (const file of files) await deleteObject(file.storageRef);
+    await db.delete(reportFiles).where(eq(reportFiles.reportRequestId, request.id));
+    await db.delete(reportJobs).where(eq(reportJobs.reportRequestId, request.id));
+    await db.delete(reportConsentSnapshots).where(eq(reportConsentSnapshots.reportRequestId, request.id));
   }
   await db.delete(reportRequests).where(eq(reportRequests.userId, userId));
 }
 
 async function purgeExports(db: AppDb, userId: string) {
   const requests = await db.select().from(exportRequests).where(eq(exportRequests.userId, userId));
-  for (const r of requests) {
-    const files = await db.select().from(exportFiles).where(eq(exportFiles.exportRequestId, r.id));
-    for (const f of files) await deleteObject(f.storageRef);
-    await db.delete(exportFiles).where(eq(exportFiles.exportRequestId, r.id));
+  for (const request of requests) {
+    const files = await db.select().from(exportFiles).where(eq(exportFiles.exportRequestId, request.id));
+    for (const file of files) await deleteObject(file.storageRef);
+    await db.delete(exportFiles).where(eq(exportFiles.exportRequestId, request.id));
   }
   await db.delete(exportRequests).where(eq(exportRequests.userId, userId));
 }
@@ -159,12 +153,6 @@ async function purgeRemainingAppData(db: AppDb, userId: string) {
   await db.delete(profileSections).where(eq(profileSections.userId, userId));
 }
 
-/**
- * Executes the actual purge for a single due deletion request. Designed to
- * be called by a scheduled worker (`purgeDueDeletions`) — kept synchronous
- * and idempotent so it is safe to run inline in this reference
- * implementation without a queue.
- */
 async function executeDeletion(db: AppDb, row: typeof deletionRequests.$inferSelect) {
   const { userId, type } = row;
 

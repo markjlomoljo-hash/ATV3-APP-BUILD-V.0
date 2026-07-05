@@ -26,20 +26,20 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
-
 function createSupabaseClient() {
-  // Use import.meta.env for client-side (Vite build-time replacement)
-  // Fall back to process.env for SSR (server-side rendering)
   const importMetaEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env ?? {};
   const SUPABASE_URL =
     importMetaEnv.VITE_SUPABASE_URL ??
     process.env.NEXT_PUBLIC_SUPABASE_URL ??
+    process.env.VITE_SUPABASE_URL ??
     process.env.SUPABASE_URL;
   const SUPABASE_PUBLISHABLE_KEY =
     importMetaEnv.VITE_SUPABASE_PUBLISHABLE_KEY ??
     importMetaEnv.VITE_SUPABASE_ANON_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.VITE_SUPABASE_ANON_KEY ??
     process.env.SUPABASE_PUBLISHABLE_KEY;
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
@@ -60,7 +60,7 @@ function createSupabaseClient() {
       storage: typeof window !== 'undefined' ? localStorage : undefined,
       persistSession: true,
       autoRefreshToken: true,
-    }
+    },
   });
 }
 
@@ -71,6 +71,6 @@ let _supabase: ReturnType<typeof createSupabaseClient> | undefined;
 export const supabase = new Proxy({} as ReturnType<typeof createSupabaseClient>, {
   get(_, prop, receiver) {
     if (!_supabase) _supabase = createSupabaseClient();
-    return Reflect.get(_supabase, prop, receiver);
+    return Reflect.get(_supabase as any, prop, receiver);
   },
 });

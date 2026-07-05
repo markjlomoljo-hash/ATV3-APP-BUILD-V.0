@@ -43,4 +43,8 @@ export function getDb(): ReturnType<typeof drizzle> {
   return globalForDb.__arenaNextJsPostgresqlDb;
 }
 
+export const db = process.env.DATABASE_URL
+  ? (globalForDb.__arenaNextJsPostgresqlDb ?? drizzle(getPool()))
+  : undefined;
+
 export type AppDb = ReturnType<typeof getDb>;

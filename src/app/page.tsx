@@ -27,9 +27,7 @@ export default async function HomePage() {
         <h1 className="mt-4 text-[clamp(2rem,5vw,3.25rem)] font-semibold leading-[1.05] text-slate-950">
           Arena Next.js PostgreSQL Starter
         </h1>
-        <p className="mt-4 text-base text-slate-700">
-          Server-rendered with Next.js and Drizzle.
-        </p>
+        <p className="mt-4 text-base text-slate-700">Server-rendered with Next.js and Drizzle.</p>
         <p className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
           Database status: <span className="font-semibold">{databaseStatus}</span>. {statusCopy}
         </p>

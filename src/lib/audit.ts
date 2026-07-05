@@ -1,4 +1,4 @@
-import { getDb } from "@/db";
+import { getDb, isDatabaseConfigurationError } from "@/db";
 import { deletionAuditEvents, profileAuditEvents } from "@/db/schema";
 
 export async function recordProfileAuditEvent(
@@ -6,12 +6,20 @@ export async function recordProfileAuditEvent(
   eventType: string,
   metadata: Record<string, unknown> = {},
 ) {
-  const db = getDb();
-  await db.insert(profileAuditEvents).values({
-    userId,
-    eventType,
-    metadataJson: metadata,
-  });
+  try {
+    const db = getDb();
+    await db.insert(profileAuditEvents).values({
+      userId,
+      eventType,
+      metadataJson: metadata,
+    });
+  } catch (error) {
+    if (isDatabaseConfigurationError(error)) {
+      console.warn("[audit] database is not configured; skipping profile audit event");
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function recordDeletionAuditEvent(
@@ -20,11 +28,19 @@ export async function recordDeletionAuditEvent(
   eventType: string,
   metadata: Record<string, unknown> = {},
 ) {
-  const db = getDb();
-  await db.insert(deletionAuditEvents).values({
-    deletionRequestId,
-    userId,
-    eventType,
-    metadataJson: metadata,
-  });
+  try {
+    const db = getDb();
+    await db.insert(deletionAuditEvents).values({
+      deletionRequestId,
+      userId,
+      eventType,
+      metadataJson: metadata,
+    });
+  } catch (error) {
+    if (isDatabaseConfigurationError(error)) {
+      console.warn("[audit] database is not configured; skipping deletion audit event");
+      return;
+    }
+    throw error;
+  }
 }

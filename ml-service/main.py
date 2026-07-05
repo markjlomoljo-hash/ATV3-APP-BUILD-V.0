@@ -72,7 +72,12 @@ def default_instance(request: PredictionRequest) -> dict[str, Any]:
 def vertex_unavailable(error: str, details: dict[str, Any] | None = None) -> JSONResponse:
     return JSONResponse(
         status_code=503,
-        content={"ok": False, "error": error, **({"details": details} if details else {})},
+        content={
+            "ok": False,
+            "error": error,
+            "message": "Vertex AI endpoint is not configured or unavailable.",
+            **({"details": details} if details else {}),
+        },
     )
 
 
@@ -119,7 +124,7 @@ def predict(request: PredictionRequest) -> dict[str, Any] | JSONResponse:
     try:
         from google.cloud import aiplatform_v1
         from google.protobuf.json_format import MessageToDict
-    except ImportError as exc:
+    except ImportError:
         return vertex_unavailable("vertex_client_not_available")
 
     try:
@@ -138,10 +143,7 @@ def predict(request: PredictionRequest) -> dict[str, Any] | JSONResponse:
         )
         response_dict = MessageToDict(response._pb, preserving_proto_field_name=True)
     except Exception as exc:
-        return vertex_unavailable(
-            "vertex_endpoint_unavailable",
-            {"type": exc.__class__.__name__},
-        )
+        return vertex_unavailable("vertex_endpoint_unavailable", {"type": exc.__class__.__name__})
 
     return {
         "ok": True,
