@@ -90,3 +90,30 @@ Each checked route returned HTTP 200, rendered an `h1`, avoided `undefined`/`nul
 - Fake-output scan: no fake intelligence path added. Findings are no-fake safety copy, UI placeholder attributes/classes, and existing legacy starter placeholders.
 - localStorage scan: existing browser Supabase client uses `localStorage`; still a native secure-storage blocker and not worsened.
 - Conflict-marker scan: clean.
+
+## 2026-07-05 Full Module Code-Body Acceleration
+
+Implemented app-code completion work that does not depend on live Supabase or Cloud Run credentials:
+
+- Added deterministic module computation contracts:
+  - SleepDerm duration, midnight crossing, midpoint, sleep debt, rolling 3/7/14/30 day debt, circadian/readiness limits.
+  - DermDiet meal baseline completion, snack sub-events, explicit missingness, and category exposure counts.
+  - FaceAtlas five-angle capture readiness, consent handling, derived-only/raw retention mode, and queued-cloud state.
+  - Skin Twin source-record readiness, missing input reporting, derived-only visualization state, and no-projection limitations.
+  - Report missing-data/readiness state.
+  - Task credit logic that awards no points or streak eligibility without durable task completion.
+- Added service adapters returning structured `ModuleResult` values for deterministic previews and unavailable external services.
+- Added visible "Local capability contract" panels to module pages so users can see which safe local logic exists and which outputs remain blocked.
+- Added `scripts/route-smoke.mjs` and `npm run test:e2e` for dependency-light route smoke testing across 44 PRD routes.
+- Added `docs/execution/PRD_MODULE_COMPLETION_MATRIX.md` tracking actual route, form, schema, adapter, persistence, ML/readiness, tests, and remaining blockers by module.
+
+### Additional validation
+
+| Command | Result |
+|---|---|
+| `npm.cmd test -- computations module-service schemas` | Pass: 3 files, 13 tests |
+| `npm.cmd test` | Pass: 5 files, 22 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass |
+| `npm.cmd run lint` | Pass with 4 pre-existing warnings |
+| `npm.cmd run test:e2e` | Pass: 44 routes |

@@ -7,7 +7,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "node scripts/route-smoke.mjs"
   },
   "dependencies": {
     "@types/archiver": "^8.0.0",

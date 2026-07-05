@@ -12,6 +12,7 @@ describe("module workflow models", () => {
       expect(workflow.fields.length, moduleConfig.id).toBeGreaterThan(0);
       expect(workflow.historyEmptyState, moduleConfig.id).toMatch(/No|until|requires|require/i);
       expect(workflow.integrationChecks.length, moduleConfig.id).toBeGreaterThan(0);
+      expect(workflow.capabilityCards.length, moduleConfig.id).toBeGreaterThan(0);
       expect(workflow.safetyNotes.length, moduleConfig.id).toBeGreaterThan(0);
     }
   });

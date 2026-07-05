@@ -27,6 +27,7 @@ export type ModuleWorkflowModel = {
   missingDataActions: string[];
   safetyNotes: string[];
   integrationChecks: ModuleIntegrationCheck[];
+  capabilityCards: ModuleIntegrationCheck[];
   serviceEndpoint?: string;
 };
 
@@ -98,6 +99,18 @@ function defaultWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflowModel {
       "The app must never treat a preview form entry as durable clinical truth.",
     ],
     integrationChecks: checksFor(moduleConfig),
+    capabilityCards: [
+      {
+        label: "Structured input contract",
+        status: "ready",
+        detail: "The route can collect validated source data, then hand it to persistence once a signed session is available.",
+      },
+      {
+        label: "Personalized output",
+        status: moduleConfig.serviceStatus,
+        detail: "Personalized output remains unavailable until the module has durable records and verified service access.",
+      },
+    ],
   };
 }
 
@@ -127,6 +140,11 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
             detail: "Duration/debt calculations can run locally once validated inputs are present.",
           },
         ]),
+        capabilityCards: [
+          { label: "Duration across midnight", status: "ready", detail: "Local deterministic logic handles bedtime/wake windows that cross midnight." },
+          { label: "Sleep debt windows", status: "ready", detail: "3, 7, 14, and 30-day debt contracts exist, with insufficient-data states for sparse records." },
+          { label: "Acne correlation", status: "insufficient_data", detail: "Correlation stays unavailable until repeated sleep and skin outcome records exist." },
+        ],
       };
 
     case "dermdiet":
@@ -147,6 +165,11 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
         missingDataActions: ["Verify live food_logs writes", "Collect repeated skin outcome records before association testing"],
         safetyNotes: ["DermDiet must not shame food choices or label a single meal as causal."],
         integrationChecks: checksFor(moduleConfig),
+        capabilityCards: [
+          { label: "Meal baseline completion", status: "ready", detail: "Local logic can calculate expected-meal completion and explicit missingness." },
+          { label: "Snack sub-events", status: "ready", detail: "Snack entries append as sub-events instead of duplicating the parent day log." },
+          { label: "Food-skin association", status: "insufficient_data", detail: "Association output requires repeated food logs and skin outcome records." },
+        ],
       };
 
     case "face-atlas":
@@ -184,6 +207,11 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
             detail: "FaceAtlas must call /api/ml/predict and accept 503/readiness errors without fabricating lesions.",
           },
         ]),
+        capabilityCards: [
+          { label: "Five-angle checklist", status: "ready", detail: "Capture readiness validates front, left, right, chin-up, and forehead angles." },
+          { label: "Raw image retention mode", status: "ready", detail: "The contract supports derived-only mode when raw image retention consent is off." },
+          { label: "Lesion inference", status: "queued_for_cloud", detail: "Lesion detection remains queued for Cloud Run and cannot be fabricated locally." },
+        ],
         serviceEndpoint: "/api/ml/predict",
       };
 
@@ -212,6 +240,11 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
             detail: "The UI can validate scenarios now, but projection output requires sufficient records and a real model response.",
           },
         ]),
+        capabilityCards: [
+          { label: "Scenario validation", status: "ready", detail: "Supported variables and time windows are constrained by the Skin Twin schema." },
+          { label: "Readiness gate", status: "ready", detail: "Local logic identifies missing FaceAtlas, skin outcome, log, and treatment inputs." },
+          { label: "Projection output", status: "insufficient_data", detail: "No direction, magnitude, or visual projection appears without sufficient records and model output." },
+        ],
         serviceEndpoint: "/api/ml/predict",
       };
 
@@ -239,6 +272,11 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
             detail: "Responses must state evidence_unavailable until a reputable retrieval service is connected.",
           },
         ]),
+        capabilityCards: [
+          { label: "Message contract", status: "ready", detail: "Messages are bounded and tool requests are explicit." },
+          { label: "Memory retrieval", status: "not_configured", detail: "Persistent memory remains unavailable until Supabase memory tables are verified." },
+          { label: "Evidence retrieval", status: "evidence_unavailable", detail: "CutisAI must state evidence is unavailable instead of inventing citations." },
+        ],
       };
 
     case "reports":
@@ -260,6 +298,10 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
         missingDataActions: ["Verify report request persistence", "Verify private report storage", "Configure report worker"],
         safetyNotes: ["Reports must disclose missing data and avoid unsupported diagnosis or causation."],
         integrationChecks: checksFor(moduleConfig),
+        capabilityCards: [
+          { label: "Missing-data sections", status: "ready", detail: "Report readiness can identify missing profile, log, FaceAtlas, and treatment sections." },
+          { label: "Report worker", status: "not_configured", detail: "PDF/file output remains unavailable until the report worker and private storage succeed." },
+        ],
       };
 
     case "treatments":
@@ -281,6 +323,10 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
         missingDataActions: ["Persist plan draft", "Generate durable task schedule", "Record check-ins from active plan"],
         safetyNotes: ["The app must not start, stop, or change medications without provider confirmation."],
         integrationChecks: checksFor(moduleConfig),
+        capabilityCards: [
+          { label: "Safety framing", status: "ready", detail: "Treatment forms capture provider-directed context and tolerance notes without recommending medication changes." },
+          { label: "Task generation", status: "insufficient_data", detail: "Task generation requires durable treatment schedules and signed persistence." },
+        ],
       };
 
     case "tasks":
@@ -300,6 +346,10 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
         missingDataActions: ["Generate tasks from treatment schedules", "Persist completion events", "Compute streaks from durable completions"],
         safetyNotes: ["No badge, rank, or streak can be awarded from local-only preview state."],
         integrationChecks: checksFor(moduleConfig),
+        capabilityCards: [
+          { label: "No fake points", status: "ready", detail: "Task credit logic awards no points or streak eligibility without durable completion records." },
+          { label: "Offline completion", status: "queued_for_cloud", detail: "Offline completions must queue for later sync before affecting streaks." },
+        ],
       };
 
     case "readiness":
@@ -319,6 +369,10 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
         integrationChecks: checksFor(moduleConfig, [
           { label: "Health endpoint", status: "ready", detail: "Use /api/health for fail-closed local and deployment diagnostics." },
         ]),
+        capabilityCards: [
+          { label: "Database readiness", status: "ready", detail: "The health route reports DB configuration and reachability without leaking values." },
+          { label: "Cloud ML readiness", status: "ready", detail: "The health route treats placeholder HTML or metadata-only JSON as degraded, not healthy." },
+        ],
         serviceEndpoint: "/api/health",
       };
 
@@ -341,6 +395,10 @@ export function buildModuleWorkflow(moduleConfig: AcneTrexModule): ModuleWorkflo
         missingDataActions: ["Add product history table", "Connect ingredient evidence rules", "Configure OCR/barcode provider"],
         safetyNotes: ["Ingredient concerns must be evidence-backed and framed cautiously."],
         integrationChecks: checksFor(moduleConfig),
+        capabilityCards: [
+          { label: "Manual product entry", status: "ready", detail: "The route can collect product, brand, ingredient, and patch-test context." },
+          { label: "Ingredient intelligence", status: "not_configured", detail: "Risk/conflict output remains unavailable until evidence-backed rules are configured." },
+        ],
       };
 
     default:

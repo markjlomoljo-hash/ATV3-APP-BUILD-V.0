@@ -22,10 +22,10 @@ export function ModuleActionCard({
   );
 }
 
-export function ModuleReadinessPanel({ checks }: { checks: ModuleIntegrationCheck[] }) {
+export function ModuleReadinessPanel({ checks, title = "Integration readiness" }: { checks: ModuleIntegrationCheck[]; title?: string }) {
   return (
     <section className="rounded-lg border border-slate-200 bg-white p-5">
-      <h2 className="text-lg font-semibold text-slate-950">Integration readiness</h2>
+      <h2 className="text-lg font-semibold text-slate-950">{title}</h2>
       <div className="mt-4 grid gap-3">
         {checks.map((check) => (
           <div key={check.label} className="rounded-lg border border-slate-200 p-4">

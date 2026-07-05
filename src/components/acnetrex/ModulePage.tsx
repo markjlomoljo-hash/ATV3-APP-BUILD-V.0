@@ -128,6 +128,8 @@ export function ModulePage({ module }: { module: AcneTrexModule }) {
 
             <ModuleReadinessPanel checks={workflow.integrationChecks} />
 
+            <ModuleReadinessPanel title="Local capability contract" checks={workflow.capabilityCards} />
+
             <ModuleHistoryPanel title={workflow.historyTitle} emptyState={workflow.historyEmptyState} />
 
             <HonestStatePanel status={module.serviceStatus} title="Service boundary">
