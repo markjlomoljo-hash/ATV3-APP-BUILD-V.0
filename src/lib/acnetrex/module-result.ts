@@ -6,6 +6,11 @@ export type ModuleReadiness =
   | "consent_required"
   | "database_unavailable"
   | "ml_unavailable"
+  | "cloud_run_unavailable"
+  | "vertex_unavailable"
+  | "memory_not_configured"
+  | "report_worker_not_configured"
+  | "native_device_required"
   | "evidence_unavailable"
   | "queued_for_cloud"
   | "error_retry_needed";
