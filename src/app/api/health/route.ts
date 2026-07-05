@@ -23,6 +23,10 @@ function envConfigured(...names: string[]) {
   return names.some((name) => Boolean(process.env[name]));
 }
 
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 async function checkCloudRunHealth() {
   const baseUrl = process.env.ACNETREX_ML_API_URL ?? process.env.NEXT_PUBLIC_ACNETREX_ML_API_URL;
 
@@ -41,12 +45,15 @@ async function checkCloudRunHealth() {
     const contentType = response.headers.get("content-type") ?? "";
     const payload = contentType.includes("application/json") ? await response.json().catch(() => null) : null;
 
+    const healthy = isObject(payload) && payload.ok === true;
+
     return {
       configured: true,
-      status: response.ok && payload ? ("healthy" as const) : ("degraded" as const),
+      status: response.ok && healthy ? ("healthy" as const) : ("degraded" as const),
       httpStatus: response.status,
       json: Boolean(payload),
-      service: payload && typeof payload === "object" && "service" in payload ? payload.service : undefined,
+      service: isObject(payload) && "service" in payload ? payload.service : undefined,
+      receivedKeys: isObject(payload) ? Object.keys(payload).sort() : [],
     };
   } catch (error) {
     return {

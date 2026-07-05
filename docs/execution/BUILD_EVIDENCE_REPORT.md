@@ -64,6 +64,12 @@ Each checked route returned HTTP 200, rendered an `h1`, avoided `undefined`/`nul
 - `https://mlatv-pudz4xjzxa-ew.a.run.app/` returned HTTP 200 but still served Google Cloud Run placeholder HTML.
 - `https://mlatv-pudz4xjzxa-ew.a.run.app/health` also returned placeholder HTML, so the Cloud Run service is still not serving the AcneTrex ML API.
 - `vercel`, `supabase`, and `gcloud` CLIs were not available on PATH in this shell, so production deploy, migration, and Vertex checks remain externally blocked.
+- `npx vercel@latest --prod --yes` was available and successfully deployed production after commit `1b9393e`.
+- Vercel production alias: `https://atv-3-app-build-v-0.vercel.app`.
+- Production homepage returned HTTP 200 after deploy.
+- Production `/api/health` returned HTTP 503 because `DATABASE_URL` is configured but the database is unavailable from the deployment.
+- Production `/api/ml/predict` returned HTTP 503 with `ml_api_unexpected_response` because upstream returned metadata keys instead of a prediction payload.
+- The health route was tightened so Cloud Run is only considered healthy when `/health` returns JSON with `ok: true`; placeholder HTML or metadata-only JSON is degraded.
 
 ### Validation commands
 
