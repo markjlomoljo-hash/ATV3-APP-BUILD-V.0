@@ -24,6 +24,26 @@ function jsonError(error: string, status: number, details?: unknown) {
   return NextResponse.json({ ok: false, error, ...(details ? { details } : {}) }, { status });
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasPredictionPayload(payload: unknown): payload is Record<string, unknown> {
+  if (!isRecord(payload)) {
+    return false;
+  }
+
+  if (Array.isArray(payload.predictions)) {
+    return true;
+  }
+
+  if ("prediction" in payload) {
+    return true;
+  }
+
+  return payload.ok === true && ("predictions" in payload || "prediction" in payload || "result" in payload);
+}
+
 export async function POST(req: Request) {
   let body: unknown;
   try {
@@ -57,9 +77,11 @@ export async function POST(req: Request) {
     });
 
     const contentType = response.headers.get("content-type") ?? "";
-    const payload = contentType.includes("application/json")
-      ? await response.json()
-      : { ok: false, error: "ml_api_non_json_response" };
+    const payload = contentType.includes("application/json") ? await response.json() : null;
+
+    if (!payload) {
+      return jsonError("ml_api_non_json_response", 503, { upstreamStatus: response.status });
+    }
 
     if (!response.ok) {
       return NextResponse.json(
@@ -70,6 +92,13 @@ export async function POST(req: Request) {
         },
         { status: response.status === 400 ? 400 : 503 },
       );
+    }
+
+    if (!hasPredictionPayload(payload)) {
+      return jsonError("ml_api_unexpected_response", 503, {
+        upstreamStatus: response.status,
+        receivedKeys: isRecord(payload) ? Object.keys(payload).sort() : [],
+      });
     }
 
     return NextResponse.json(payload, { status: response.status });
