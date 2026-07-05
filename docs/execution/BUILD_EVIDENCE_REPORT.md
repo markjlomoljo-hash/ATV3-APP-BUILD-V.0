@@ -1,0 +1,39 @@
+# AcneTrex V3 Build Evidence Report
+
+## Session result
+
+Implemented a broad PRD app-body pass:
+
+- Replaced the generic starter homepage with an AcneTrex module dashboard.
+- Added a central PRD module registry used by dashboard/navigation and route resolution.
+- Added a catch-all route for required PRD module screens.
+- Added shared readiness/status panels with explicit unavailable states.
+- Added Zod schemas for daily logs, FaceAtlas, Skin Twin, CutisAI, treatment drafts, and reports.
+- Added tests for route coverage, registry honesty, completion snapshot behavior, and schema validation.
+- Added PRD module coverage matrix.
+
+## Validation commands
+
+Commands were run with local Node tooling from `.tooling/node-v22.23.1-win-x64` because `node`, `npm`, and `git` were not on the default shell `PATH`.
+
+| Command | Result |
+|---|---|
+| `npm.cmd test` | Pass: 2 files, 7 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass |
+| `npm.cmd run lint` | Pass with 4 pre-existing warnings |
+| `git diff --check` | Pass |
+
+## Scan results
+
+- Secret scan: no committed plaintext production secret found in new code. Findings are documentation placeholders, lockfile package names, or server-boundary env references.
+- Fake-output scan: no production fake intelligence path added. Findings are no-fake policy copy, UI placeholder CSS strings, and existing starter placeholder in legacy TanStack route files.
+- Storage scan: existing browser Supabase client still uses `localStorage`; this remains a native secure-storage blocker and was not worsened.
+- Conflict-marker scan: clean.
+
+## External blockers
+
+- Git push remains dependent on local Git credentials.
+- Vercel env/deploy verification requires project linkage/auth.
+- Supabase live migration and RLS verification require CLI/MCP/database credentials.
+- Cloud Run and Vertex verification require authenticated GCP tooling and deployed ML service source.
