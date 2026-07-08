@@ -36,8 +36,25 @@ export function checkRateLimit(
   return { allowed: true, remaining: limit - existing.count, resetAt: existing.resetAt };
 }
 
+/**
+ * Derives the client IP for rate-limiting purposes.
+ *
+ * `x-forwarded-for` is a client-controlled header: anyone can send an
+ * arbitrary value, so naively trusting the left-most entry (as many
+ * implementations do) lets an attacker mint a fresh identity on every
+ * request and bypass IP-based limits entirely.
+ *
+ * Instead we take the right-most entry, which is appended by our own
+ * trusted proxy/load balancer and cannot be forged by the client (proxies
+ * append the connecting peer's address; they don't preserve attacker input
+ * there). `x-real-ip` is also set by our proxy and used as a fallback for
+ * setups that don't populate XFF.
+ */
 export function clientIpFromRequest(req: Request): string {
   const forwardedFor = req.headers.get("x-forwarded-for");
-  if (forwardedFor) return forwardedFor.split(",")[0]!.trim();
+  if (forwardedFor) {
+    const hops = forwardedFor.split(",").map((hop) => hop.trim()).filter(Boolean);
+    if (hops.length > 0) return hops[hops.length - 1]!;
+  }
   return req.headers.get("x-real-ip") ?? "unknown";
 }
