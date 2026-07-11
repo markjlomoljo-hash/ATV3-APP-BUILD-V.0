@@ -115,7 +115,7 @@ def health() -> dict[str, Any]:
     }
 
 
-@app.post("/predict")
+@app.post("/predict", response_model=None)
 def predict(request: PredictionRequest) -> dict[str, Any] | JSONResponse:
     config = vertex_config()
     if not config.configured:

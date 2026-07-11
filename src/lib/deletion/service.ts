@@ -184,15 +184,8 @@ async function executeDeletion(db: AppDb, row: typeof deletionRequests.$inferSel
 
 /** Intended to be invoked by a cron/background worker on an interval. */
 export async function purgeDueDeletions(): Promise<{ processed: number }> {
-  const db = getDb();
-  const due = await db
-    .select()
-    .from(deletionRequests)
-    .where(and(eq(deletionRequests.status, "scheduled"), lte(deletionRequests.scheduledPurgeAt, new Date())));
-
-  for (const row of due) {
-    await executeDeletion(db, row);
-  }
-
-  return { processed: due.length };
+  // The legacy one-pass purge cannot safely resume after partial storage or
+  // database failure. Keep it fail-closed until the checkpointed deletion_jobs
+  // worker is deployed and verified end-to-end.
+  throw new Error("deletion_worker_not_configured");
 }
