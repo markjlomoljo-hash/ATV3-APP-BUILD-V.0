@@ -15,6 +15,17 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function classifyDatabaseFailure(error: unknown) {
+  const code = isObject(error) && typeof error.code === "string" ? error.code : "";
+  if (code === "28P01" || code === "28000") return "authentication_failed";
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return "dns_failed";
+  if (code === "ECONNREFUSED") return "connection_refused";
+  if (code === "ETIMEDOUT" || code === "ETIME") return "connection_timeout";
+  if (code === "3D000") return "database_missing";
+  if (code.startsWith("CERT_") || code.includes("TLS") || code.includes("SSL")) return "tls_failed";
+  return "connection_failed";
+}
+
 async function checkCloudRunHealth() {
   const baseUrl = process.env.ACNETREX_ML_API_URL ?? process.env.NEXT_PUBLIC_ACNETREX_ML_API_URL;
 
@@ -126,7 +137,11 @@ export async function GET() {
         ok: false,
         error: "database_unavailable",
         app: "acnetrex-v3",
-        database: { configured: true, status: "unavailable" },
+        database: {
+          configured: true,
+          status: "unavailable",
+          failureCategory: classifyDatabaseFailure(error),
+        },
         environment,
         cloudRun,
         updatedAt: new Date().toISOString(),
