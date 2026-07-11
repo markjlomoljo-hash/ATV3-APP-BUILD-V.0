@@ -99,6 +99,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
+      {/* TanStack Start owns this document shell; Next's Head component is not used here. */}
+      {/* eslint-disable-next-line @next/next/no-head-element */}
       <head>
         <HeadContent />
       </head>
