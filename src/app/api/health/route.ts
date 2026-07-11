@@ -15,14 +15,27 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function databaseErrorCodes(error: unknown, depth = 0): string[] {
+  if (!isObject(error) || depth > 2) return [];
+  const own = typeof error.code === "string" ? [error.code] : [];
+  const nested = Array.isArray(error.errors)
+    ? error.errors.flatMap((item) => databaseErrorCodes(item, depth + 1))
+    : [];
+  const caused = "cause" in error ? databaseErrorCodes(error.cause, depth + 1) : [];
+  return [...new Set([...own, ...nested, ...caused])];
+}
+
 function classifyDatabaseFailure(error: unknown) {
-  const code = isObject(error) && typeof error.code === "string" ? error.code : "";
-  if (code === "28P01" || code === "28000") return "authentication_failed";
-  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return "dns_failed";
-  if (code === "ECONNREFUSED") return "connection_refused";
-  if (code === "ETIMEDOUT" || code === "ETIME") return "connection_timeout";
-  if (code === "3D000") return "database_missing";
-  if (code.startsWith("CERT_") || code.includes("TLS") || code.includes("SSL")) return "tls_failed";
+  const codes = databaseErrorCodes(error);
+  if (codes.some((code) => code === "28P01" || code === "28000")) return "authentication_failed";
+  if (codes.some((code) => code === "ENOTFOUND" || code === "EAI_AGAIN")) return "dns_failed";
+  if (codes.includes("ECONNREFUSED")) return "connection_refused";
+  if (codes.some((code) => code === "ETIMEDOUT" || code === "ETIME")) return "connection_timeout";
+  if (codes.includes("3D000")) return "database_missing";
+  if (codes.some((code) => code.startsWith("CERT_") || code.includes("TLS") || code.includes("SSL"))) {
+    return "tls_failed";
+  }
+  if (isObject(error) && error.name === "TypeError") return "connection_string_invalid";
   return "connection_failed";
 }
 
