@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
+import { randomUUID } from "node:crypto";
 
 export const dynamic = "force-dynamic";
 
@@ -16,8 +18,10 @@ const predictionRequestSchema = z.object({
   metadata: z.record(z.string(), z.unknown()).default({}),
 });
 
+const operationKeySchema = z.string().min(16).max(200).regex(/^[A-Za-z0-9._:-]+$/);
+
 function mlApiBaseUrl(): string | null {
-  return process.env.ACNETREX_ML_API_URL ?? process.env.NEXT_PUBLIC_ACNETREX_ML_API_URL ?? null;
+  return process.env.ACNETREX_ML_API_URL ?? null;
 }
 
 function jsonError(error: string, status: number, details?: unknown) {
@@ -45,11 +49,39 @@ function hasPredictionPayload(payload: unknown): payload is Record<string, unkno
 }
 
 export async function POST(req: Request) {
+  if (process.env.ML_PROXY_ENABLED !== "true") {
+    return jsonError("ml_proxy_not_enabled", 503);
+  }
+
+  const auth = await authenticateSupabaseRequest(req);
+  if (!auth.ok) {
+    return jsonError(auth.error, auth.status);
+  }
+
+  const idempotencyKey = req.headers.get("idempotency-key");
+  const parsedOperationKey = operationKeySchema.safeParse(idempotencyKey);
+  if (!parsedOperationKey.success) {
+    return jsonError("idempotency_key_required", 400);
+  }
+  const incomingRequestId = req.headers.get("x-request-id");
+  const requestId = operationKeySchema.safeParse(incomingRequestId).success
+    ? incomingRequestId!
+    : randomUUID();
+
+  const contentLength = Number(req.headers.get("content-length") ?? "0");
+  if (Number.isFinite(contentLength) && contentLength > 262_144) {
+    return jsonError("prediction_payload_too_large", 413);
+  }
+
   let body: unknown;
   try {
     body = await req.json();
   } catch {
     return jsonError("invalid_json_body", 400);
+  }
+
+  if (JSON.stringify(body).length > 262_144) {
+    return jsonError("prediction_payload_too_large", 413);
   }
 
   const parsed = predictionRequestSchema.safeParse(body);
@@ -62,6 +94,11 @@ export async function POST(req: Request) {
     return jsonError("ml_api_not_configured", 503);
   }
 
+  const sharedSecret = process.env.ACNETREX_ML_SHARED_SECRET;
+  if (!sharedSecret) {
+    return jsonError("ml_service_auth_not_configured", 503);
+  }
+
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 12_000);
 
@@ -71,6 +108,9 @@ export async function POST(req: Request) {
       headers: {
         "content-type": "application/json",
         accept: "application/json",
+        authorization: `Bearer ${sharedSecret}`,
+        "idempotency-key": parsedOperationKey.data,
+        "x-request-id": requestId,
       },
       body: JSON.stringify(parsed.data),
       signal: controller.signal,
@@ -101,7 +141,10 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json(payload, { status: response.status });
+    return NextResponse.json(payload, {
+      status: response.status,
+      headers: { "x-request-id": requestId },
+    });
   } catch (error) {
     const reason = error instanceof DOMException && error.name === "AbortError" ? "ml_api_timeout" : "ml_api_unreachable";
     return jsonError(reason, 503);

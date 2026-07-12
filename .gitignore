@@ -12,7 +12,7 @@ yarn-error.log*
 .env.local
 .env.*.local
 .vercel
-
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.venv/

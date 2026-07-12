@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import os
+import secrets
 from typing import Any, Literal
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
@@ -86,7 +87,7 @@ app = FastAPI(title="AcneTrex ML API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=split_env_list(os.getenv("CORS_ORIGINS"), ["https://atv-3-app-build-v-0.vercel.app"]),
-    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app"),
+    allow_origin_regex=os.getenv("CORS_ORIGIN_REGEX"),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -112,11 +113,28 @@ def health() -> dict[str, Any]:
         "vertexEndpointId": config.endpoint_id,
         "vertexLocation": config.location,
         "vertexConfigured": config.configured,
+        "serviceAuthConfigured": bool(os.getenv("ACNETREX_ML_SHARED_SECRET")),
     }
 
 
 @app.post("/predict", response_model=None)
-def predict(request: PredictionRequest) -> dict[str, Any] | JSONResponse:
+def predict(
+    request: PredictionRequest,
+    authorization: str | None = Header(default=None),
+) -> dict[str, Any] | JSONResponse:
+    shared_secret = os.getenv("ACNETREX_ML_SHARED_SECRET")
+    if not shared_secret:
+        return JSONResponse(
+            status_code=503,
+            content={"ok": False, "error": "service_auth_not_configured"},
+        )
+
+    expected = f"Bearer {shared_secret}"
+    if authorization is None or not secrets.compare_digest(authorization, expected):
+        return JSONResponse(
+            status_code=401,
+            content={"ok": False, "error": "unauthorized"},
+        )
     config = vertex_config()
     if not config.configured:
         return vertex_unavailable("vertex_endpoint_not_configured")
