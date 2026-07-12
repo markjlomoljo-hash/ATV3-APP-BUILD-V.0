@@ -96,7 +96,24 @@ export async function GET() {
 
   try {
     const db = getDb();
-    await db.execute(sql`select 1`);
+    
+    // Enhanced error logging
+    let connectionError: unknown = null;
+    try {
+      await db.execute(sql`select 1`);
+    } catch (err) {
+      connectionError = err;
+      // Log for debugging
+      const errorObj = err as any;
+      console.error("Database connection test failed:", {
+        name: errorObj?.name,
+        message: errorObj?.message,
+        code: errorObj?.code,
+        errno: errorObj?.errno,
+        syscall: errorObj?.syscall,
+      });
+      throw err;
+    }
 
     const tableRows = await db.execute<{ table_name: string }>(sql`
       select table_name
@@ -145,6 +162,9 @@ export async function GET() {
       );
     }
 
+    const failureCategory = classifyDatabaseFailure(error);
+    const errorObj = error as any;
+    
     return Response.json(
       {
         ok: false,
@@ -153,7 +173,13 @@ export async function GET() {
         database: {
           configured: true,
           status: "unavailable",
-          failureCategory: classifyDatabaseFailure(error),
+          failureCategory,
+          errorDetails: {
+            code: errorObj?.code,
+            errno: errorObj?.errno,
+            syscall: errorObj?.syscall,
+            message: errorObj?.message?.substring(0, 200), // Truncate long messages
+          },
         },
         environment,
         cloudRun,
