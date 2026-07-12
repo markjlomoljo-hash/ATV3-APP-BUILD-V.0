@@ -18,6 +18,7 @@ import {
   real,
   text,
   timestamp,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "crypto";
 
@@ -80,28 +81,44 @@ export const consentAuditEvents = pgTable("consent_audit_events", {
 // Versioned Professional Profile sections
 // ---------------------------------------------------------------------------
 
-export const profileSections = pgTable("profile_sections", {
-  id: id(),
-  userId: text("user_id").notNull(),
-  sectionKey: text("section_key").notNull(),
-  valueJson: jsonb("value_json").notNull(),
-  version: integer("version").notNull().default(1),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedBy: text("updated_by").notNull().default("user"),
-});
+export const profileSections = pgTable(
+  "profile_sections",
+  {
+    id: id(),
+    userId: text("user_id").notNull(),
+    sectionKey: text("section_key").notNull(),
+    valueJson: jsonb("value_json").notNull(),
+    version: integer("version").notNull().default(1),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedBy: text("updated_by").notNull().default("user"),
+  },
+  (table) => [
+    uniqueIndex("profile_sections_user_section_key_uidx").on(table.userId, table.sectionKey),
+  ],
+);
 
-export const profileVersionHistory = pgTable("profile_version_history", {
-  id: id(),
-  userId: text("user_id").notNull(),
-  sectionKey: text("section_key").notNull(),
-  version: integer("version").notNull(),
-  previousValueJson: jsonb("previous_value_json"),
-  newValueJson: jsonb("new_value_json").notNull(),
-  changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
-  actor: text("actor").notNull().default("user"),
-  reason: text("reason"),
-  includeInReports: boolean("include_in_reports").notNull().default(true),
-});
+export const profileVersionHistory = pgTable(
+  "profile_version_history",
+  {
+    id: id(),
+    userId: text("user_id").notNull(),
+    sectionKey: text("section_key").notNull(),
+    version: integer("version").notNull(),
+    previousValueJson: jsonb("previous_value_json"),
+    newValueJson: jsonb("new_value_json").notNull(),
+    changedAt: timestamp("changed_at", { withTimezone: true }).notNull().defaultNow(),
+    actor: text("actor").notNull().default("user"),
+    reason: text("reason"),
+    includeInReports: boolean("include_in_reports").notNull().default(true),
+  },
+  (table) => [
+    uniqueIndex("profile_version_history_user_section_version_uidx").on(
+      table.userId,
+      table.sectionKey,
+      table.version,
+    ),
+  ],
+);
 
 export const profileAuditEvents = pgTable("profile_audit_events", {
   id: id(),
@@ -115,17 +132,21 @@ export const profileAuditEvents = pgTable("profile_audit_events", {
 // Minimal real source-of-truth tables consumed by reports/exports
 // ---------------------------------------------------------------------------
 
-export const dailyLogs = pgTable("daily_logs", {
-  id: id(),
-  userId: text("user_id").notNull(),
-  logDate: text("log_date").notNull(), // YYYY-MM-DD
-  sleep: jsonb("sleep"),
-  food: jsonb("food"),
-  stressLevel: integer("stress_level"),
-  activity: jsonb("activity"),
-  notes: text("notes"),
-  ...timestamps,
-});
+export const dailyLogs = pgTable(
+  "daily_logs",
+  {
+    id: id(),
+    userId: text("user_id").notNull(),
+    logDate: text("log_date").notNull(), // YYYY-MM-DD
+    sleep: jsonb("sleep"),
+    food: jsonb("food"),
+    stressLevel: integer("stress_level"),
+    activity: jsonb("activity"),
+    notes: text("notes"),
+    ...timestamps,
+  },
+  (table) => [uniqueIndex("daily_logs_user_log_date_uidx").on(table.userId, table.logDate)],
+);
 
 export const faceAtlasScans = pgTable("face_atlas_scans", {
   id: id(),
@@ -232,14 +253,20 @@ export const weatherSnapshots = pgTable("weather_snapshots", {
 // Reports
 // ---------------------------------------------------------------------------
 
-export const reportRequests = pgTable("report_requests", {
-  id: id(),
-  userId: text("user_id").notNull(),
-  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
-  inclusionOptions: jsonb("inclusion_options").notNull(),
-  status: text("status").notNull().default("queued"), // queued|processing|completed|failed
-  idempotencyKey: text("idempotency_key"),
-});
+export const reportRequests = pgTable(
+  "report_requests",
+  {
+    id: id(),
+    userId: text("user_id").notNull(),
+    requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+    inclusionOptions: jsonb("inclusion_options").notNull(),
+    status: text("status").notNull().default("queued"), // queued|processing|completed|failed
+    idempotencyKey: text("idempotency_key"),
+  },
+  (table) => [
+    uniqueIndex("report_requests_user_idempotency_uidx").on(table.userId, table.idempotencyKey),
+  ],
+);
 
 export const reportJobs = pgTable("report_jobs", {
   id: id(),

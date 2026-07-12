@@ -117,7 +117,7 @@ function classifyDatabaseFailure(errorCodes: Set<string>): string {
 }
 
 async function checkCloudRunHealth() {
-  const baseUrl = process.env.ACNETREX_ML_API_URL ?? process.env.NEXT_PUBLIC_ACNETREX_ML_API_URL;
+  const baseUrl = process.env.ACNETREX_ML_API_URL;
 
   if (!baseUrl) {
     return { configured: false, status: "not_configured" as const };
@@ -165,7 +165,7 @@ export async function GET() {
       "NEXT_PUBLIC_SUPABASE_ANON_KEY",
       "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
     ),
-    mlApiUrl: envConfigured("ACNETREX_ML_API_URL", "NEXT_PUBLIC_ACNETREX_ML_API_URL"),
+    mlApiUrl: envConfigured("ACNETREX_ML_API_URL"),
     vertexEndpoint: envConfigured("VERTEX_AI_ENDPOINT_ID"),
     vercel: envConfigured("VERCEL", "VERCEL_ENV"),
   };
@@ -197,7 +197,10 @@ export async function GET() {
     `);
     const schema = summarizeDatabaseSchema(tableRows.rows.map((row) => row.table_name));
     const schemaReady = schema.status === "ready";
-    const mlReady = cloudRun.status === "healthy" || cloudRun.status === "not_configured";
+    // The Expo/FastAPI/Supabase contract is authoritative. The old Drizzle
+    // compatibility tables are intentionally not created as duplicate sources
+    // of health data and must never block mobile production readiness.
+    const mlReady = cloudRun.status === "healthy";
     const ok = schemaReady && mlReady;
 
     return Response.json(

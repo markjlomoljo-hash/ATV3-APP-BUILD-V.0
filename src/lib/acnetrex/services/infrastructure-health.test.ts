@@ -22,28 +22,32 @@ describe("infrastructure health contracts", () => {
 
     expect(summary.legacy.present).toContain("profiles");
     expect(summary.legacy.missing).not.toContain("profiles");
-    expect(summary.canonical.missing).toContain("users");
+    expect(summary.canonical.missing).toContain("report_requests");
     expect(summary.memory.missing).toContain("user_memory_events");
     expect(summary.status).toBe("schema_mismatch");
     expect(summary.warnings).toContain("canonical_tables_missing");
     expect(summary.warnings).toContain("memory_tables_missing");
+    expect(summary.warnings).toContain("web_compatibility_tables_missing");
   });
 
   it("marks the canonical schema ready only when app and memory contracts exist", () => {
     const allTables = [
-      "users",
-      "consent_settings",
-      "profile_sections",
-      "profile_version_history",
-      "daily_logs",
-      "face_atlas_scans",
+      "profiles",
+      "consents",
+      "sleep_logs",
+      "food_logs",
+      "face_scans",
+      "annotations",
       "treatment_plans",
-      "treatment_checkins",
+      "treatment_tasks",
       "trigger_hypotheses",
-      "forecast_summaries",
+      "forecasts",
+      "skin_twin_snapshots",
       "report_requests",
       "report_files",
       "report_jobs",
+      "export_requests",
+      "export_files",
       "deletion_requests",
       "ml_runtime_events",
       "user_memory_events",
@@ -54,8 +58,12 @@ describe("infrastructure health contracts", () => {
       "ml_analysis_results",
       "ml_model_versions",
       "ml_feature_snapshots",
+      "ml_dataset_versions",
+      "ml_training_runs",
+      "ml_fallback_events",
       "intelligence_events",
       "cutisai_conversations",
+      "cutisai_messages",
     ];
 
     const summary = summarizeDatabaseSchema(allTables);
@@ -63,6 +71,17 @@ describe("infrastructure health contracts", () => {
     expect(summary.status).toBe("ready");
     expect(summary.canonical.missing).toEqual([]);
     expect(summary.memory.missing).toEqual([]);
+    expect(summary.webCompatibility.missing).toEqual([
+      "users",
+      "consent_settings",
+      "consent_audit_events",
+      "profile_sections",
+      "profile_version_history",
+      "daily_logs",
+      "face_atlas_scans",
+      "treatment_checkins",
+    ]);
+    expect(summary.warnings).toContain("web_compatibility_tables_missing");
   });
 
   it("does not classify Cloud Run placeholder metadata as healthy ML service readiness", () => {
@@ -71,8 +90,23 @@ describe("infrastructure health contracts", () => {
       reason: "unexpected_health_payload",
     });
 
-    expect(classifyCloudRunHealthPayload({ ok: true, service: "acnetrex-ml", vertexConfigured: true })).toMatchObject({
+    expect(classifyCloudRunHealthPayload({
+      ok: true,
+      service: "acnetrex-ml",
+      vertexConfigured: true,
+      serviceAuthConfigured: true,
+    })).toMatchObject({
       healthy: true,
+    });
+
+    expect(classifyCloudRunHealthPayload({
+      ok: true,
+      service: "acnetrex-ml",
+      vertexConfigured: true,
+      serviceAuthConfigured: false,
+    })).toMatchObject({
+      healthy: false,
+      reason: "service_auth_not_configured",
     });
   });
 });

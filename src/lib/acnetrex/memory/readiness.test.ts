@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { persistentMemoryTables } from "../services/infrastructure-health";
 import { buildCutisAiMemoryReadiness } from "./readiness";
 
 describe("CutisAI persistent memory readiness", () => {
@@ -12,18 +13,7 @@ describe("CutisAI persistent memory readiness", () => {
   });
 
   it("reports ready only when all memory and lineage contracts are present", () => {
-    const readiness = buildCutisAiMemoryReadiness([
-      "user_memory_events",
-      "user_memory_facts",
-      "user_memory_summaries",
-      "memory_retrieval_logs",
-      "ml_analysis_jobs",
-      "ml_analysis_results",
-      "ml_model_versions",
-      "ml_feature_snapshots",
-      "intelligence_events",
-      "cutisai_conversations",
-    ]);
+    const readiness = buildCutisAiMemoryReadiness(persistentMemoryTables);
 
     expect(readiness.ok).toBe(true);
     expect(readiness.status).toBe("ready");

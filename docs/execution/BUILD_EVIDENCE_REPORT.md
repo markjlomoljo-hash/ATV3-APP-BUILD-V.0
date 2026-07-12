@@ -129,7 +129,7 @@ Implemented code-level fixes for the current live blockers while preserving fail
   - RLS is enabled on inspected public tables.
   - Private storage buckets exist: `face-scans-raw`, `reports`, and `skin-twin`.
 - Confirmed live schema drift: the remote project contains the earlier AcneTrex schema, while the app server expects Phase 7 canonical tables such as `users`, `consent_settings`, `profile_sections`, `daily_logs`, `report_requests`, and `deletion_requests`.
-- Added tracked Supabase migration `supabase/migrations/20260705090000_phase7_memory_ml_contracts.sql` for missing Phase 7, persistent memory, and ML lineage tables with RLS enabled.
+- Added tracked Supabase migration `supabase/migrations/20260710233648_phase7_memory_ml_contracts.sql` for missing Phase 7, persistent memory, and ML lineage tables with RLS enabled.
 - Added infrastructure health classification so `/api/health` distinguishes:
   - DB unavailable,
   - canonical table gaps,
