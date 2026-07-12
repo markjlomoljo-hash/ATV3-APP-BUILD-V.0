@@ -1,4 +1,4 @@
-import { getDb, isDatabaseConfigurationError } from "@/db";
+import { getDb, getPool, isDatabaseConfigurationError } from "@/db";
 import {
   classifyCloudRunHealthPayload,
   summarizeDatabaseSchema,
@@ -15,27 +15,94 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function databaseErrorCodes(error: unknown, depth = 0): string[] {
-  if (!isObject(error) || depth > 2) return [];
-  const own = typeof error.code === "string" ? [error.code] : [];
-  const nested = Array.isArray(error.errors)
-    ? error.errors.flatMap((item) => databaseErrorCodes(item, depth + 1))
-    : [];
-  const caused = "cause" in error ? databaseErrorCodes(error.cause, depth + 1) : [];
-  return [...new Set([...own, ...nested, ...caused])];
+/**
+ * Recursively extract error codes from nested error structures
+ * (handles both error.cause chains and AggregateError.errors)
+ */
+function extractErrorCodes(error: unknown, depth = 0, codes: Set<string> = new Set()): Set<string> {
+  if (depth > 5 || !isObject(error)) return codes;
+
+  // Extract code
+  if (typeof error.code === "string") {
+    codes.add(error.code);
+  }
+
+  // Extract errno
+  if (typeof error.errno === "number") {
+    codes.add(`errno_${error.errno}`);
+  }
+
+  // Extract syscall
+  if (typeof error.syscall === "string") {
+    codes.add(`syscall_${error.syscall}`);
+  }
+
+  // Recurse into error.cause
+  if ("cause" in error) {
+    extractErrorCodes(error.cause, depth + 1, codes);
+  }
+
+  // Recurse into AggregateError.errors
+  if (Array.isArray(error.errors)) {
+    error.errors.forEach((item) => {
+      extractErrorCodes(item, depth + 1, codes);
+    });
+  }
+
+  return codes;
 }
 
-function classifyDatabaseFailure(error: unknown) {
-  const codes = databaseErrorCodes(error);
-  if (codes.some((code) => code === "28P01" || code === "28000")) return "authentication_failed";
-  if (codes.some((code) => code === "ENOTFOUND" || code === "EAI_AGAIN")) return "dns_failed";
-  if (codes.includes("ECONNREFUSED")) return "connection_refused";
-  if (codes.some((code) => code === "ETIMEDOUT" || code === "ETIME")) return "connection_timeout";
-  if (codes.includes("3D000")) return "database_missing";
-  if (codes.some((code) => code.startsWith("CERT_") || code.includes("TLS") || code.includes("SSL"))) {
+/**
+ * Extract safe diagnostic fields from an error object
+ */
+function extractErrorDiagnostics(error: unknown): {
+  code?: string;
+  errno?: number;
+  syscall?: string;
+  name?: string;
+} {
+  const result: Record<string, unknown> = {};
+
+  const traverse = (err: unknown, depth = 0) => {
+    if (depth > 5 || !isObject(err)) return;
+
+    if (typeof err.code === "string" && !result.code) {
+      result.code = err.code;
+    }
+    if (typeof err.errno === "number" && !result.errno) {
+      result.errno = err.errno;
+    }
+    if (typeof err.syscall === "string" && !result.syscall) {
+      result.syscall = err.syscall;
+    }
+    if (typeof err.name === "string" && !result.name) {
+      result.name = err.name;
+    }
+
+    if ("cause" in err) {
+      traverse(err.cause, depth + 1);
+    }
+
+    if (Array.isArray(err.errors)) {
+      err.errors.forEach((item) => {
+        traverse(item, depth + 1);
+      });
+    }
+  };
+
+  traverse(error);
+  return result as any;
+}
+
+function classifyDatabaseFailure(errorCodes: Set<string>): string {
+  if (errorCodes.has("28P01") || errorCodes.has("28000")) return "authentication_failed";
+  if (errorCodes.has("ENOTFOUND") || errorCodes.has("EAI_AGAIN")) return "dns_failed";
+  if (errorCodes.has("ECONNREFUSED")) return "connection_refused";
+  if (errorCodes.has("ETIMEDOUT") || errorCodes.has("ETIME")) return "connection_timeout";
+  if (errorCodes.has("3D000")) return "database_missing";
+  if ([...errorCodes].some((code) => code.startsWith("CERT_") || code.includes("TLS") || code.includes("SSL"))) {
     return "tls_failed";
   }
-  if (isObject(error) && error.name === "TypeError") return "connection_string_invalid";
   return "connection_failed";
 }
 
@@ -95,26 +162,26 @@ export async function GET() {
   const cloudRun = await checkCloudRunHealth();
 
   try {
-    const db = getDb();
-    
-    // Enhanced error logging
-    let connectionError: unknown = null;
+    // Bypass Drizzle for connectivity probe: test directly with pg.Pool
+    let poolConnectionError: unknown = null;
     try {
-      await db.execute(sql`select 1`);
+      const pool = getPool();
+      const result = await pool.query("select 1");
+      // Connection successful
     } catch (err) {
-      connectionError = err;
-      // Log for debugging
-      const errorObj = err as any;
-      console.error("Database connection test failed:", {
-        name: errorObj?.name,
-        message: errorObj?.message,
-        code: errorObj?.code,
-        errno: errorObj?.errno,
-        syscall: errorObj?.syscall,
+      poolConnectionError = err;
+      // Log for debugging (server-side only)
+      const diagnostics = extractErrorDiagnostics(err);
+      const errorCodes = extractErrorCodes(err);
+      console.error("Database connection probe failed:", {
+        diagnostics,
+        codes: [...errorCodes],
       });
       throw err;
     }
 
+    // If pool.query succeeded, proceed with Drizzle schema check
+    const db = getDb();
     const tableRows = await db.execute<{ table_name: string }>(sql`
       select table_name
       from information_schema.tables
@@ -162,9 +229,11 @@ export async function GET() {
       );
     }
 
-    const failureCategory = classifyDatabaseFailure(error);
-    const errorObj = error as any;
-    
+    // Extract diagnostic info from nested error chain
+    const errorCodes = extractErrorCodes(error);
+    const errorDiagnostics = extractErrorDiagnostics(error);
+    const failureCategory = classifyDatabaseFailure(errorCodes);
+
     return Response.json(
       {
         ok: false,
@@ -174,12 +243,7 @@ export async function GET() {
           configured: true,
           status: "unavailable",
           failureCategory,
-          errorDetails: {
-            code: errorObj?.code,
-            errno: errorObj?.errno,
-            syscall: errorObj?.syscall,
-            message: errorObj?.message?.substring(0, 200), // Truncate long messages
-          },
+          errorDiagnostics,
         },
         environment,
         cloudRun,
