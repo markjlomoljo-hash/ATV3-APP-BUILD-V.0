@@ -48,10 +48,11 @@ git checkout dev
 git pull origin dev
 git checkout -b feat/phase3-skin-twin-backend-docs-src-supabase
 
-# Copy ONLY these from the provided extracted package root into the repo root:
-# docs/ src/ supabase/ .env .env.example bun.lock package.json
+# Copy ONLY these from the provided extracted package root into the repo root.
+# Never copy or stage .env; only the sanitized .env.example belongs in Git.
+# docs/ src/ supabase/ .env.example bun.lock package.json
 
-git add docs src supabase .env .env.example bun.lock package.json
+git add docs src supabase .env.example bun.lock package.json
 git status
 git commit -m "feat: add phase backend docs src supabase assets"
 git push -u origin feat/phase3-skin-twin-backend-docs-src-supabase

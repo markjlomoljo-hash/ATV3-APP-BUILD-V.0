@@ -11,8 +11,6 @@
     "test:e2e": "node scripts/route-smoke.mjs"
   },
   "dependencies": {
-    "@types/archiver": "^8.0.0",
-    "@types/pdfkit": "^0.17.6",
     "archiver": "^8.0.0",
     "dotenv": "17.3.1",
     "drizzle-orm": "0.45.2",
@@ -74,6 +72,8 @@
     "vite-tsconfig-paths": "^6.0.2"
   },
   "devDependencies": {
+    "@types/archiver": "^8.0.0",
+    "@types/pdfkit": "^0.17.6",
     "@tailwindcss/postcss": "4.1.17",
     "@types/node": "22.19.15",
     "@types/pg": "8.18.0",

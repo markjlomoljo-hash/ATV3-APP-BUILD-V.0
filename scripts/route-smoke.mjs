@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import path from "node:path";
 
 const routes = [
   "/",
@@ -84,11 +85,12 @@ async function ensureServer() {
   } catch {
     const url = new URL(baseUrl);
     const port = url.port || "3100";
-    const command = process.platform === "win32" ? "cmd.exe" : "npm";
+    const command = process.platform === "win32" ? "cmd.exe" : process.execPath;
+    const nextCli = path.join(process.cwd(), "node_modules", "next", "dist", "bin", "next");
     const args =
       process.platform === "win32"
         ? ["/c", "npm.cmd", "start", "--", "--hostname", "127.0.0.1", "--port", port]
-        : ["start", "--", "--hostname", "127.0.0.1", "--port", port];
+        : [nextCli, "start", "--hostname", "127.0.0.1", "--port", port];
 
     server = spawn(command, args, {
       stdio: "pipe",
@@ -141,6 +143,10 @@ try {
       spawnSync("taskkill", ["/pid", String(server.pid), "/T", "/F"], { stdio: "ignore" });
     } else {
       server.kill();
+      await Promise.race([
+        new Promise((resolve) => server.once("exit", resolve)),
+        new Promise((resolve) => setTimeout(resolve, 5_000)),
+      ]);
     }
   }
 }

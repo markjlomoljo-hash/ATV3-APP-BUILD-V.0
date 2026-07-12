@@ -12,19 +12,19 @@ export const Route = createFileRoute("/")({
   component: Index,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
 function Index() {
   return (
     <div
       className="flex min-h-screen items-center justify-center"
       style={{ backgroundColor: "#fcfbf8" }}
     >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+      <main className="max-w-lg p-8 text-center">
+        <h1 className="text-3xl font-semibold text-slate-950">AcneTrex compatibility surface</h1>
+        <p className="mt-3 text-slate-700">
+          The native iOS and Android application is the primary AcneTrex product. This route is retained only for
+          secondary web compatibility.
+        </p>
+      </main>
     </div>
   );
 }
