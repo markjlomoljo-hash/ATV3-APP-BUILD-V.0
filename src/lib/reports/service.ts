@@ -123,6 +123,20 @@ export async function createAndProcessReport(
   const db = getDb();
   const profile = await getProfessionalProfile(userId);
 
+  if (idempotencyKey) {
+    const [existing] = await db
+      .select({ id: reportRequests.id, status: reportRequests.status })
+      .from(reportRequests)
+      .where(
+        and(
+          eq(reportRequests.userId, userId),
+          eq(reportRequests.idempotencyKey, idempotencyKey),
+        ),
+      )
+      .limit(1);
+    if (existing) return { reportRequestId: existing.id, status: existing.status };
+  }
+
   const [request] = await db
     .insert(reportRequests)
     .values({
@@ -152,6 +166,9 @@ export async function createAndProcessReport(
       ...inclusionOptions,
       includeFaceAtlasPhotos:
         inclusionOptions.includeFaceAtlasPhotos && profile.consent.includeFaceAtlasPhotosInReports,
+      includeTreatmentDetails:
+        inclusionOptions.includeTreatmentDetails &&
+        profile.consent.includeTreatmentDetailsInReports,
     };
 
     const bundle = await buildRawBundle(userId);
@@ -275,5 +292,10 @@ export async function getReportFileBuffer(
     .limit(1);
   if (!file) return null;
 
-  return getObject(file.storageRef);
+  try {
+    return await getObject(file.storageRef);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return null;
+    throw error;
+  }
 }

@@ -37,10 +37,7 @@ async function verifySession(req: NextRequest): Promise<SessionContext | null> {
   return { userId: data.user.id, accessToken: token };
 }
 
-/**
- * Protected route boundary. The actor is always derived from a Supabase-
- * verified bearer token; client-supplied ownership fields are ignored.
- */
+/** Derive the protected actor only from a Supabase-verified bearer token. */
 export function withSession<T = { params?: unknown }>(
   handler: (req: NextRequest, ctx: SessionContext, routeCtx: T) => Promise<NextResponse>,
 ) {

@@ -11,18 +11,33 @@
 import { mkdir, readFile, rm, stat, writeFile } from "fs/promises";
 import path from "path";
 
-const STORAGE_ROOT = path.join(process.cwd(), ".private-storage");
+const STORAGE_ROOT = path.resolve(process.cwd(), ".private-storage");
 
-function resolvePath(storageRef: string): string {
-  const safe = storageRef.replace(/\.\./g, "");
-  return path.join(STORAGE_ROOT, safe);
+export function resolvePrivateStoragePath(storageRef: string): string {
+  const normalized = storageRef.replace(/\\/g, "/");
+  const segments = normalized.split("/");
+  if (
+    !normalized ||
+    path.posix.isAbsolute(normalized) ||
+    /^[a-zA-Z]:\//.test(normalized) ||
+    segments.some((segment) => !segment || segment === "." || segment === "..")
+  ) {
+    throw new Error("invalid_storage_reference");
+  }
+
+  const fullPath = path.resolve(STORAGE_ROOT, ...segments);
+  const rootPrefix = `${STORAGE_ROOT}${path.sep}`;
+  if (!fullPath.startsWith(rootPrefix)) {
+    throw new Error("invalid_storage_reference");
+  }
+  return fullPath;
 }
 
 export async function putObject(
   storageRef: string,
   data: Buffer,
 ): Promise<{ sizeBytes: number }> {
-  const fullPath = resolvePath(storageRef);
+  const fullPath = resolvePrivateStoragePath(storageRef);
   await mkdir(path.dirname(fullPath), { recursive: true });
   await writeFile(fullPath, data);
   const info = await stat(fullPath);
@@ -30,11 +45,11 @@ export async function putObject(
 }
 
 export async function getObject(storageRef: string): Promise<Buffer> {
-  return readFile(resolvePath(storageRef));
+  return readFile(resolvePrivateStoragePath(storageRef));
 }
 
 export async function deleteObject(storageRef: string): Promise<void> {
-  await rm(resolvePath(storageRef), { force: true });
+  await rm(resolvePrivateStoragePath(storageRef), { force: true });
 }
 
 export function buildReportStorageRef(userId: string, reportRequestId: string): string {

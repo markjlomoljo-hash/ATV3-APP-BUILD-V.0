@@ -21,9 +21,7 @@ export const getGamification = createServerFn({ method: "GET" })
 // Record an action; bumps points and updates streak if last_action_at was yesterday.
 export const recordAction = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) =>
-    z.object({ points: z.number().int().min(0).max(1000).default(10) }).parse(d ?? {}),
-  )
+  .inputValidator((d: unknown) => z.object({ task_id: z.string().uuid() }).parse(d))
   .handler(async () => {
     throw new Error("durable_task_completion_required");
   });

@@ -12,7 +12,6 @@ const plan = z.object({
   status: z.enum(["draft", "active", "paused", "completed", "abandoned"]).optional(),
   started_at: z.string().nullable().optional(),
   ended_at: z.string().nullable().optional(),
-  adherence_pct: z.number().min(0).max(100).nullable().optional(),
 });
 
 export const createTreatmentPlan = createServerFn({ method: "POST" })
@@ -59,7 +58,12 @@ export const createTreatmentTask = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => task.parse(d))
   .handler(async ({ data, context }) => {
-    const { data: row, error } = await sb(context.supabase)
+    const sup = sb(context.supabase);
+    const { data: plan, error: planError } = await sup
+      .from("treatment_plans").select("id").eq("id", data.plan_id).eq("user_id", context.userId).maybeSingle();
+    if (planError) throw planError;
+    if (!plan) throw new Error("TreatmentPlanNotFound");
+    const { data: row, error } = await sup
       .from("treatment_tasks").insert({ user_id: context.userId, ...data }).select().single();
     if (error) throw error;
     return row;

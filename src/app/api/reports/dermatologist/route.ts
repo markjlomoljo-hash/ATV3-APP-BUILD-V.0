@@ -25,5 +25,11 @@ export const POST = withSession(async (req, { userId }) => {
     parsed.data.idempotencyKey,
   );
 
+  if (result.status === "failed") {
+    return NextResponse.json(
+      { ok: false, error: "report_generation_failed", ...result },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({ ok: true, ...result }, { status: 201 });
 });

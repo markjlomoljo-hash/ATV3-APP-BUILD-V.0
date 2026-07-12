@@ -43,12 +43,15 @@ export const PATCH = withSession(async (req, { userId }) => {
     const [before] = await db.select().from(consentSettings).where(eq(consentSettings.userId, userId)).limit(1);
 
     const [updated] = await db
-      .update(consentSettings)
-      .set({ ...parsed.data, updatedAt: new Date() })
-      .where(eq(consentSettings.userId, userId))
+      .insert(consentSettings)
+      .values({ userId, ...parsed.data, updatedAt: new Date() })
+      .onConflictDoUpdate({
+        target: consentSettings.userId,
+        set: { ...parsed.data, updatedAt: new Date() },
+      })
       .returning();
 
-    await recordProfileAuditEvent(userId, "consent_updated", { before, after: parsed.data });
+    await recordProfileAuditEvent(userId, "consent_updated", { before, after: updated });
 
     return NextResponse.json({ ok: true, consent: updated });
   } catch (error) {

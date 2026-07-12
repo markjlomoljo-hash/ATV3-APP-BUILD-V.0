@@ -11,14 +11,18 @@ import { computeTreatmentSummary } from "./treatment";
 export async function getSectionRecords(userId: string): Promise<ProfileSectionRecord[]> {
   const db = getDb();
   const rows = await db.select().from(profileSections).where(eq(profileSections.userId, userId));
-  const byKey = new Map(rows.map((r) => [r.sectionKey, r]));
+  const byKey = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    const current = byKey.get(row.sectionKey);
+    if (!current || row.version > current.version) byKey.set(row.sectionKey, row);
+  }
 
   return allSectionKeys().map((key) => {
     const row = byKey.get(key);
     if (!row) {
       return {
         sectionKey: key,
-        value: SECTION_METADATA[key].emptyValue,
+        value: structuredClone(SECTION_METADATA[key].emptyValue),
         version: 0,
         updatedAt: null,
         updatedBy: null,

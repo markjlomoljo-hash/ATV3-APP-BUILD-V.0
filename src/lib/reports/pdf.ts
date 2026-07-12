@@ -12,6 +12,7 @@ const BORDER = "#e2e8f0";
 const PAGE_MARGIN = 48;
 
 function drawSectionHeading(doc: PDFKit.PDFDocument, title: string) {
+  doc.x = PAGE_MARGIN;
   doc.moveDown(0.8);
   doc
     .fillColor(GREEN)

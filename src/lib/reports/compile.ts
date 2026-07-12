@@ -14,6 +14,19 @@ function hasContent(value: unknown): boolean {
   return true;
 }
 
+function stringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
+function recordList(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (item): item is Record<string, unknown> =>
+      typeof item === "object" && item !== null && !Array.isArray(item),
+  );
+}
+
 function sectionValue(
   bundle: RawProfileBundle,
   key: string,
@@ -48,8 +61,8 @@ export function compileReportData(
       { label: "Undertone", value: String(skinProfile.undertone ?? "Not provided") },
       {
         label: "Known conditions",
-        value: hasContent(skinProfile.knownConditions)
-          ? (skinProfile.knownConditions as string[]).join(", ")
+        value: stringList(skinProfile.knownConditions).length > 0
+          ? stringList(skinProfile.knownConditions).join(", ")
           : "None reported",
       },
       { label: "Preferred name / notes", value: String(identity.displayName ?? bundle.userName) },
@@ -82,8 +95,8 @@ export function compileReportData(
         rows: [
           {
             label: "Barrier symptoms",
-            value: hasContent(barrier.barrierSymptoms)
-              ? (barrier.barrierSymptoms as string[]).join(", ")
+            value: stringList(barrier.barrierSymptoms).length > 0
+              ? stringList(barrier.barrierSymptoms).join(", ")
               : "None reported",
           },
           { label: "Tolerance notes", value: String(barrier.toleranceNotes ?? "Not provided") },
@@ -145,11 +158,15 @@ export function compileReportData(
         rows: [
           {
             label: "AM routine",
-            value: hasContent(routine.amRoutine) ? (routine.amRoutine as string[]).join(", ") : "Not provided",
+            value: stringList(routine.amRoutine).length > 0
+              ? stringList(routine.amRoutine).join(", ")
+              : "Not provided",
           },
           {
             label: "PM routine",
-            value: hasContent(routine.pmRoutine) ? (routine.pmRoutine as string[]).join(", ") : "Not provided",
+            value: stringList(routine.pmRoutine).length > 0
+              ? stringList(routine.pmRoutine).join(", ")
+              : "Not provided",
           },
         ],
       }
@@ -157,13 +174,14 @@ export function compileReportData(
 
   // --- Medication / treatment history --------------------------------------
   const medHistory = sectionValue(bundle, "medication_treatment_history");
-  const medicationTreatmentHistory: ReportSection = hasContent(medHistory.history)
+  const medicationHistoryRows = recordList(medHistory.history);
+  const medicationTreatmentHistory: ReportSection = medicationHistoryRows.length > 0
     ? {
         title: "Medication & Treatment History",
         insufficientData: false,
         table: {
           headers: ["Treatment", "Started", "Ended", "Outcome"],
-          rows: (medHistory.history as Array<Record<string, unknown>>).map((h) => [
+          rows: medicationHistoryRows.map((h) => [
             String(h.name ?? "—"),
             String(h.startDate ?? "—"),
             String(h.endDate ?? "Ongoing"),
@@ -231,11 +249,15 @@ export function compileReportData(
         rows: [
           {
             label: "Allergies",
-            value: hasContent(allergies.allergies) ? (allergies.allergies as string[]).join(", ") : "None reported",
+            value: stringList(allergies.allergies).length > 0
+              ? stringList(allergies.allergies).join(", ")
+              : "None reported",
           },
           {
             label: "Adverse reactions",
-            value: hasContent(allergies.reactions) ? (allergies.reactions as string[]).join(", ") : "None reported",
+            value: stringList(allergies.reactions).length > 0
+              ? stringList(allergies.reactions).join(", ")
+              : "None reported",
           },
         ],
       }

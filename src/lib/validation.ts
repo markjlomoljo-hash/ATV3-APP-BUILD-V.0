@@ -46,14 +46,19 @@ export const deletionRequestSchema = z.object({
   exportRequestedFirst: z.boolean().optional().default(false),
 });
 
-export const consentUpdateSchema = z.object({
-  anonymousLearning: z.boolean().optional(),
-  rawImageLearning: z.boolean().optional(),
-  includeFaceAtlasPhotosInReports: z.boolean().optional(),
-  includeTreatmentDetailsInReports: z.boolean().optional(),
-  marketingNotifications: z.boolean().optional(),
-  productAnalysisNotifications: z.boolean().optional(),
-  reportReadyNotifications: z.boolean().optional(),
-  streakRiskNotifications: z.boolean().optional(),
-  weatherAlertNotifications: z.boolean().optional(),
-});
+export const consentUpdateSchema = z
+  .object({
+    anonymousLearning: z.boolean().optional(),
+    rawImageLearning: z.boolean().optional(),
+    includeFaceAtlasPhotosInReports: z.boolean().optional(),
+    includeTreatmentDetailsInReports: z.boolean().optional(),
+    marketingNotifications: z.boolean().optional(),
+    productAnalysisNotifications: z.boolean().optional(),
+    reportReadyNotifications: z.boolean().optional(),
+    streakRiskNotifications: z.boolean().optional(),
+    weatherAlertNotifications: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one consent field must be provided",
+  });

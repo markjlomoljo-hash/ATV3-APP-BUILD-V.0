@@ -11,7 +11,11 @@ export function toCsv(rows: Array<Record<string, unknown>>): string {
 
   const escape = (value: unknown): string => {
     if (value === null || value === undefined) return "";
-    const str = typeof value === "object" ? JSON.stringify(value) : String(value);
+    const raw = typeof value === "object" ? JSON.stringify(value) : String(value);
+    // Spreadsheet applications may execute cells beginning with formula
+    // control characters. Prefix an apostrophe so user-provided profile data
+    // remains inert when the CSV is opened in Excel/Sheets/Numbers.
+    const str = /^\s*[=+\-@]/.test(raw) || /^[\t\r]/.test(raw) ? `'${raw}` : raw;
     if (/[",\n]/.test(str)) {
       return `"${str.replace(/"/g, '""')}"`;
     }

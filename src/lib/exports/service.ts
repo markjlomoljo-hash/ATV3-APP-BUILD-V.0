@@ -17,6 +17,7 @@ async function zipCsvFiles(bundle: Record<string, Array<Record<string, unknown>>
 
     stream.on("data", (chunk) => chunks.push(chunk as Buffer));
     stream.on("end", () => resolve(Buffer.concat(chunks)));
+    stream.on("error", reject);
     archive.on("error", reject);
     archive.pipe(stream);
 
@@ -24,7 +25,7 @@ async function zipCsvFiles(bundle: Record<string, Array<Record<string, unknown>>
       archive.append(toCsv(rows), { name: `${name}.csv` });
     }
 
-    archive.finalize();
+    archive.finalize().catch(reject);
   });
 }
 

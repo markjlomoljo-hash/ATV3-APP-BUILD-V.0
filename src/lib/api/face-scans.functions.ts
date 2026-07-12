@@ -38,29 +38,40 @@ export const getScanUploadUrl = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ scan_id: z.string().uuid(), content_type: z.string().default("image/jpeg") }).parse(d))
   .handler(async ({ data, context }) => {
+    if (data.content_type !== "image/jpeg") throw new Error("UnsupportedContentType");
+    const sup = sb(context.supabase);
+    const { data: scan, error: scanError } = await sup
+      .from("face_scans")
+      .select("id")
+      .eq("id", data.scan_id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (scanError) throw scanError;
+    if (!scan) throw new Error("ScanNotFound");
     const path = `${context.userId}/${data.scan_id}.jpg`;
-    const { data: signed, error } = await sb(context.supabase)
+    const { data: signed, error } = await sup
       .storage.from("face-scans-raw")
       .createSignedUploadUrl(path);
     if (error) throw error;
-    await sb(context.supabase)
+    const { data: updated, error: updateError } = await sb(context.supabase)
       .from("face_scans")
       .update({ storage_path: path, status: "uploading" })
-      .eq("id", data.scan_id).eq("user_id", context.userId);
+      .eq("id", data.scan_id)
+      .eq("user_id", context.userId)
+      .select("id")
+      .maybeSingle();
+    if (updateError) throw updateError;
+    if (!updated) throw new Error("ScanNotFound");
     return { url: signed.signedUrl, token: signed.token, path };
   });
 
 const finalize = z.object({
   scan_id: z.string().uuid(),
-  oiliness_estimate: z.number().min(0).max(1).nullable().optional(),
-  image_quality: z.number().min(0).max(1).nullable().optional(),
-  lesion_counts: z.record(z.string(), z.number()).nullable().optional(),
-  labels: z.record(z.string(), z.any()).nullable().optional(),
-  model_confidence: z.number().min(0).max(1).nullable().optional(),
   user_certainty: z.number().min(0).max(1).nullable().optional(),
 });
 
-// Mark the scan as analyzed and — when consent disallows retention — delete the raw image.
+// A client may only finish upload and queue real server analysis. Derived fields
+// and raw-image retention are handled by the authenticated ML worker.
 export const finalizeFaceScan = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => finalize.parse(d))
@@ -70,29 +81,11 @@ export const finalizeFaceScan = createServerFn({ method: "POST" })
       .from("face_scans").select("*").eq("id", data.scan_id).eq("user_id", context.userId).single();
     if (e1 || !scan) throw e1 ?? new Error("NotFound");
 
-    const { data: consent } = await sup
-      .from("consents").select("raw_image_retention").eq("user_id", context.userId).maybeSingle();
-    const retain = !!consent?.raw_image_retention;
-
-    let raw_image_deleted_at: string | null = scan.raw_image_deleted_at ?? null;
-    if (!retain && scan.storage_path) {
-      const { error: delErr } = await sup.storage.from("face-scans-raw").remove([scan.storage_path]);
-      if (delErr) console.warn("[face-scans] raw delete failed", delErr.message);
-      raw_image_deleted_at = new Date().toISOString();
-    }
-
     const { data: updated, error: e2 } = await sup
       .from("face_scans")
       .update({
-        status: "analyzed",
-        oiliness_estimate: data.oiliness_estimate ?? null,
-        image_quality: data.image_quality ?? null,
-        lesion_counts: data.lesion_counts ?? null,
-        labels: data.labels ?? null,
-        model_confidence: data.model_confidence ?? null,
+        status: "queued_for_cloud",
         user_certainty: data.user_certainty ?? null,
-        raw_image_deleted_at,
-        storage_path: retain ? scan.storage_path : null,
       })
       .eq("id", data.scan_id).eq("user_id", context.userId)
       .select().single();
@@ -128,8 +121,20 @@ export const deleteFaceScan = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string().uuid() }).parse(d))
   .handler(async ({ data, context }) => {
     const sup = sb(context.supabase);
-    const { data: scan } = await sup.from("face_scans").select("storage_path").eq("id", data.id).eq("user_id", context.userId).maybeSingle();
-    if (scan?.storage_path) await sup.storage.from("face-scans-raw").remove([scan.storage_path]);
+    const { data: scan, error: scanError } = await sup
+      .from("face_scans")
+      .select("storage_path")
+      .eq("id", data.id)
+      .eq("user_id", context.userId)
+      .maybeSingle();
+    if (scanError) throw scanError;
+    if (!scan) throw new Error("ScanNotFound");
+    if (scan.storage_path) {
+      const { error: storageError } = await sup.storage
+        .from("face-scans-raw")
+        .remove([scan.storage_path]);
+      if (storageError) throw storageError;
+    }
     const { error } = await sup.from("face_scans").delete().eq("id", data.id).eq("user_id", context.userId);
     if (error) throw error;
     return { ok: true };
@@ -144,7 +149,6 @@ const annotation = z.object({
   w: z.number().min(0).max(1).nullable().optional(),
   h: z.number().min(0).max(1).nullable().optional(),
   confidence: z.number().min(0).max(1).nullable().optional(),
-  source: z.enum(["user", "model"]).default("user"),
   notes: z.string().max(2000).nullable().optional(),
 });
 
@@ -152,8 +156,13 @@ export const createAnnotation = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => annotation.parse(d))
   .handler(async ({ data, context }) => {
-    const { data: row, error } = await sb(context.supabase)
-      .from("annotations").insert({ user_id: context.userId, ...data }).select().single();
+    const sup = sb(context.supabase);
+    const { data: scan, error: scanError } = await sup
+      .from("face_scans").select("id").eq("id", data.scan_id).eq("user_id", context.userId).maybeSingle();
+    if (scanError) throw scanError;
+    if (!scan) throw new Error("ScanNotFound");
+    const { data: row, error } = await sup
+      .from("annotations").insert({ user_id: context.userId, ...data, source: "user" }).select().single();
     if (error) throw error;
     return row;
   });

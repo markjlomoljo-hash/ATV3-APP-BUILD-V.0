@@ -19,5 +19,11 @@ export const POST = withSession(async (req, { userId }) => {
   }
 
   const result = await createAndProcessExport(userId, parsed.data.format, parsed.data.scope);
+  if (result.status === "failed") {
+    return NextResponse.json(
+      { ok: false, error: "export_generation_failed", ...result },
+      { status: 500 },
+    );
+  }
   return NextResponse.json({ ok: true, ...result }, { status: 201 });
 });
