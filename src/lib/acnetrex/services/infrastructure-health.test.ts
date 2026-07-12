@@ -27,7 +27,7 @@ describe("infrastructure health contracts", () => {
     expect(summary.status).toBe("schema_mismatch");
     expect(summary.warnings).toContain("canonical_tables_missing");
     expect(summary.warnings).toContain("memory_tables_missing");
-    expect(summary.warnings).toContain("web_compatibility_tables_missing");
+    expect(summary.warnings).not.toContain("web_compatibility_tables_missing");
   });
 
   it("marks the canonical schema ready only when app and memory contracts exist", () => {
@@ -81,7 +81,7 @@ describe("infrastructure health contracts", () => {
       "face_atlas_scans",
       "treatment_checkins",
     ]);
-    expect(summary.warnings).toContain("web_compatibility_tables_missing");
+    expect(summary.warnings).not.toContain("web_compatibility_tables_missing");
   });
 
   it("does not classify Cloud Run placeholder metadata as healthy ML service readiness", () => {

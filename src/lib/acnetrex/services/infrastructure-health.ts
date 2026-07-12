@@ -95,7 +95,6 @@ export function summarizeDatabaseSchema(tableNames: Iterable<string>): SchemaCon
     ...(canonical.missing.length > 0 ? ["canonical_tables_missing"] : []),
     ...(legacy.missing.length > 0 ? ["legacy_operational_tables_missing"] : []),
     ...(memory.missing.length > 0 ? ["memory_tables_missing"] : []),
-    ...(webCompatibility.missing.length > 0 ? ["web_compatibility_tables_missing"] : []),
   ];
 
   const status =
