@@ -7,6 +7,9 @@ const publishableKey = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 if (!url || !publishableKey) {
   throw new Error("mobile_supabase_not_configured");
 }
+if (publishableKey.startsWith("sb_secret_")) {
+  throw new Error("mobile_supabase_secret_key_forbidden");
+}
 
 const secureStorage = {
   getItem: (key: string) => SecureStore.getItemAsync(key),
