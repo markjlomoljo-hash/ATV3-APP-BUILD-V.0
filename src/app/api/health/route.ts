@@ -1,4 +1,9 @@
-import { getDb, getPool, isDatabaseConfigurationError } from "@/db";
+import {
+  getDb,
+  getPool,
+  isDatabaseConfigurationError,
+  isDatabaseTlsConfigurationError,
+} from "@/db";
 import {
   classifyCloudRunHealthPayload,
   summarizeDatabaseSchema,
@@ -100,7 +105,12 @@ function classifyDatabaseFailure(errorCodes: Set<string>): string {
   if (errorCodes.has("ECONNREFUSED")) return "connection_refused";
   if (errorCodes.has("ETIMEDOUT") || errorCodes.has("ETIME")) return "connection_timeout";
   if (errorCodes.has("3D000")) return "database_missing";
-  if ([...errorCodes].some((code) => code.startsWith("CERT_") || code.includes("TLS") || code.includes("SSL"))) {
+  if (
+    [...errorCodes].some((code) => {
+      const normalized = code.toUpperCase();
+      return normalized.includes("CERT") || normalized.includes("TLS") || normalized.includes("SSL");
+    })
+  ) {
     return "tls_failed";
   }
   return "connection_failed";
@@ -148,6 +158,7 @@ async function checkCloudRunHealth() {
 export async function GET() {
   const environment = {
     databaseUrl: envConfigured("DATABASE_URL"),
+    databaseCaCert: envConfigured("SUPABASE_DB_CA_CERT"),
     supabaseUrl: envConfigured("VITE_SUPABASE_URL", "NEXT_PUBLIC_SUPABASE_URL"),
     supabasePublicKey: envConfigured(
       "VITE_SUPABASE_ANON_KEY",
@@ -163,13 +174,10 @@ export async function GET() {
 
   try {
     // Bypass Drizzle for connectivity probe: test directly with pg.Pool
-    let poolConnectionError: unknown = null;
     try {
       const pool = getPool();
-      const result = await pool.query("select 1");
-      // Connection successful
+      await pool.query("select 1");
     } catch (err) {
-      poolConnectionError = err;
       // Log for debugging (server-side only)
       const diagnostics = extractErrorDiagnostics(err);
       const errorCodes = extractErrorCodes(err);
@@ -221,6 +229,25 @@ export async function GET() {
           error: "database_not_configured",
           app: "acnetrex-v3",
           database: { configured: false, status: "not_configured" },
+          environment,
+          cloudRun,
+          updatedAt: new Date().toISOString(),
+        },
+        { status: 503 },
+      );
+    }
+
+    if (isDatabaseTlsConfigurationError(error)) {
+      return Response.json(
+        {
+          ok: false,
+          error: "database_unavailable",
+          app: "acnetrex-v3",
+          database: {
+            configured: true,
+            status: "unavailable",
+            failureCategory: "tls_configuration_invalid",
+          },
           environment,
           cloudRun,
           updatedAt: new Date().toISOString(),
