@@ -46,12 +46,28 @@ function average(values: number[]): number | null {
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length);
 }
 
+function circularMinuteSpread(values: number[]): number | null {
+  if (values.length < 2) return null;
+
+  const sorted = [...values].sort((a, b) => a - b);
+  let largestGap = 0;
+  for (let index = 1; index < sorted.length; index += 1) {
+    largestGap = Math.max(largestGap, sorted[index] - sorted[index - 1]);
+  }
+  largestGap = Math.max(largestGap, sorted[0] + 24 * 60 - sorted[sorted.length - 1]);
+  return 24 * 60 - largestGap;
+}
+
 export function calculateSleepDermFeatures(logs: SleepDermLog[]): SleepDermFeatures {
   if (logs.length === 0) {
     throw new Error("sleep_logs_required");
   }
 
-  const sorted = [...logs].sort((a, b) => a.logDate.localeCompare(b.logDate));
+  // Readiness windows are calendar-day windows. Multiple edits for one date must
+  // not make three entries look like three days of evidence.
+  const byDate = new Map<string, SleepDermLog>();
+  for (const log of logs) byDate.set(log.logDate, log);
+  const sorted = [...byDate.values()].sort((a, b) => a.logDate.localeCompare(b.logDate));
   const latest = sorted[sorted.length - 1];
   const targetMinutes = latest.targetMinutes ?? 480;
   const start = parseClock(latest.bedtime);
@@ -74,7 +90,7 @@ export function calculateSleepDermFeatures(logs: SleepDermLog[]): SleepDermFeatu
     const duration = log.manualDurationMinutes ?? (logEnd <= logStart ? logEnd + 24 * 60 - logStart : logEnd - logStart);
     return (logStart + Math.round(duration / 2)) % (24 * 60);
   });
-  const midpointSpread = midpointValues.length >= 3 ? Math.max(...midpointValues) - Math.min(...midpointValues) : null;
+  const midpointSpread = midpointValues.length >= 3 ? circularMinuteSpread(midpointValues) : null;
 
   return {
     durationMinutes,

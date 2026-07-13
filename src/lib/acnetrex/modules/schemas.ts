@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+const calendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+  const [year, month, day] = value.split("-").map(Number);
+  if (month < 1 || month > 12 || day < 1) return false;
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return day <= daysInMonth[month - 1];
+}, "Invalid calendar date");
+
 export const confidenceSchema = z.enum([
   "insufficient_data",
   "early_hypothesis",
@@ -27,7 +35,7 @@ export const dailyLogKindSchema = z.enum([
 
 export const dailyLogPayloadSchema = z.object({
   kind: dailyLogKindSchema,
-  logDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  logDate: calendarDateSchema,
   values: z.record(z.string(), z.unknown()),
   notes: z.string().max(2000).optional(),
 });
@@ -70,6 +78,13 @@ export const faceAtlasAnnotationSchema = z.object({
   userCertainty: z.number().min(0).max(1),
   source: z.enum(["user", "model"]).default("user"),
   notes: z.string().max(2000).optional(),
+}).superRefine((annotation, context) => {
+  if (annotation.w !== undefined && annotation.x + annotation.w > 1) {
+    context.addIssue({ code: "custom", path: ["w"], message: "Annotation extends beyond the image width" });
+  }
+  if (annotation.h !== undefined && annotation.y + annotation.h > 1) {
+    context.addIssue({ code: "custom", path: ["h"], message: "Annotation extends beyond the image height" });
+  }
 });
 
 export const faceAtlasCaptureSchema = z.object({
@@ -122,8 +137,8 @@ export const cutisAiMessageSchema = z.object({
 export const treatmentPlanDraftSchema = z.object({
   name: z.string().min(1).max(120),
   activeIngredient: z.string().max(120).optional(),
-  startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  reviewDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  startDate: calendarDateSchema,
+  reviewDate: calendarDateSchema.optional(),
   providerDirected: z.boolean().default(false),
   instructions: z.string().max(2000).optional(),
 });

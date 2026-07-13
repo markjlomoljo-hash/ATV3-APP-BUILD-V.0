@@ -60,6 +60,7 @@ export async function createAndProcessExport(
     const { sizeBytes } = await putObject(storageRef, buffer);
 
     await db.insert(exportFiles).values({
+      userId,
       exportRequestId: request.id,
       storageRef,
       mimeType,
@@ -95,7 +96,7 @@ export async function getExportMetadata(
   const [file] = await db
     .select()
     .from(exportFiles)
-    .where(eq(exportFiles.exportRequestId, exportRequestId))
+    .where(and(eq(exportFiles.exportRequestId, exportRequestId), eq(exportFiles.userId, userId)))
     .limit(1);
 
   return {
@@ -121,7 +122,7 @@ export async function listExportHistory(userId: string): Promise<ExportMetadata[
     const [file] = await db
       .select()
       .from(exportFiles)
-      .where(eq(exportFiles.exportRequestId, r.id))
+      .where(and(eq(exportFiles.exportRequestId, r.id), eq(exportFiles.userId, userId)))
       .limit(1);
     results.push({
       id: r.id,
@@ -150,7 +151,7 @@ export async function getExportFile(
   const [file] = await db
     .select()
     .from(exportFiles)
-    .where(eq(exportFiles.exportRequestId, exportRequestId))
+    .where(and(eq(exportFiles.exportRequestId, exportRequestId), eq(exportFiles.userId, userId)))
     .limit(1);
   if (!file) return null;
 

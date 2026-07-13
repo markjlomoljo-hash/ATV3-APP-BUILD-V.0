@@ -49,6 +49,7 @@ export async function retryWithPolicy<T>(
     idempotencyKey?: string;
     signal?: AbortSignal;
     shouldRetry?: (error: unknown) => boolean;
+    retryAfter?: (error: unknown) => string | null | undefined;
   },
 ): Promise<T> {
   const startedAt = Date.now();
@@ -69,9 +70,22 @@ export async function retryWithPolicy<T>(
       const retryable = options.shouldRetry ? options.shouldRetry(error) : classifyRetry(undefined, error) !== null;
       if (!retryable || attempt >= options.policy.maxAttempts) throw error;
       await new Promise<void>((resolve, reject) => {
-        const wait = setTimeout(resolve, retryDelayMs(attempt, options.policy));
+        const remainingDelayBudget = Math.max(
+          0,
+          options.policy.totalDeadlineMs - (Date.now() - startedAt),
+        );
+        const delay = Math.min(
+          retryDelayMs(attempt, options.policy, options.retryAfter?.(error)),
+          remainingDelayBudget,
+        );
+        const cleanup = () => options.signal?.removeEventListener("abort", abort);
+        const wait = setTimeout(() => {
+          cleanup();
+          resolve();
+        }, delay);
         const abort = () => {
           clearTimeout(wait);
+          cleanup();
           reject(options.signal?.reason ?? new DOMException("Aborted", "AbortError"));
         };
         options.signal?.addEventListener("abort", abort, { once: true });
@@ -83,4 +97,3 @@ export async function retryWithPolicy<T>(
   }
   throw lastError ?? new Error("retry_deadline_exhausted");
 }
-

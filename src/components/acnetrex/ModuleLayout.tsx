@@ -30,7 +30,7 @@ export function ModuleReadinessPanel({ checks, title = "Integration readiness" }
         {checks.map((check) => (
           <div key={check.label} className="rounded-lg border border-slate-200 p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <p className="font-semibold text-slate-900">{check.label}</p>
+              <h3 className="font-semibold text-slate-900">{check.label}</h3>
               <StatusBadge status={check.status} />
             </div>
             <p className="mt-2 text-sm leading-6 text-slate-600">{check.detail}</p>
@@ -76,18 +76,18 @@ export function ModuleIntegrationStatus({
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
         <div>
-          <p className="text-sm font-semibold text-slate-900">Needed next</p>
-          <ul className="mt-2 grid gap-2 text-sm leading-6 text-slate-700">
+          <h3 className="text-sm font-semibold text-slate-900">Needed next</h3>
+          <ul className="mt-2 grid list-disc gap-2 pl-5 text-sm leading-6 text-slate-700">
             {missingDataActions.map((item) => (
-              <li key={item}>- {item}</li>
+              <li key={item}>{item}</li>
             ))}
           </ul>
         </div>
         <div>
-          <p className="text-sm font-semibold text-slate-900">Safety rules</p>
-          <ul className="mt-2 grid gap-2 text-sm leading-6 text-slate-700">
+          <h3 className="text-sm font-semibold text-slate-900">Safety rules</h3>
+          <ul className="mt-2 grid list-disc gap-2 pl-5 text-sm leading-6 text-slate-700">
             {safetyNotes.map((item) => (
-              <li key={item}>- {item}</li>
+              <li key={item}>{item}</li>
             ))}
           </ul>
         </div>
@@ -124,7 +124,10 @@ function renderField(field: ModuleFormField) {
     return (
       <label htmlFor={id} className="mt-2 flex items-start gap-3 rounded-md border border-slate-200 bg-slate-50 p-3">
         <input id={id} name={field.name} type="checkbox" className="mt-1 h-4 w-4" />
-        <span className="text-sm text-slate-700">{field.help}</span>
+        <span>
+          <span className="block text-sm font-semibold text-slate-900">{field.label}</span>
+          <span className="mt-1 block text-sm text-slate-700">{field.help}</span>
+        </span>
       </label>
     );
   }
@@ -166,20 +169,21 @@ export function ModuleFormSection({
                 <p className="mt-1 text-xs leading-5 text-slate-500">{field.help}</p>
               </>
             ) : (
-              <>
-                <p className="text-sm font-semibold text-slate-900">{field.label}</p>
-                {renderField(field)}
-              </>
+              renderField(field)
             )}
           </div>
         ))}
         <button
           type="button"
+          disabled
           className="rounded-md border border-slate-300 bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-700"
-          aria-disabled="true"
+          aria-describedby="module-save-requirement"
         >
           Save requires live account persistence
         </button>
+        <p id="module-save-requirement" role="status" className="text-xs leading-5 text-slate-600">
+          Saving remains unavailable until authenticated account persistence is connected.
+        </p>
       </form>
     </section>
   );

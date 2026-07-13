@@ -23,6 +23,31 @@ describe("AcneTrex deterministic module computations", () => {
     expect(features.limitations.join(" ")).toMatch(/No sleep-stage inference/i);
   });
 
+  it("uses circular clock distance for midnight regularity", () => {
+    const features = calculateSleepDermFeatures([
+      { logDate: "2026-07-01", bedtime: "19:50", wakeTime: "04:10" },
+      { logDate: "2026-07-02", bedtime: "20:00", wakeTime: "04:00" },
+      { logDate: "2026-07-03", bedtime: "20:10", wakeTime: "03:50" },
+      { logDate: "2026-07-04", bedtime: "19:55", wakeTime: "04:05" },
+      { logDate: "2026-07-05", bedtime: "20:05", wakeTime: "03:55" },
+      { logDate: "2026-07-06", bedtime: "20:00", wakeTime: "04:00" },
+      { logDate: "2026-07-07", bedtime: "19:50", wakeTime: "04:10" },
+    ]);
+
+    expect(features.circadianReadiness).toBe("ready");
+  });
+
+  it("counts unique calendar days for rolling readiness windows", () => {
+    const features = calculateSleepDermFeatures([
+      { logDate: "2026-07-01", bedtime: "23:00", wakeTime: "07:00" },
+      { logDate: "2026-07-01", bedtime: "23:15", wakeTime: "07:15" },
+      { logDate: "2026-07-02", bedtime: "23:00", wakeTime: "07:00" },
+    ]);
+
+    expect(features.rollingDebt["3d"]).toBeNull();
+    expect(features.sleepRegularityReadiness).toBe("insufficient_data");
+  });
+
   it("keeps DermDiet missing meals explicit and separates snack sub-events", () => {
     const summary = summarizeDermDietDay({
       logDate: "2026-07-05",

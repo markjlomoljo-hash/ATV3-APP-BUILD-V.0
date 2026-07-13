@@ -93,7 +93,9 @@ async function ensureServer() {
         : [nextCli, "start", "--hostname", "127.0.0.1", "--port", port];
 
     server = spawn(command, args, {
-      stdio: "pipe",
+      // Inheriting output avoids a pipe backpressure deadlock and preserves the
+      // server error that explains startup failures in CI.
+      stdio: "inherit",
       env: { ...process.env },
     });
     await waitForServer();
@@ -109,7 +111,13 @@ async function run() {
   const failures = [];
 
   for (const route of routes) {
-    const response = await fetchWithTimeout(`${baseUrl}${route}`);
+    let response;
+    try {
+      response = await fetchWithTimeout(`${baseUrl}${route}`);
+    } catch (error) {
+      failures.push(`${route}: request failed (${error instanceof Error ? error.name : "unknown_error"})`);
+      continue;
+    }
     const html = await response.text();
     const text = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "");
 

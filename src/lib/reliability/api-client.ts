@@ -36,19 +36,27 @@ export async function apiRequest<T>(url: string, options: ApiRequestOptions = {}
         body: options.body === undefined ? undefined : JSON.stringify(options.body),
         signal,
       });
-      const payload = await response.json().catch(() => null);
+      const contentType = response.headers.get("content-type") ?? "";
+      const payload = contentType.includes("application/json")
+        ? await response.json().catch(() => null)
+        : null;
       if (!response.ok) {
         const code = payload?.error?.code ?? payload?.error ?? `http_${response.status}`;
         throw new ApiError(response.status, String(code), response.headers.get("retry-after"));
       }
+      if (response.status === 204) return undefined as T;
+      if (payload === null) throw new ApiError(502, "non_json_response");
       return payload as T;
     },
     {
       policy: mutating ? interactiveMutationPolicy : interactiveReadPolicy,
       idempotencyKey,
       signal: options.signal,
-      shouldRetry: (error) => error instanceof ApiError && classifyRetry(error.status) !== null,
+      shouldRetry: (error) =>
+        error instanceof ApiError
+          ? classifyRetry(error.status) !== null
+          : classifyRetry(undefined, error) !== null,
+      retryAfter: (error) => error instanceof ApiError ? error.retryAfter : null,
     },
   );
 }
-

@@ -22,6 +22,16 @@ import { renderReportPdf } from "./pdf";
 import { RawProfileBundle } from "./types";
 import { recordProfileAuditEvent } from "@/lib/audit";
 
+function postgresErrorCode(error: unknown): string | undefined {
+  let current = error;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof current !== "object" || current === null) return undefined;
+    if ("code" in current && typeof current.code === "string") return current.code;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return undefined;
+}
+
 async function buildRawBundle(userId: string): Promise<RawProfileBundle> {
   const db = getDb();
   const [userRow] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
@@ -123,41 +133,58 @@ export async function createAndProcessReport(
   const db = getDb();
   const profile = await getProfessionalProfile(userId);
 
-  if (idempotencyKey) {
-    const [existing] = await db
-      .select({ id: reportRequests.id, status: reportRequests.status })
-      .from(reportRequests)
-      .where(
-        and(
-          eq(reportRequests.userId, userId),
-          eq(reportRequests.idempotencyKey, idempotencyKey),
-        ),
-      )
-      .limit(1);
-    if (existing) return { reportRequestId: existing.id, status: existing.status };
+  let reservation: {
+    request: typeof reportRequests.$inferSelect;
+    job: typeof reportJobs.$inferSelect;
+  };
+  try {
+    reservation = await db.transaction(async (tx) => {
+      const [request] = await tx
+        .insert(reportRequests)
+        .values({
+          userId,
+          inclusionOptions,
+          status: "processing",
+          idempotencyKey: idempotencyKey ?? null,
+        })
+        .returning();
+
+      const [job] = await tx
+        .insert(reportJobs)
+        .values({
+          userId,
+          reportRequestId: request.id,
+          status: "processing",
+          startedAt: new Date(),
+        })
+        .returning();
+
+      // Capture consent in the same transaction as the request and job so a
+      // queued report can never exist without its ownership/audit snapshot.
+      await tx.insert(reportConsentSnapshots).values({
+        userId,
+        reportRequestId: request.id,
+        consentJson: profile.consent,
+      });
+      return { request, job };
+    });
+  } catch (error) {
+    if (idempotencyKey && postgresErrorCode(error) === "23505") {
+      const [existing] = await db
+        .select({ id: reportRequests.id, status: reportRequests.status })
+        .from(reportRequests)
+        .where(
+          and(
+            eq(reportRequests.userId, userId),
+            eq(reportRequests.idempotencyKey, idempotencyKey),
+          ),
+        )
+        .limit(1);
+      if (existing) return { reportRequestId: existing.id, status: existing.status };
+    }
+    throw error;
   }
-
-  const [request] = await db
-    .insert(reportRequests)
-    .values({
-      userId,
-      inclusionOptions,
-      status: "processing",
-      idempotencyKey: idempotencyKey ?? null,
-    })
-    .returning();
-
-  const [job] = await db
-    .insert(reportJobs)
-    .values({ reportRequestId: request.id, status: "processing", startedAt: new Date() })
-    .returning();
-
-  // Consent snapshot at report time — required for auditability even if
-  // consent later changes.
-  await db.insert(reportConsentSnapshots).values({
-    reportRequestId: request.id,
-    consentJson: profile.consent,
-  });
+  const { request, job } = reservation;
 
   try {
     // Enforce consent: photos can only be requested if the user's current
@@ -179,6 +206,7 @@ export async function createAndProcessReport(
     const { sizeBytes } = await putObject(storageRef, pdfBuffer);
 
     await db.insert(reportFiles).values({
+      userId,
       reportRequestId: request.id,
       storageRef,
       mimeType: "application/pdf",
@@ -226,13 +254,15 @@ export async function getReportMetadata(
   const [file] = await db
     .select()
     .from(reportFiles)
-    .where(eq(reportFiles.reportRequestId, reportRequestId))
+    .where(
+      and(eq(reportFiles.reportRequestId, reportRequestId), eq(reportFiles.userId, userId)),
+    )
     .limit(1);
 
   const [job] = await db
     .select()
     .from(reportJobs)
-    .where(eq(reportJobs.reportRequestId, reportRequestId))
+    .where(and(eq(reportJobs.reportRequestId, reportRequestId), eq(reportJobs.userId, userId)))
     .orderBy(desc(reportJobs.createdAt))
     .limit(1);
 
@@ -259,7 +289,7 @@ export async function listReportHistory(userId: string): Promise<ReportMetadata[
     const [file] = await db
       .select()
       .from(reportFiles)
-      .where(eq(reportFiles.reportRequestId, r.id))
+      .where(and(eq(reportFiles.reportRequestId, r.id), eq(reportFiles.userId, userId)))
       .limit(1);
     results.push({
       id: r.id,
@@ -288,7 +318,9 @@ export async function getReportFileBuffer(
   const [file] = await db
     .select()
     .from(reportFiles)
-    .where(eq(reportFiles.reportRequestId, reportRequestId))
+    .where(
+      and(eq(reportFiles.reportRequestId, reportRequestId), eq(reportFiles.userId, userId)),
+    )
     .limit(1);
   if (!file) return null;
 

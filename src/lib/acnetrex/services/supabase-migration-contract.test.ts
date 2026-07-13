@@ -20,6 +20,12 @@ const writeBoundaryMigrationPath = join(
   "migrations",
   "20260711042855_mobile_backend_write_boundary.sql",
 );
+const trainingLineageBoundaryMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260713020013_revoke_ml_training_runs_client_read.sql",
+);
 
 describe("Supabase migration contract", () => {
   it("defines persistent memory and ML lineage tables with RLS enabled", () => {
@@ -120,5 +126,16 @@ describe("mobile backend write boundary", () => {
     expect(sql).toContain("revoke insert, update, delete on all tables in schema public from authenticated");
     expect(sql).toContain("grant select on all tables in schema public to authenticated");
     expect(sql).toContain("mobile -> fastapi -> supabase");
+  });
+
+  it("keeps ML training lineage behind the service-role boundary", () => {
+    const sql = readFileSync(trainingLineageBoundaryMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain(
+      "revoke all privileges on table public.ml_training_runs from anon, authenticated",
+    );
+    expect(sql).toContain(
+      "grant select, insert, update, delete on table public.ml_training_runs to service_role",
+    );
   });
 });

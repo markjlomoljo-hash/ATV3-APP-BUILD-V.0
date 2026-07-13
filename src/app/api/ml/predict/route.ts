@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
+import { readJsonBodyLimited } from "@/lib/http/read-json-body";
 import { randomUUID } from "node:crypto";
 
 export const dynamic = "force-dynamic";
@@ -68,21 +69,12 @@ export async function POST(req: Request) {
     ? incomingRequestId!
     : randomUUID();
 
-  const contentLength = Number(req.headers.get("content-length") ?? "0");
-  if (Number.isFinite(contentLength) && contentLength > 262_144) {
+  const bodyResult = await readJsonBodyLimited(req, 262_144);
+  if (!bodyResult.ok && bodyResult.error === "payload_too_large") {
     return jsonError("prediction_payload_too_large", 413);
   }
-
-  let body: unknown;
-  try {
-    body = await req.json();
-  } catch {
-    return jsonError("invalid_json_body", 400);
-  }
-
-  if (JSON.stringify(body).length > 262_144) {
-    return jsonError("prediction_payload_too_large", 413);
-  }
+  if (!bodyResult.ok) return jsonError("invalid_json_body", 400);
+  const body = bodyResult.value;
 
   const parsed = predictionRequestSchema.safeParse(body);
   if (!parsed.success) {
@@ -117,7 +109,9 @@ export async function POST(req: Request) {
     });
 
     const contentType = response.headers.get("content-type") ?? "";
-    const payload = contentType.includes("application/json") ? await response.json() : null;
+    const payload = contentType.includes("application/json")
+      ? await response.json().catch(() => null)
+      : null;
 
     if (!payload) {
       return jsonError("ml_api_non_json_response", 503, { upstreamStatus: response.status });

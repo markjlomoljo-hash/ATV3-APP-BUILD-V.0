@@ -11,6 +11,7 @@
 // Center, Gamification, Forecasting, Weather) — here they exist only as
 // minimal, honest persistence targets so Phase 7 never has to invent data.
 import {
+  bigint,
   boolean,
   integer,
   jsonb,
@@ -124,7 +125,7 @@ export const profileAuditEvents = pgTable("profile_audit_events", {
   id: id(),
   userId: text("user_id").notNull(),
   eventType: text("event_type").notNull(),
-  metadataJson: jsonb("metadata_json"),
+  metadataJson: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -270,8 +271,10 @@ export const reportRequests = pgTable(
 
 export const reportJobs = pgTable("report_jobs", {
   id: id(),
+  userId: text("user_id").notNull(),
   reportRequestId: text("report_request_id").notNull(),
   status: text("status").notNull().default("queued"),
+  attemptCount: integer("attempt_count").notNull().default(0),
   startedAt: timestamp("started_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
   failureReason: text("failure_reason"),
@@ -280,18 +283,21 @@ export const reportJobs = pgTable("report_jobs", {
 
 export const reportFiles = pgTable("report_files", {
   id: id(),
+  userId: text("user_id").notNull(),
   reportRequestId: text("report_request_id").notNull(),
-  storageRef: text("storage_ref").notNull(),
+  storageRef: text("storage_path").notNull(),
   mimeType: text("mime_type").notNull().default("application/pdf"),
-  sizeBytes: integer("size_bytes").notNull().default(0),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull().default(0),
+  checksumSha256: text("checksum_sha256"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
 });
 
 export const reportConsentSnapshots = pgTable("report_consent_snapshots", {
   id: id(),
+  userId: text("user_id").notNull(),
   reportRequestId: text("report_request_id").notNull(),
-  consentJson: jsonb("consent_json").notNull(),
+  consentJson: jsonb("consent_snapshot").notNull(),
   capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -303,17 +309,21 @@ export const exportRequests = pgTable("export_requests", {
   id: id(),
   userId: text("user_id").notNull(),
   format: text("format").notNull(), // json | csv
-  scope: text("scope").notNull(), // profile|logs|scans|treatment_plans|tasks|weather|reports|consents|all
+  scope: jsonb("scope").notNull().default({}),
   status: text("status").notNull().default("queued"),
+  idempotencyKey: text("idempotency_key"),
+  failureReason: text("failure_reason"),
   requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const exportFiles = pgTable("export_files", {
   id: id(),
+  userId: text("user_id").notNull(),
   exportRequestId: text("export_request_id").notNull(),
-  storageRef: text("storage_ref").notNull(),
+  storageRef: text("storage_path").notNull(),
   mimeType: text("mime_type").notNull(),
-  sizeBytes: integer("size_bytes").notNull().default(0),
+  sizeBytes: bigint("size_bytes", { mode: "number" }).notNull().default(0),
+  checksumSha256: text("checksum_sha256"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }),
 });
@@ -325,7 +335,7 @@ export const exportFiles = pgTable("export_files", {
 export const deletionRequests = pgTable("deletion_requests", {
   id: id(),
   userId: text("user_id").notNull(),
-  type: text("type").notNull(), // account|data|faceatlas_only|logs_only|reports_only
+  type: text("request_type").notNull(),
   status: text("status").notNull().default("pending"), // pending|scheduled|cancelled|completed
   requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
   scheduledPurgeAt: timestamp("scheduled_purge_at", { withTimezone: true }),
@@ -339,6 +349,6 @@ export const deletionAuditEvents = pgTable("deletion_audit_events", {
   deletionRequestId: text("deletion_request_id").notNull(),
   userId: text("user_id").notNull(),
   eventType: text("event_type").notNull(),
-  metadataJson: jsonb("metadata_json"),
+  metadataJson: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

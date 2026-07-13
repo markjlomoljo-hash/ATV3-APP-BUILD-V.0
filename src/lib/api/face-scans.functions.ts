@@ -150,6 +150,13 @@ const annotation = z.object({
   h: z.number().min(0).max(1).nullable().optional(),
   confidence: z.number().min(0).max(1).nullable().optional(),
   notes: z.string().max(2000).nullable().optional(),
+}).superRefine((value, context) => {
+  if (value.x != null && value.w != null && value.x + value.w > 1) {
+    context.addIssue({ code: "custom", path: ["w"], message: "Annotation extends beyond the image width" });
+  }
+  if (value.y != null && value.h != null && value.y + value.h > 1) {
+    context.addIssue({ code: "custom", path: ["h"], message: "Annotation extends beyond the image height" });
+  }
 });
 
 export const createAnnotation = createServerFn({ method: "POST" })

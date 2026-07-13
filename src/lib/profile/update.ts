@@ -4,8 +4,19 @@ import { profileAuditEvents, profileSections, profileVersionHistory } from "@/db
 import { ProfileSectionKey, ProfileSectionRecord, ProfileVersionEntry } from "@/types/profile";
 import { isVersionedSection, SECTION_METADATA } from "./sections";
 
-function isSerializationFailure(error: unknown): boolean {
-  return typeof error === "object" && error !== null && "code" in error && error.code === "40001";
+function postgresErrorCode(error: unknown): string | undefined {
+  let current = error;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (typeof current !== "object" || current === null) return undefined;
+    if ("code" in current && typeof current.code === "string") return current.code;
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return undefined;
+}
+
+function isRetryableProfileConflict(error: unknown): boolean {
+  const code = postgresErrorCode(error);
+  return code === "40001" || code === "23505";
 }
 
 export async function updateProfileSection(
@@ -85,7 +96,7 @@ export async function updateProfileSection(
         { isolationLevel: "serializable", accessMode: "read write" },
       );
     } catch (error) {
-      if (attempt < 2 && isSerializationFailure(error)) continue;
+      if (attempt < 2 && isRetryableProfileConflict(error)) continue;
       throw error;
     }
   }

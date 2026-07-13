@@ -13,6 +13,7 @@ describe("AcneTrex module schemas", () => {
       kind: "stress",
     });
     expect(() => dailyLogPayloadSchema.parse({ kind: "stress", logDate: "07/05/2026", values: {} })).toThrow();
+    expect(() => dailyLogPayloadSchema.parse({ kind: "stress", logDate: "2026-02-30", values: {} })).toThrow();
   });
 
   it("requires FaceAtlas consent and valid lesion annotation coordinates", () => {
@@ -26,6 +27,19 @@ describe("AcneTrex module schemas", () => {
         zone: "left_cheek",
         x: 1.2,
         y: 0.5,
+        userCertainty: 0.7,
+      }),
+    ).toThrow();
+
+    expect(() =>
+      faceAtlasAnnotationSchema.parse({
+        scanId: "00000000-0000-0000-0000-000000000000",
+        lesionType: "papule",
+        zone: "left_cheek",
+        x: 0.8,
+        y: 0.2,
+        w: 0.3,
+        h: 0.2,
         userCertainty: 0.7,
       }),
     ).toThrow();

@@ -14,7 +14,7 @@ export default function ReadinessScreen() {
       setStates([
         { label: "Backend", value: response.ok ? "ready" : "degraded" },
         { label: "Database", value: body.database?.status ?? "unavailable" },
-        { label: "Cloud ML", value: body.cloudMl?.status ?? "unavailable" }
+        { label: "Cloud ML", value: body.cloudRun?.status ?? "unavailable" }
       ]);
     }).catch(() => setStates([{ label: "Backend", value: "unavailable" }]));
   }, []);

@@ -41,7 +41,14 @@ async function authenticatedRequest(
 
   const send = async (): Promise<Response> => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort("request_timeout"), requestTimeoutMs);
+    const callerSignal = init.signal;
+    const abortFromCaller = () => controller.abort(callerSignal?.reason);
+    if (callerSignal?.aborted) abortFromCaller();
+    else callerSignal?.addEventListener("abort", abortFromCaller, { once: true });
+    const timeout = setTimeout(
+      () => controller.abort(new Error("request_timeout")),
+      requestTimeoutMs,
+    );
     try {
       const response = await fetch(`${apiBase}${path}`, {
         ...init,
@@ -66,6 +73,7 @@ async function authenticatedRequest(
       return response;
     } finally {
       clearTimeout(timeout);
+      callerSignal?.removeEventListener("abort", abortFromCaller);
     }
   };
 
