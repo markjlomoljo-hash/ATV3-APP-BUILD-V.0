@@ -20,6 +20,7 @@ export type ModuleSurface =
   | "service_adapter"
   | "persistence_contract"
   | "ai_contract"
+  | "durable_conversation_api"
   | "readiness_state"
   | "export_state";
 
@@ -463,8 +464,8 @@ export const ACNETREX_MODULES: AcneTrexModule[] = [
     storageBuckets: [],
     serviceStatus: "evidence_unavailable",
     readinessStatus: "not_configured",
-    implementedSurfaces: ["route", "form", "service_adapter", "ai_contract", "readiness_state"],
-    missingSurfaces: ["Backend tool execution", "evidence retrieval service", "conversation table migration"],
+      implementedSurfaces: ["route", "form", "service_adapter", "ai_contract", "readiness_state", "durable_conversation_api"],
+      missingSurfaces: ["Backend tool execution", "evidence retrieval service", "assistant generation worker"],
     nextAction: "Persist conversations and use engine status for honest unavailable responses.",
   },
   {

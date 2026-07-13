@@ -290,3 +290,42 @@ direct prediction against the still-placeholder Cloud Run service:
   placeholder HTML. The CORS preflight also returns placeholder HTML without
   the checked-in API contract headers. Cloud Run deployment remains blocked;
   no Vertex prediction readiness is claimed.
+
+## 2026-07-13 CutisAI durable conversation boundary
+
+Implemented and locally validated the first durable CutisAI conversation path:
+
+- `POST /api/cutisai/conversations` authenticates the Supabase bearer, validates
+  the bounded message schema, requires a scoped idempotency key, checks the
+  existing `consents.personal_learning` field, and records the conversation and
+  user message in one database transaction.
+- `GET /api/cutisai/conversations` and `GET /api/cutisai/conversations/:id`
+  require the same consent and scope every query by the verified Supabase
+  user ID. A missing or foreign conversation returns a non-disclosing 404.
+- Conversation writes are server-side through `getPool()` and the existing
+  idempotency transaction helper. Audit metadata contains requested tool names
+  only; message content is not copied into audit payloads or memory facts.
+- The response deliberately contains no assistant answer. It returns an
+  explicit `assistant_generation_not_configured` state with
+  `evidence_unavailable` until a real backend tool/evidence worker is deployed.
+- The `/cutisai` page now exposes a client conversation panel that loads and
+  saves only with an authenticated Supabase session, and shows explicit
+  `auth_required`, `consent_required`, `database_unavailable`, and
+  `not_configured` states. It does not use browser state as production truth.
+
+### CutisAI validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test -- src/app/api/cutisai/conversations src/lib/acnetrex/memory/conversations.test.ts` | Pass: 3 files, 17 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass: Next.js production build includes both conversation routes |
+| `npm.cmd run lint` | Pass |
+| `npm.cmd run test:e2e` | Pass: route smoke for 66 routes |
+| `git diff --check` | Pass |
+| `GET http://127.0.0.1:3200/api/cutisai/conversations` without bearer | HTTP 401, as required |
+| Playwright visual browser | Not run: the environment has no installed Playwright browser binary |
+
+This proves the server boundary and no-fabrication behavior locally. It does
+not prove a real signed-session write until an authenticated Supabase user
+session is available in the environment.

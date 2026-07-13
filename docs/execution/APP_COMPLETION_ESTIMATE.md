@@ -2,8 +2,8 @@
 
 ## Current estimate
 
-- Starting estimate for the 2026-07-13 infrastructure verification session: 48%
-- Ending estimate: 54%
+- Starting estimate for the current CutisAI persistence session: 54%
+- Ending estimate: 56%
 - Confidence: medium
 
 ## Evidence
@@ -47,25 +47,29 @@
   Vercel Cron-compatible GET trigger can be used by an approved external
   scheduler; Vercel's plan check rejected a five-minute `vercel.json` Cron
   declaration, so no scheduled production execution is claimed.
+- CutisAI now has an authenticated, consent-gated, idempotent conversation
+  persistence boundary with owner-scoped list/detail reads and an honest
+  assistant-not-configured response. The `/cutisai` UI consumes that boundary
+  without fabricating assistant content.
 
 ## Category breakdown
 
 | Category | Estimate | Evidence | Main blocker |
 |---|---:|---|---|
 | Auth/onboarding/profile/consent | 6.5/10 | Routes and contracts present; prior account/profile work remains | live signed-session validation |
-| Supabase/database/storage contracts | 8.25/12 | production `/api/health` confirms DB connectivity and complete canonical, compatibility, memory, ML-lineage, and RBAC schema groups; ML job/outbox writes are now transactionally contracted | signed-session write/read proof, durable memory writes, export/deletion workflows |
+| Supabase/database/storage contracts | 8.75/12 | production `/api/health` confirms DB connectivity and complete canonical, compatibility, memory, ML-lineage, and RBAC schema groups; ML job/outbox and CutisAI conversation writes are transactionally contracted | signed-session write/read proof, durable memory facts, export/deletion workflows |
 | Core logging modules | 7/12 | all log routes represented; SleepDerm and DermDiet have deterministic computation contracts | live writes and feature snapshots for secondary logs |
 | FaceAtlas | 5.25/12 | capture/history/annotation routes, schemas, workflow UI, and capture-readiness adapter | live camera/upload/inference |
 | AI/ML, TriggerGraph, Forecasting, Skin Twin | 8.75/15 | AI workspace, readiness, Skin Twin schemas/routes/forms, bounded ML proxy, durable queued-job/status boundary, leased worker/result persistence source | Cloud Run/Vertex/local model execution and live worker scheduler |
-| CutisAI/evidence/memory | 4/8 | CutisAI route, message schema, memory/evidence readiness body, production memory schema readiness, `/api/cutisai/memory/status` | backend tools, evidence, conversation persistence |
+| CutisAI/evidence/memory | 5/8 | CutisAI route, validated conversation UI, authenticated consent-gated conversation create/list/detail APIs, production memory schema readiness, `/api/cutisai/memory/status` | backend tools, evidence retrieval, assistant generation, memory fact extraction |
 | Treatment/task/gamification | 4.25/8 | treatment/check-in/task route bodies, task credit no-fake adapter | durable task generation and streak rules |
 | Reports/exports/profile | 4/8 | report/export/profile routes, schemas, request/history bodies, missing-data report readiness | PDF/export storage verification |
 | Native mobile/device readiness | 2.25/7 | native readiness route plus SecureStore-compatible Supabase auth storage adapter | Expo/device validation and offline queue |
-| Testing/security/release | 6.5/8 | 130 unit tests after durable ML worker/job, Vercel Cron trigger, and prediction safety-gate coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, runtime error inspection | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
+| Testing/security/release | 6.75/8 | 147 unit tests after durable CutisAI conversation coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, runtime error inspection | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
 
 ## Remaining release blockers
 
-- Supabase signed-session write/read validation and durable memory write proof are still needed; schema and database connectivity are verified.
+- Supabase signed-session write/read validation for a real user and durable memory-fact extraction are still needed; the server conversation boundary is implemented and locally tested, while schema and database connectivity are verified.
 - Vercel production deployment is green, but `/api/health` remains HTTP 503 until Cloud Run serves the checked-in ML contract and Clerk/worker production configuration is supplied.
 - Cloud Run `mlatv` still needs source deployment and endpoint verification.
 - Vertex endpoint readiness is still unverified.
@@ -73,4 +77,4 @@
 
 ## Why not 75-80% yet
 
-The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 54%.
+The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 56%.

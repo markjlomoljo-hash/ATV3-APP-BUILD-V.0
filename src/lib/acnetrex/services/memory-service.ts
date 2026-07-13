@@ -2,9 +2,9 @@ import type { ModuleResult } from "../module-result";
 import { unavailableResult } from "../module-result";
 
 /**
- * Memory service provides persistence for CutisAI conversations and intelligence events.
- * During Phase 7, Supabase memory tables are not yet configured. All methods
- * return a memory_not_configured state to ensure honest unavailability.
+ * Generic fact/summary mutation is intentionally still unavailable until its
+ * extraction and retrieval contracts are implemented. CutisAI conversation
+ * persistence is exposed separately through the authenticated conversation API.
  */
 
 export async function writeMemoryEvent(): Promise<ModuleResult<never>> {

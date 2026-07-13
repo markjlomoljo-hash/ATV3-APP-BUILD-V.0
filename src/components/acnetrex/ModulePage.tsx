@@ -11,6 +11,7 @@ import {
   ModuleReadinessPanel,
 } from "@/components/acnetrex/ModuleLayout";
 import { HonestStatePanel, MedicalSafetyNotice, StatusBadge } from "@/components/acnetrex/StatusPanels";
+import { CutisAiConversationPanel } from "@/components/acnetrex/CutisAiConversationPanel";
 
 function ModuleCard({ module }: { module: AcneTrexModule }) {
   return (
@@ -114,17 +115,23 @@ export function ModulePage({ module }: { module: AcneTrexModule }) {
           <section className="grid gap-4">
             <MedicalSafetyNotice />
 
-            <ModuleActionCard
-              title={workflow.formTitle}
-              description={workflow.formDescription}
-              action={workflow.primaryAction}
-            />
+            {module.id === "cutisai" ? (
+              <CutisAiConversationPanel />
+            ) : (
+              <>
+                <ModuleActionCard
+                  title={workflow.formTitle}
+                  description={workflow.formDescription}
+                  action={workflow.primaryAction}
+                />
 
-            <ModuleFormSection
-              title={workflow.formTitle}
-              description={workflow.formDescription}
-              fields={workflow.fields}
-            />
+                <ModuleFormSection
+                  title={workflow.formTitle}
+                  description={workflow.formDescription}
+                  fields={workflow.fields}
+                />
+              </>
+            )}
 
             <ModuleReadinessPanel checks={workflow.integrationChecks} />
 
