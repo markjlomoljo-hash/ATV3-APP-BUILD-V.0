@@ -23,6 +23,8 @@ Source: the controlling ML execution objective and supplied foundation, not a se
 | Python and TypeScript sleep features match | `a04b7e7` (missing/different parity fields) | `ab04eb5` | shared `sleep-parity.json` fixture in both suites |
 | Deterministic engines reject predictive fabrication | `60d52fd` (five forbidden fields accepted) | `2f5ea37` | `test_safety_contract.py` |
 | Training cannot start without an approved immutable snapshot | `47603b2` (training module absent) | `2952750` | `test_training_gate.py` and blocked CLI run |
+| Service compatibility jobs complete/replay instead of remaining queued | `3e05324` | `a9dbc02` | completed job create/get/replay integration test |
+| Service job timeouts persist a retryable terminal state | `41cac3f` (500 and queued row) | `8457a79` | timeout create/get integration test |
 
 ## Validation evidence
 
@@ -30,7 +32,7 @@ Source: the controlling ML execution objective and supplied foundation, not a se
 - `npm run test:coverage -- --reporter=dot`: 81.62% statements, 84.46% functions, 86.7% lines; branch coverage is 68.19%.
 - `npm run typecheck`, `npm run lint`, and `npm run build -- --webpack`: passed.
 - `npm run test:e2e`: 66 route smoke checks passed.
-- Python Ruff check/format and pytest: 19 tests passed.
+- Python Ruff check/format and pytest: 21 tests passed.
 - Mobile clean `npm ci` and `npm run typecheck`: passed.
 - Mobile Expo config/native build-tool API check passed; production npm audit reports zero vulnerabilities after the pinned `uuid@11.1.1` override.
 
