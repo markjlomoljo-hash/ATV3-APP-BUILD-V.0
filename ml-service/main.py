@@ -60,6 +60,16 @@ def vertex_config() -> VertexConfig:
     )
 
 
+def prediction_timeout_seconds() -> float:
+    """Return a bounded Vertex RPC timeout so unavailable services fail promptly."""
+    raw_value = os.getenv("VERTEX_AI_TIMEOUT_SECONDS", "20")
+    try:
+        value = float(raw_value)
+    except (TypeError, ValueError):
+        return 20.0
+    return min(max(value, 1.0), 60.0)
+
+
 def default_instance(request: PredictionRequest) -> dict[str, Any]:
     return {
         "engine": request.engine,
@@ -158,6 +168,7 @@ def predict(
             endpoint=endpoint,
             instances=request.instances or [default_instance(request)],
             parameters=request.parameters or {},
+            timeout=prediction_timeout_seconds(),
         )
         response_dict = MessageToDict(response._pb, preserving_proto_field_name=True)
     except Exception as exc:

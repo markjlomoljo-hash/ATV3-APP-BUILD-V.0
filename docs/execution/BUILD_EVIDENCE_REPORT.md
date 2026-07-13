@@ -155,3 +155,46 @@ Implemented code-level fixes for the current live blockers while preserving fail
 | `npm.cmd run build` | Pass |
 | `npm.cmd run lint` | Pass with 4 pre-existing warnings |
 | `npm.cmd run test:e2e` | First attempt server readiness timeout; rerun passed 44 routes |
+
+## 2026-07-13 Production Infrastructure Verification
+
+Verified the live state after rebasing onto the current remote branch and pushing
+`c653f1f fix(supabase): harden canonical migration and db diagnostics`:
+
+- Vercel deployment `dpl_9NWN2788BKxEKXMzUZ7Fgu5qr9XR` for `c653f1f` reached
+  `READY` on the production target.
+- Production `https://atv-3-app-build-v-0.vercel.app/api/health` returned HTTP
+  503 for the correct reason: Supabase is connected and schema-ready, but the
+  Cloud Run health payload is still the provider placeholder metadata.
+- Production database diagnostics reported connected status with no missing
+  canonical, legacy, web-compatibility, or persistent-memory tables. The live
+  schema includes the memory, ML lineage, CutisAI conversation, and Clerk/RBAC
+  table groups required by the current server contracts.
+- Production `https://atv-3-app-build-v-0.vercel.app/api/cutisai/memory/status`
+  returned HTTP 200 with all expected memory tables present and evidence
+  retrieval marked ready. This is schema readiness, not proof that a user
+  conversation has been persisted.
+- Cloud Run `https://mlatv-pudz4xjzxa-ew.a.run.app/` and `/health` both returned
+  HTTP 200 provider placeholder HTML, not the checked-in FastAPI contract. The
+  app correctly classifies this as degraded and the ML proxy fails closed.
+- Added a bounded `VERTEX_AI_TIMEOUT_SECONDS` setting (default 20 seconds,
+  clamped to 1-60 seconds) to the FastAPI Vertex request and propagated it
+  through `cloudbuild.yaml`. This prevents an unavailable endpoint from
+  hanging a Cloud Run request indefinitely.
+- Vercel runtime error inspection for `/api/health`, `/api/ml/predict`, and
+  `/api/cutisai/memory/status` returned no runtime error clusters in the
+  inspected window.
+
+### 2026-07-13 validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test` | Pass: 20 files, 99 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass: Next.js production build |
+| `npm.cmd run lint` | Pass |
+| `npm.cmd run test:coverage` | Pass: 99 tests; 77.23% statements, 72.83% branches |
+| `npm.cmd run test:e2e` | Pass: route smoke for 66 routes |
+| `git diff --check` | Pass |
+| Python ML tests | Not run: Python is not installed on this workstation |
+| Cloud Run root/health | HTTP 200 placeholder HTML; blocked deployment state |
