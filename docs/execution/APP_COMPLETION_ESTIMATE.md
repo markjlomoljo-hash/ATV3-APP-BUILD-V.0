@@ -2,8 +2,8 @@
 
 ## Current estimate
 
-- Starting estimate for the current report workflow session: 59%
-- Ending estimate: 60%
+- Starting estimate for the current treatment workflow session: 60%
+- Ending estimate: 62%
 - Confidence: medium
 
 ## Evidence
@@ -68,25 +68,29 @@
   the existing authenticated report APIs. Requests use idempotency, history
   exposes persisted worker failures, and report endpoints fail closed with
   typed database-unavailable responses.
-- Vercel deployment `dpl_5FE7q9nwUESTEu9xXgWzpjGYtm3z` is `READY` from
-  `739efa1`; production `/reports` returns HTTP 200. Production health still
+- Vercel deployment `dpl_DtEAwMbUCNBRAUaLqzC4BcUBbHwM` is `READY` from
+  `83614ac`; production `/reports` and `/treatments` return HTTP 200. Production health still
   reports `503` because Cloud Run is the provider placeholder and the ML
   worker/Clerk configuration is absent.
+- Treatment plans and check-ins now use the live canonical Supabase column
+  contract, with owner-scoped authenticated CRUD, idempotent writes, provider
+  safety gating, and a client history/check-in workflow. Task generation and
+  gamification remain separate incomplete capabilities.
 
 ## Category breakdown
 
 | Category | Estimate | Evidence | Main blocker |
 |---|---:|---|---|
 | Auth/onboarding/profile/consent | 6.5/10 | Routes and contracts present; prior account/profile work remains | live signed-session validation |
-| Supabase/database/storage contracts | 9.25/12 | production `/api/health` confirms DB connectivity; live FaceAtlas zone and Skin Twin scenario migrations plus memory/ML lineage schema are present; ML job/outbox and CutisAI conversation writes are transactionally contracted | signed-session write/read proof, durable memory facts, export/deletion workflows |
+| Supabase/database/storage contracts | 9.5/12 | production `/api/health` confirms DB connectivity; live FaceAtlas zone and Skin Twin scenario migrations plus memory/ML lineage schema are present; canonical treatment/report mappings were checked against live columns | signed-session write/read proof, durable memory facts, export/deletion workflows |
 | Core logging modules | 7/12 | all log routes represented; SleepDerm and DermDiet have deterministic computation contracts | live writes and feature snapshots for secondary logs |
 | FaceAtlas | 6.25/12 | authenticated scan metadata and detail/history APIs, consent-gated raw-retention request, user-only zone annotations, live `annotations.zone` migration, and capture UI | signed upload/finalization, camera, cloud lesion inference, image quality validation |
 | AI/ML, TriggerGraph, Forecasting, Skin Twin | 9.75/15 | AI workspace, readiness, Skin Twin readiness-gated scenario persistence, worker result finalization, bounded ML proxy, durable queued-job/status boundary, leased worker/result persistence source | Cloud Run/Vertex/local model execution and live worker scheduler |
 | CutisAI/evidence/memory | 5/8 | CutisAI route, validated conversation UI, authenticated consent-gated conversation create/list/detail APIs, production memory schema readiness, `/api/cutisai/memory/status` | backend tools, evidence retrieval, assistant generation, memory fact extraction |
-| Treatment/task/gamification | 4.25/8 | treatment/check-in/task route bodies, task credit no-fake adapter | durable task generation and streak rules |
+| Treatment/task/gamification | 5.25/8 | owner-scoped treatment plan/check-in CRUD, provider-directed safety gate, idempotent routes, live-schema alignment, and client history workflow; task credit remains no-fake | durable task generation, task completion persistence, streak/badge/rank rules |
 | Reports/exports/profile | 4.75/8 | report/export/profile routes, validated request form, authenticated history, owner-scoped PDF download boundary, persisted worker failure visibility, missing-data report readiness | production PDF/object storage verification and signed-download validation |
 | Native mobile/device readiness | 2.25/7 | native readiness route plus SecureStore-compatible Supabase auth storage adapter | Expo/device validation and offline queue |
-| Testing/security/release | 7.25/8 | 176 unit tests, 81.32% statement coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment from `739efa1`, live migration verification | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
+| Testing/security/release | 7.25/8 | 196 unit tests, 81.89% statement coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, live schema inspection | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
 
 ## Remaining release blockers
 
@@ -94,9 +98,9 @@
 - Vercel production deployment is green, but `/api/health` remains HTTP 503 until Cloud Run serves the checked-in ML contract and Clerk/worker production configuration is supplied.
 - Cloud Run `mlatv` still needs source deployment and endpoint verification.
 - Vertex endpoint readiness is still unverified.
-- Native SecureStore adapter exists, but Expo/device validation, offline queue, production FaceAtlas inference, Skin Twin simulation, CutisAI tools, report export worker, and treatment/task generation remain incomplete.
+- Native SecureStore adapter exists, but Expo/device validation, offline queue, production FaceAtlas inference, Skin Twin simulation, CutisAI tools, report export worker, and treatment task generation remain incomplete. Treatment plan/check-in persistence is implemented; generated tasks are not.
 - FaceAtlas currently stops at `pending_upload`; no raw bytes, model detections, Skin Twin projection, or clinical interpretation are generated by this slice.
 
 ## Why not 75-80% yet
 
-The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 60%.
+The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 62%.

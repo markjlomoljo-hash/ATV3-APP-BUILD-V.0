@@ -81,6 +81,47 @@ Commands were run with local Node tooling from `.tooling/node-v22.23.1-win-x64` 
 | `GET https://atv-3-app-build-v-0.vercel.app/reports` | HTTP 200 |
 | `GET https://atv-3-app-build-v-0.vercel.app/api/health` | HTTP 503 with DB connected and ML/Clerk blockers classified |
 
+## 2026-07-13 Treatment plan and check-in workflow
+
+- Aligned the Drizzle `treatment_plans` mapping and report compiler with the
+  live Supabase schema (`title`, `description`, `schedule`, `started_at`, and
+  `ended_at`). This prevents production report compilation from selecting the
+  obsolete pre-canonical fields.
+- Added owner-scoped treatment plan and check-in services and authenticated
+  `GET`/idempotent `POST` routes. Plans require an explicitly
+  provider-directed source; the app records clinician-supplied plans but does
+  not generate treatment recommendations.
+- Added a client workflow to `/treatments`, `/treatments/checkins`, and
+  `/log/treatment` for plan entry, check-ins, and persisted history. Database,
+  authentication, validation, safety, not-found, and idempotency failures are
+  rendered as typed states rather than success placeholders.
+- Read-only Supabase inspection confirmed the live `treatment_plans`,
+  `treatment_checkins`, and `treatment_tasks` columns before changing the
+  application mapping. No remote schema mutation was required for this
+  compatibility fix.
+- Vercel deployment `dpl_DtEAwMbUCNBRAUaLqzC4BcUBbHwM` reached `READY` from
+  commit `83614ac` and production `/treatments` returned HTTP 200 with the
+  treatment plan/check-in workflow rendered. Production `/api/health` remains
+  HTTP 503 only because the Cloud Run provider placeholder, disabled ML
+  worker, and unconfigured Clerk continue to be reported.
+
+### Treatment workflow validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test -- src/app/api/treatments/plans/route.test.ts src/app/api/treatments/checkins/route.test.ts src/lib/acnetrex/treatment/plans.test.ts` | Pass: 3 files, 20 tests |
+| `npm.cmd test` | Pass: 38 files, 196 tests |
+| `npm.cmd run test:coverage` | Pass: 81.89% statements, 70.48% branches |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass: treatment plan/check-in routes included |
+| `npm.cmd run lint` | Pass |
+| `npm.cmd run test:e2e` | Pass: 66-route smoke |
+| `git diff --check` | Pass |
+
+The remaining live blocker is authenticated user-session write verification;
+the production database is reachable and the schema is present, but no test
+user bearer session was available for a live write/read assertion.
+
 ## Scan results
 
 - Secret scan: no committed plaintext production secret found in new code. Findings are documentation placeholders, lockfile package names, or server-boundary env references.
