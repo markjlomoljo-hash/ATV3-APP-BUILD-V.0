@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import { getPool } from "@/db";
 import { hasPredictionPayload, isRecord, type MlAnalysisRequest } from "@/lib/acnetrex/ml-analysis-jobs";
+import { inferenceRequestSchema } from "../../../packages/ml-local-runtime/src/contracts";
 
 type WorkerFetcher = typeof fetch;
 
@@ -17,6 +18,9 @@ type ClaimedJob = {
   features: unknown;
   featureSchemaVersion: string | null;
   appVersion: string | null;
+  personalProcessing: boolean;
+  rawImageProcessing: boolean;
+  anonymousLearning: boolean;
   attemptCount: number;
   maxAttempts: number;
 };
@@ -68,6 +72,48 @@ function skinTwinSnapshotId(job: ClaimedJob): string | null {
   return uuidOrNull(job.features.snapshotId);
 }
 
+function canonicalTask(engine: ClaimedJob["engine"], operation: string): string {
+  const tasks: Record<ClaimedJob["engine"], string> = {
+    faceatlas: operation === "capture_quality" ? "capture_quality" : "lesion_analysis",
+    sleepderm: "sleep_pattern_analysis",
+    dermdiet: "daily_completeness",
+    triggergraph: "association_analysis",
+    forecast: "readiness",
+    skin_twin: "scenario_validation",
+    cutisai: "evidence_assistance",
+  };
+  return tasks[engine];
+}
+
+function canonicalInputRecordRefs(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!isRecord(item) || typeof item.table !== "string" || typeof item.id !== "string") return [];
+    const reference = `${item.table}:${item.id}`;
+    return /^[a-z][a-z0-9_]{0,79}:[A-Za-z0-9-]{1,160}$/.test(reference) ? [reference] : [];
+  });
+}
+
+function canonicalRequest(job: ClaimedJob) {
+  return inferenceRequestSchema.parse({
+    contract_version: "1.0.0",
+    request_id: job.jobId,
+    idempotency_key: job.jobId,
+    module: job.engine,
+    task: canonicalTask(job.engine, job.operation),
+    runtime_preference: "cloud",
+    feature_schema_version: "1.0.0",
+    input_record_refs: canonicalInputRecordRefs(job.inputRecordRefs),
+    inputs: isRecord(job.features) ? job.features : {},
+    context: { timezone: "UTC", locale: "en" },
+    consent: {
+      personal_processing: job.personalProcessing,
+      raw_image_processing: job.rawImageProcessing,
+      anonymous_learning: job.anonymousLearning,
+    },
+  });
+}
+
 function failureReason(status: number, payload: unknown): string {
   if (isRecord(payload) && typeof payload.error === "string" && payload.error.length <= 160) return payload.error;
   return `ml_upstream_http_${status}`;
@@ -83,9 +129,12 @@ async function claimNext(client: PoolClient, workerId: string): Promise<ClaimedJ
        select o.id as "outboxId", o.aggregate_id as "jobId", o.attempt_count as "attemptCount",
               o.max_attempts as "maxAttempts", j.user_id as "userId", j.engine, j.operation,
               j.input_record_refs as "inputRecordRefs", j.features, j.feature_schema_version as "featureSchemaVersion",
-              j.app_version as "appVersion"
+              j.app_version as "appVersion", c.consented_at is not null as "personalProcessing",
+              coalesce(c.raw_image_retention, false) as "rawImageProcessing",
+              coalesce(c.anonymous_learning, false) as "anonymousLearning"
        from public.outbox_events o
        join public.ml_analysis_jobs j on j.id::text = o.aggregate_id
+       left join public.consents c on c.user_id = j.user_id
        where o.event_type = 'ml.analysis.requested'
          and (o.status = 'pending' or (o.status = 'processing' and o.lease_expires_at < now()))
          and o.next_attempt_at <= now() and j.status = 'queued'
@@ -99,7 +148,8 @@ async function claimNext(client: PoolClient, workerId: string): Promise<ClaimedJ
      from candidate c where o.id=c."outboxId"
      returning c."outboxId", c."jobId", c."attemptCount" + 1 as "attemptCount",
                c."maxAttempts", c."userId", c.engine, c.operation, c."inputRecordRefs",
-               c.features, c."featureSchemaVersion", c."appVersion"`,
+               c.features, c."featureSchemaVersion", c."appVersion", c."personalProcessing",
+               c."rawImageProcessing", c."anonymousLearning"`,
     [workerId],
   );
   const job = result.rows[0];
@@ -222,16 +272,10 @@ async function processClaimedJob(client: PoolClient, job: ClaimedJob, fetcher: W
         "content-type": "application/json",
         accept: "application/json",
         authorization: `Bearer ${cloud.secret}`,
-        "idempotency-key": `worker:${job.jobId}`,
-        "x-request-id": `ml-worker:${job.jobId}`,
+        "idempotency-key": job.jobId,
+        "x-request-id": job.jobId,
       },
-      body: JSON.stringify({
-        engine: job.engine,
-        operation: job.operation,
-        inputRecordRefs: job.inputRecordRefs ?? [],
-        features: job.features ?? {},
-        metadata: { featureSchemaVersion: job.featureSchemaVersion, appVersion: job.appVersion },
-      }),
+      body: JSON.stringify(canonicalRequest(job)),
       signal: controller.signal,
     });
     const contentType = response.headers.get("content-type") ?? "";

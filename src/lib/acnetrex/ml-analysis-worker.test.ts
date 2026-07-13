@@ -72,7 +72,7 @@ describe("ML analysis worker", () => {
   it("persists a real upstream payload before closing the outbox event", async () => {
     claimQueries();
     let commitSeenBeforeFetch = false;
-    const fetcher = vi.fn(async () => {
+    const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => {
       commitSeenBeforeFetch = fakeClient.query.mock.calls.some(([sql]) => String(sql) === "commit");
       return upstream({
         ok: true,
