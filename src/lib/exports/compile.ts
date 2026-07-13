@@ -7,7 +7,7 @@ import {
   profileSections,
   profileVersionHistory,
   reportRequests,
-  tasks,
+  treatmentTasks,
   treatmentCheckins,
   treatmentPlans,
   weatherSnapshots,
@@ -29,7 +29,7 @@ async function collectAll(userId: string): Promise<ExportBundle> {
       db.select().from(weatherSnapshots).where(eq(weatherSnapshots.userId, userId)),
       db.select().from(reportRequests).where(eq(reportRequests.userId, userId)),
       db.select().from(consentSettings).where(eq(consentSettings.userId, userId)),
-      db.select().from(tasks).where(eq(tasks.userId, userId)),
+      db.select().from(treatmentTasks).where(eq(treatmentTasks.userId, userId)),
     ]);
 
   return {

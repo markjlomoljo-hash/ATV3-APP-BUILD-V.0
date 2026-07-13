@@ -1,30 +1,36 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { badges, streakState, tasks } from "@/db/schema";
+import { badges, gamification, treatmentTasks, userBadges } from "@/db/schema";
 import { GamificationSummary } from "@/types/profile";
 
 /** Reads only — Phase 7 surfaces gamification state, it does not compute it. */
 export async function computeGamificationSummary(userId: string): Promise<GamificationSummary> {
   const db = getDb();
-  const streakRows = await db
+  const gamificationRows = await db
     .select()
-    .from(streakState)
-    .where(eq(streakState.userId, userId))
+    .from(gamification)
+    .where(eq(gamification.userId, userId))
     .limit(1);
-  const badgeRows = await db.select().from(badges).where(eq(badges.userId, userId));
-  const taskRows = await db.select().from(tasks).where(eq(tasks.userId, userId));
+  const badgeRows = await db
+    .select({ code: badges.code })
+    .from(userBadges)
+    .innerJoin(badges, eq(userBadges.badgeId, badges.id))
+    .where(eq(userBadges.userId, userId));
+  const taskRows = await db
+    .select({ completedAt: treatmentTasks.completedAt })
+    .from(treatmentTasks)
+    .where(eq(treatmentTasks.userId, userId));
 
-  const completedTasks = taskRows.filter((t) => t.completed);
-  const totalPoints = completedTasks.reduce((sum, t) => sum + t.points, 0);
-
-  const streak = streakRows[0];
+  const state = gamificationRows[0];
 
   return {
-    currentStreak: streak?.currentStreak ?? 0,
-    longestStreak: streak?.longestStreak ?? 0,
-    totalPoints,
+    currentStreak: state?.currentStreak ?? 0,
+    longestStreak: state?.longestStreak ?? 0,
+    // Points are authoritative in gamification. treatment_tasks intentionally
+    // has no points column, so this reader must not derive or invent them.
+    totalPoints: state?.points ?? 0,
     badgeCount: badgeRows.length,
-    badges: badgeRows.map((b) => b.badgeKey),
-    insufficientData: taskRows.length === 0 && badgeRows.length === 0,
+    badges: badgeRows.map((b) => b.code),
+    insufficientData: !state && taskRows.length === 0 && badgeRows.length === 0,
   };
 }

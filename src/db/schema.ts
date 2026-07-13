@@ -4,7 +4,8 @@
 // versioned profile sections, consent, reports, exports, and account/data
 // deletion. It intentionally includes minimal read-only "source" tables
 // (daily_logs, face_atlas_scans, treatment_plans, treatment_checkins,
-// trigger_hypotheses, forecast_summaries, tasks, streak_state, badges,
+// trigger_hypotheses, forecast_summaries, treatment_tasks, gamification,
+// badges, user_badges,
 // weather_snapshots) so that report generation and exports operate on real
 // persisted records rather than fabricated data. Those source domains are
 // owned by other phases in the full product (FaceAtlas, Treatment Plan
@@ -188,6 +189,18 @@ export const treatmentCheckins = pgTable("treatment_checkins", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+export const treatmentTasks = pgTable("treatment_tasks", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  planId: uuid("plan_id").notNull(),
+  userId: uuid("user_id").notNull(),
+  taskName: text("task_name").notNull(),
+  dueAt: timestamp("due_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  skipped: boolean("skipped").notNull().default(false),
+  metadata: jsonb("metadata"),
+  ...timestamps,
+});
+
 export const triggerHypotheses = pgTable("trigger_hypotheses", {
   id: id(),
   userId: text("user_id").notNull(),
@@ -208,32 +221,33 @@ export const forecastSummaries = pgTable("forecast_summaries", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const tasks = pgTable("tasks", {
-  id: id(),
-  userId: text("user_id").notNull(),
-  taskDate: text("task_date").notNull(),
-  taskType: text("task_type").notNull(),
-  points: integer("points").notNull().default(0),
-  completed: boolean("completed").notNull().default(false),
-  completedAt: timestamp("completed_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const streakState = pgTable("streak_state", {
-  id: id(),
-  userId: text("user_id").notNull().unique(),
+export const gamification = pgTable("gamification", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull(),
   currentStreak: integer("current_streak").notNull().default(0),
   longestStreak: integer("longest_streak").notNull().default(0),
-  lastCompletedDate: text("last_completed_date"),
-  restoresUsedThisMonth: integer("restores_used_this_month").notNull().default(0),
-  restoreMonth: text("restore_month"),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  points: integer("points").notNull().default(0),
+  rank: text("rank"),
+  petStage: text("pet_stage").notNull().default("seed"),
+  petXp: integer("pet_xp").notNull().default(0),
+  lastActionAt: timestamp("last_action_at", { withTimezone: true }),
+  ...timestamps,
 });
 
 export const badges = pgTable("badges", {
-  id: id(),
-  userId: text("user_id").notNull(),
-  badgeKey: text("badge_key").notNull(),
+  id: uuid("id").defaultRandom().primaryKey(),
+  code: text("code").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  icon: text("icon"),
+  criteria: jsonb("criteria"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const userBadges = pgTable("user_badges", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull(),
+  badgeId: uuid("badge_id").notNull(),
   earnedAt: timestamp("earned_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
