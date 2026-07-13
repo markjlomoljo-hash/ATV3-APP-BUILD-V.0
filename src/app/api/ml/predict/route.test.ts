@@ -53,6 +53,18 @@ describe("POST /api/ml/predict safety and proxy contract", () => {
     vi.unstubAllGlobals();
   });
 
+  it("deprecates the competing direct proxy in favor of durable ML jobs", async () => {
+    const response = await POST(request());
+
+    expect(response.status).toBe(410);
+    expect(await response.json()).toEqual({
+      ok: false,
+      error: "direct_ml_prediction_deprecated",
+      replacement: "/api/ml/jobs",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("does not enable the proxy by default", async () => {
     vi.stubEnv("ML_PROXY_ENABLED", "false");
     const response = await POST(new Request("https://example.test", { method: "POST" }));
