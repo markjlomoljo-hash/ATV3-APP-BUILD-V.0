@@ -20,6 +20,26 @@ Commands were run with local Node tooling from `.tooling/node-v22.23.1-win-x64` 
 |---|---|
 | `npm.cmd test` | Pass: 2 files, 7 tests |
 | `npm.cmd run typecheck` | Pass |
+
+## 2026-07-13 Post-push deployment verification for `fde143a`
+
+- Pushed `fde143a feat(ml): add durable analysis job boundary` to
+  `origin/feat/phase7-profile-reports`.
+- Vercel deployment `dpl_G12ftRosfykvD35bPg7GSr6T8qU1` reached `READY` for the
+  production target and was aliased to `https://atv-3-app-build-v-0.vercel.app`.
+- Vercel build-log inspection returned only `Build Completed in
+  /vercel/output [34s]`; GitHub combined status for the commit is `Vercel:
+  success`; no Vercel runtime-error clusters were reported in the inspected
+  hour.
+- Production `/api/health` returned HTTP 503 with database `connected` and all
+  canonical, legacy, compatibility, memory, and ML-lineage tables present. The
+  only health warnings remain `ml_api_degraded` from the Cloud Run provider
+  placeholder and `clerk_not_configured`.
+- Production `GET /api/ml/jobs` returned HTTP 405, confirming the route is
+  deployed and intentionally method-scoped; authenticated POST/GET-by-ID
+  behavior remains protected by the Supabase bearer boundary.
+- Supabase migration inspection reports the live reliability, memory/ML, and
+  Clerk/RBAC migrations applied through `phase7_canonical_memory_contract_reconcile`.
 | `npm.cmd run build` | Pass |
 | `npm.cmd run lint` | Pass with 4 pre-existing warnings |
 | `git diff --check` | Pass |
