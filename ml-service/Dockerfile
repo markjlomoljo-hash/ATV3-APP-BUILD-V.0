@@ -13,6 +13,7 @@ RUN groupadd --system acnetrex && useradd --system --gid acnetrex --home-dir /ap
 
 COPY acnetrex_ml ./acnetrex_ml
 COPY manifests ./manifests
+COPY reports ./reports
 COPY schemas ./schemas
 COPY main.py .
 
