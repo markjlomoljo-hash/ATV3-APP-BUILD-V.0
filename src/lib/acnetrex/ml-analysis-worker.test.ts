@@ -20,6 +20,9 @@ const job = {
   features: { sleepDebtMinutes: 120 },
   featureSchemaVersion: "sleepderm.v1",
   appVersion: "web.test",
+  personalProcessing: true,
+  rawImageProcessing: false,
+  anonymousLearning: false,
   attemptCount: 1,
   maxAttempts: 5,
 };
@@ -85,6 +88,24 @@ describe("ML analysis worker", () => {
         headers: expect.objectContaining({ authorization: "Bearer worker-upstream-secret" }),
       }),
     );
+    const request = fetcher.mock.calls[0]?.[1];
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      contract_version: "1.0.0",
+      request_id: job.jobId,
+      idempotency_key: job.jobId,
+      module: "sleepderm",
+      task: "sleep_pattern_analysis",
+      feature_schema_version: "1.0.0",
+      input_record_refs: ["sleep_logs:sleep-1"],
+      inputs: job.features,
+      consent: {
+        personal_processing: true,
+        raw_image_processing: false,
+        anonymous_learning: false,
+      },
+    });
+    expect((request?.headers as Record<string, string>)["idempotency-key"]).toBe(job.jobId);
+    expect((request?.headers as Record<string, string>)["x-request-id"]).toBe(job.jobId);
     expect(commitSeenBeforeFetch).toBe(true);
     const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
     expect(queries.some((sql) => sql.includes("insert into public.ml_analysis_results"))).toBe(true);
