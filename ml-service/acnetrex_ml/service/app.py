@@ -423,10 +423,22 @@ def create_app(
                 status_code=409,
                 detail={"code": "idempotency_key_reused_with_different_payload"},
             )
+        if state == "replay" and item["status"] == "completed":
+            return JSONResponse(
+                status_code=200,
+                headers={"Idempotency-Replayed": "true"},
+                content={"ok": True, "job_id": item["job_id"], "status": "completed"},
+            )
+        result = await asyncio.wait_for(
+            asyncio.to_thread(_predict_core, payload),
+            timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
+        )
+        body = result.model_copy(update={"job_id": job_id}).model_dump(mode="json")
+        jobs.complete(job_id, body)
         return JSONResponse(
-            status_code=202,
+            status_code=200,
             headers={"Idempotency-Replayed": "true"} if state == "replay" else {},
-            content={"ok": True, "job_id": item["job_id"], "status": item["status"]},
+            content={"ok": True, "job_id": item["job_id"], "status": "completed"},
         )
 
     @application.get("/v1/jobs/{job_id}", dependencies=[Depends(_authenticate)])

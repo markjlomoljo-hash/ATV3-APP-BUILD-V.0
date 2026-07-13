@@ -16,6 +16,8 @@ class JobStore(Protocol):
 
     def get(self, job_id: str) -> dict[str, Any] | None: ...
 
+    def complete(self, job_id: str, result: dict[str, Any]) -> None: ...
+
 
 class SQLiteJobStore:
     def __init__(self, path: str | Path) -> None:
@@ -68,6 +70,18 @@ class SQLiteJobStore:
                 json.loads(item.pop("result_json")) if item.get("result_json") else None
             )
             return item
+
+    def complete(self, job_id: str, result: dict[str, Any]) -> None:
+        with sqlite3.connect(self.path) as connection:
+            connection.execute(
+                """UPDATE prediction_jobs
+                SET status='completed', result_json=?, updated_at=? WHERE job_id=?""",
+                (
+                    json.dumps(result, default=str),
+                    datetime.now(UTC).isoformat(),
+                    job_id,
+                ),
+            )
 
 
 class PostgresJobStore:
@@ -143,3 +157,12 @@ class PostgresJobStore:
                 "created_at": row[3].isoformat(),
                 "updated_at": row[4].isoformat(),
             }
+
+    def complete(self, job_id: str, result: dict[str, Any]) -> None:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE ml_service_jobs
+                SET status='completed', result_json=%s, updated_at=now()
+                WHERE job_id=%s""",
+                (json.dumps(result, default=str), job_id),
+            )
