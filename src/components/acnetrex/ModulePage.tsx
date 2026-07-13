@@ -13,6 +13,7 @@ import {
 import { HonestStatePanel, MedicalSafetyNotice, StatusBadge } from "@/components/acnetrex/StatusPanels";
 import { CutisAiConversationPanel } from "@/components/acnetrex/CutisAiConversationPanel";
 import { FaceAtlasCapturePanel } from "@/components/acnetrex/FaceAtlasCapturePanel";
+import { SkinTwinScenarioPanel } from "@/components/acnetrex/SkinTwinScenarioPanel";
 
 function ModuleCard({ module }: { module: AcneTrexModule }) {
   return (
@@ -120,6 +121,8 @@ export function ModulePage({ module }: { module: AcneTrexModule }) {
               <CutisAiConversationPanel />
             ) : module.id.startsWith("face-atlas") ? (
               <FaceAtlasCapturePanel />
+            ) : module.id.startsWith("skin-twin") ? (
+              <SkinTwinScenarioPanel />
             ) : (
               <>
                 <ModuleActionCard

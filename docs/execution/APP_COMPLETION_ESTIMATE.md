@@ -2,8 +2,8 @@
 
 ## Current estimate
 
-- Starting estimate for the current FaceAtlas boundary session: 56%
-- Ending estimate: 57%
+- Starting estimate for the current Skin Twin scenario boundary session: 57%
+- Ending estimate: 58%
 - Confidence: medium
 
 ## Evidence
@@ -56,21 +56,26 @@
   retention consent enforcement, a live Supabase annotation-zone migration,
   and a capture UI that remains `pending_upload` until real storage and ML
   finalization are available.
+- Skin Twin now has an authenticated, idempotent scenario request boundary,
+  personal-learning consent enforcement, owner-scoped history/detail reads, a
+  live scenario lineage migration, minimum-data gating from real FaceAtlas,
+  SleepDerm, and DermDiet records, and a UI that never displays a projection
+  before a validated worker result exists.
 
 ## Category breakdown
 
 | Category | Estimate | Evidence | Main blocker |
 |---|---:|---|---|
 | Auth/onboarding/profile/consent | 6.5/10 | Routes and contracts present; prior account/profile work remains | live signed-session validation |
-| Supabase/database/storage contracts | 9/12 | production `/api/health` confirms DB connectivity; live FaceAtlas zone migration and memory/ML lineage schema are present; ML job/outbox and CutisAI conversation writes are transactionally contracted | signed-session write/read proof, durable memory facts, export/deletion workflows |
+| Supabase/database/storage contracts | 9.25/12 | production `/api/health` confirms DB connectivity; live FaceAtlas zone and Skin Twin scenario migrations plus memory/ML lineage schema are present; ML job/outbox and CutisAI conversation writes are transactionally contracted | signed-session write/read proof, durable memory facts, export/deletion workflows |
 | Core logging modules | 7/12 | all log routes represented; SleepDerm and DermDiet have deterministic computation contracts | live writes and feature snapshots for secondary logs |
 | FaceAtlas | 6.25/12 | authenticated scan metadata and detail/history APIs, consent-gated raw-retention request, user-only zone annotations, live `annotations.zone` migration, and capture UI | signed upload/finalization, camera, cloud lesion inference, image quality validation |
-| AI/ML, TriggerGraph, Forecasting, Skin Twin | 8.75/15 | AI workspace, readiness, Skin Twin schemas/routes/forms, bounded ML proxy, durable queued-job/status boundary, leased worker/result persistence source | Cloud Run/Vertex/local model execution and live worker scheduler |
+| AI/ML, TriggerGraph, Forecasting, Skin Twin | 9.25/15 | AI workspace, readiness, Skin Twin readiness-gated scenario persistence, bounded ML proxy, durable queued-job/status boundary, leased worker/result persistence source | Cloud Run/Vertex/local model execution and live worker scheduler |
 | CutisAI/evidence/memory | 5/8 | CutisAI route, validated conversation UI, authenticated consent-gated conversation create/list/detail APIs, production memory schema readiness, `/api/cutisai/memory/status` | backend tools, evidence retrieval, assistant generation, memory fact extraction |
 | Treatment/task/gamification | 4.25/8 | treatment/check-in/task route bodies, task credit no-fake adapter | durable task generation and streak rules |
 | Reports/exports/profile | 4/8 | report/export/profile routes, schemas, request/history bodies, missing-data report readiness | PDF/export storage verification |
 | Native mobile/device readiness | 2.25/7 | native readiness route plus SecureStore-compatible Supabase auth storage adapter | Expo/device validation and offline queue |
-| Testing/security/release | 7/8 | 156 unit tests, 80.2% statement coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, live migration verification | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
+| Testing/security/release | 7/8 | 164 unit tests, 79.91% statement coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, live migration verification | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
 
 ## Remaining release blockers
 
@@ -83,4 +88,4 @@
 
 ## Why not 75-80% yet
 
-The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 57%.
+The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 58%.
