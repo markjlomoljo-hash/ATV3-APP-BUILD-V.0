@@ -1,0 +1,283 @@
+from __future__ import annotations
+
+import hashlib
+import json
+import sqlite3
+import threading
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Protocol
+
+
+def canonical_hash(payload: dict[str, Any]) -> str:
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class Reservation:
+    state: str
+    response_status: int | None = None
+    response: dict[str, Any] | None = None
+
+
+class IdempotencyStore(Protocol):
+    def reserve(self, key: str, request_hash: str, scope: str) -> Reservation: ...
+
+    def complete(
+        self, key: str, scope: str, status: int, response: dict[str, Any]
+    ) -> None: ...
+
+    def fail(
+        self,
+        key: str,
+        scope: str,
+        *,
+        terminal: bool,
+        status: int,
+        response: dict[str, Any],
+    ) -> None: ...
+
+
+class MemoryIdempotencyStore:
+    """Unit-test-only store. Production must use SQLite or PostgreSQL."""
+
+    def __init__(self) -> None:
+        self._items: dict[tuple[str, str], dict[str, Any]] = {}
+        self._lock = threading.Lock()
+
+    def reserve(self, key: str, request_hash: str, scope: str) -> Reservation:
+        with self._lock:
+            item = self._items.get((scope, key))
+            if item is None:
+                self._items[(scope, key)] = {
+                    "hash": request_hash,
+                    "state": "processing",
+                }
+                return Reservation("reserved")
+            if item["hash"] != request_hash:
+                return Reservation("conflict")
+            if item["state"] == "completed":
+                return Reservation("replay", item["status"], item["response"])
+            if item["state"] == "failed_terminal":
+                return Reservation("replay", item["status"], item["response"])
+            if item["state"] == "failed_retryable":
+                item["state"] = "processing"
+                return Reservation("reserved")
+            return Reservation("processing")
+
+    def complete(
+        self, key: str, scope: str, status: int, response: dict[str, Any]
+    ) -> None:
+        with self._lock:
+            self._items[(scope, key)].update(
+                state="completed", status=status, response=response
+            )
+
+    def fail(
+        self,
+        key: str,
+        scope: str,
+        *,
+        terminal: bool,
+        status: int,
+        response: dict[str, Any],
+    ) -> None:
+        with self._lock:
+            self._items[(scope, key)].update(
+                state="failed_terminal" if terminal else "failed_retryable",
+                status=status,
+                response=response,
+            )
+
+
+class SQLiteIdempotencyStore:
+    def __init__(self, path: str | Path) -> None:
+        self.path = str(path)
+        self._lock = threading.Lock()
+        self._initialize()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(self.path, timeout=10, isolation_level=None)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def _initialize(self) -> None:
+        with self._connect() as connection:
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS prediction_idempotency (
+                    scope TEXT NOT NULL,
+                    idempotency_key TEXT NOT NULL,
+                    request_hash TEXT NOT NULL,
+                    state TEXT NOT NULL,
+                    response_status INTEGER,
+                    response_json TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (scope, idempotency_key)
+                )
+                """
+            )
+
+    def reserve(self, key: str, request_hash: str, scope: str) -> Reservation:
+        now = datetime.now(UTC).isoformat()
+        with self._lock, self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT * FROM prediction_idempotency WHERE scope = ? AND idempotency_key = ?",
+                (scope, key),
+            ).fetchone()
+            if row is None:
+                connection.execute(
+                    """INSERT INTO prediction_idempotency
+                    VALUES (?, ?, ?, 'processing', NULL, NULL, ?, ?)""",
+                    (scope, key, request_hash, now, now),
+                )
+                connection.commit()
+                return Reservation("reserved")
+            connection.commit()
+            if row["request_hash"] != request_hash:
+                return Reservation("conflict")
+            if row["state"] == "completed":
+                response = (
+                    json.loads(row["response_json"]) if row["response_json"] else None
+                )
+                return Reservation("replay", row["response_status"], response)
+            if row["state"] == "failed_terminal":
+                response = (
+                    json.loads(row["response_json"]) if row["response_json"] else None
+                )
+                return Reservation("replay", row["response_status"], response)
+            if row["state"] == "failed_retryable":
+                connection.execute(
+                    """UPDATE prediction_idempotency SET state='processing', updated_at=?
+                    WHERE scope=? AND idempotency_key=?""",
+                    (now, scope, key),
+                )
+                return Reservation("reserved")
+            return Reservation("processing")
+
+    def complete(
+        self, key: str, scope: str, status: int, response: dict[str, Any]
+    ) -> None:
+        now = datetime.now(UTC).isoformat()
+        with self._connect() as connection:
+            connection.execute(
+                """UPDATE prediction_idempotency
+                SET state='completed', response_status=?, response_json=?, updated_at=?
+                WHERE scope=? AND idempotency_key=?""",
+                (status, json.dumps(response, default=str), now, scope, key),
+            )
+
+    def fail(
+        self,
+        key: str,
+        scope: str,
+        *,
+        terminal: bool,
+        status: int,
+        response: dict[str, Any],
+    ) -> None:
+        state = "failed_terminal" if terminal else "failed_retryable"
+        with self._connect() as connection:
+            connection.execute(
+                """UPDATE prediction_idempotency SET state=?, response_status=?, response_json=?,
+                updated_at=?
+                WHERE scope=? AND idempotency_key=?""",
+                (
+                    state,
+                    status,
+                    json.dumps(response, default=str),
+                    datetime.now(UTC).isoformat(),
+                    scope,
+                    key,
+                ),
+            )
+
+
+class PostgresIdempotencyStore:
+    """Production adapter for the application's api_idempotency_keys table."""
+
+    def __init__(self, connection_string: str) -> None:
+        self.connection_string = connection_string
+
+    def _connect(self) -> Any:
+        try:
+            import psycopg  # type: ignore[import-not-found]
+        except ImportError as exc:
+            raise RuntimeError(
+                "Install the postgres extra to use PostgresIdempotencyStore"
+            ) from exc
+        return psycopg.connect(self.connection_string)
+
+    def reserve(self, key: str, request_hash: str, scope: str) -> Reservation:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO api_idempotency_keys
+                  (actor_id, scope, idempotency_key, http_method, route,
+                   request_hash, status, expires_at)
+                VALUES ('ml-service', %s, %s, 'POST', '/v1/predict', %s,
+                        'processing', now() + interval '24 hours')
+                ON CONFLICT (actor_id, scope, idempotency_key) DO NOTHING
+                RETURNING id
+                """,
+                (scope, key, request_hash),
+            )
+            if cursor.fetchone() is not None:
+                return Reservation("reserved")
+            cursor.execute(
+                """SELECT request_hash, status, response_status, response_reference
+                FROM api_idempotency_keys
+                WHERE actor_id='ml-service' AND scope=%s AND idempotency_key=%s FOR UPDATE""",
+                (scope, key),
+            )
+            row = cursor.fetchone()
+            if row[0] != request_hash:
+                return Reservation("conflict")
+            if row[1] == "completed":
+                return Reservation("replay", row[2], row[3])
+            if row[1] == "failed_terminal":
+                return Reservation("replay", row[2], row[3])
+            if row[1] == "failed_retryable":
+                cursor.execute(
+                    """UPDATE api_idempotency_keys SET status='processing', updated_at=now()
+                    WHERE actor_id='ml-service' AND scope=%s AND idempotency_key=%s""",
+                    (scope, key),
+                )
+                return Reservation("reserved")
+            return Reservation("processing")
+
+    def complete(
+        self, key: str, scope: str, status: int, response: dict[str, Any]
+    ) -> None:
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE api_idempotency_keys SET status='completed', response_status=%s,
+                response_reference=%s, completed_at=now(), updated_at=now()
+                WHERE actor_id='ml-service' AND scope=%s AND idempotency_key=%s""",
+                (status, json.dumps(response, default=str), scope, key),
+            )
+
+    def fail(
+        self,
+        key: str,
+        scope: str,
+        *,
+        terminal: bool,
+        status: int,
+        response: dict[str, Any],
+    ) -> None:
+        state = "failed_terminal" if terminal else "failed_retryable"
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """UPDATE api_idempotency_keys SET status=%s, response_status=%s,
+                response_reference=%s, updated_at=now()
+                WHERE actor_id='ml-service' AND scope=%s AND idempotency_key=%s""",
+                (state, status, json.dumps(response, default=str), scope, key),
+            )

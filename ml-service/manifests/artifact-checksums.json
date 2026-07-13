@@ -1,0 +1,18 @@
+{
+  "manifest_version": "1.0.0",
+  "algorithm": "sha256",
+  "generated_at": "2026-07-13T00:00:00Z",
+  "artifacts": {
+    "static-knowledge/acnetrex-static-knowledge-v1.json": "b0985a612f6ddccf1ae1195968f2a179848db8ea8fea7957de0c29fad9e71f01",
+    "schemas/feature-schema.json": "d984fe599ebf92963f85f1ada9855de9258ba8214c40c2eb9e9518638f6f2f0f",
+    "schemas/inference-request.schema.json": "fdb2883d8c4ccc326309de866acbc60f7a25e4e713201eaaddaa55d79fba2dd5",
+    "schemas/inference-response.schema.json": "ace4744605eb7151592d98bc7585e1920f572743eaf1897191cbbcbaac495676",
+    "manifests/model-registry.json": "24a1d42a7e7f6d78ac83e633ca709189c630946d393f1eef9d7149951efdd08e",
+    "manifests/dataset-manifest.json": "7d5325b0064a64eab0ba6305defc2d4de3d042fe73af5bd5fe4d565493bd668e",
+    "manifests/integration-manifest.json": "740275fd6121af2ecfe013fcc813cc561c1d2c16996c40346583ee0961a96aba",
+    "local-runtime/package-lock.json": "33e16d839e27036c03d4c1da33417e94dfab839d9d0d43276b29ee86b3a1d476"
+  },
+  "model_artifacts": [],
+  "note": "No model artifact exists because no supplied dataset passed the production training gate."
+}
+

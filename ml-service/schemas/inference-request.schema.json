@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acnetrex.app/schemas/ml/inference-request/1.0.0",
+  "title": "AcneTrexInferenceRequest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "request_id", "idempotency_key", "module", "task", "runtime_preference", "feature_schema_version", "input_record_refs", "inputs", "context", "consent"],
+  "properties": {
+    "contract_version": {"const": "1.0.0"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "idempotency_key": {"type": "string", "format": "uuid"},
+    "module": {"type": "string", "minLength": 1, "maxLength": 64},
+    "task": {"type": "string", "minLength": 1, "maxLength": 96},
+    "runtime_preference": {"enum": ["auto", "local", "cloud", "vertex"]},
+    "feature_schema_version": {"const": "1.0.0"},
+    "input_record_refs": {"type": "array", "maxItems": 1000, "items": {"type": "string", "maxLength": 128}},
+    "inputs": {"type": "object", "maxProperties": 500},
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "timezone": {"type": "string", "maxLength": 64},
+        "locale": {"type": "string", "maxLength": 32},
+        "deadline_ms": {"type": "integer", "minimum": 100, "maximum": 30000},
+        "network_available": {"type": "boolean"}
+      }
+    },
+    "consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["personal_processing", "raw_image_processing", "anonymous_learning"],
+      "properties": {
+        "personal_processing": {"type": "boolean"},
+        "raw_image_processing": {"type": "boolean"},
+        "anonymous_learning": {"type": "boolean"}
+      }
+    }
+  }
+}
+
