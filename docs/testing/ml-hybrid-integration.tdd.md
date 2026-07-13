@@ -22,6 +22,7 @@ Source: the controlling ML execution objective and supplied foundation, not a se
 | Readiness probes both durable stores | `f3d5030` (unsupported injection/no probe) | `9c22668` | `test_readiness_fails_closed_when_persistence_probe_fails` |
 | Python and TypeScript sleep features match | `a04b7e7` (missing/different parity fields) | `ab04eb5` | shared `sleep-parity.json` fixture in both suites |
 | Deterministic engines reject predictive fabrication | `60d52fd` (five forbidden fields accepted) | `2f5ea37` | `test_safety_contract.py` |
+| Training cannot start without an approved immutable snapshot | `47603b2` (training module absent) | `2952750` | `test_training_gate.py` and blocked CLI run |
 
 ## Validation evidence
 
@@ -29,7 +30,7 @@ Source: the controlling ML execution objective and supplied foundation, not a se
 - `npm run test:coverage -- --reporter=dot`: 81.62% statements, 84.46% functions, 86.7% lines; branch coverage is 68.19%.
 - `npm run typecheck`, `npm run lint`, and `npm run build -- --webpack`: passed.
 - `npm run test:e2e`: 66 route smoke checks passed.
-- Python Ruff check/format and pytest: 16 tests passed.
+- Python Ruff check/format and pytest: 19 tests passed.
 - Mobile clean `npm ci` and `npm run typecheck`: passed.
 - Mobile Expo config/native build-tool API check passed; production npm audit reports zero vulnerabilities after the pinned `uuid@11.1.1` override.
 
