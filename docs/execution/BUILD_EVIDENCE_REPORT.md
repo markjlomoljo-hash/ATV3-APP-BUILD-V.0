@@ -344,3 +344,47 @@ session is available in the environment.
   external blockers: Cloud Run still serves provider placeholder HTML, the
   durable worker is disabled, and Clerk production configuration is absent.
   This deployment did not change those infrastructure states.
+
+## 2026-07-13 FaceAtlas metadata and annotation boundary
+
+- Added authenticated Next API routes for FaceAtlas scan metadata and owner-
+  scoped scan detail: `GET/POST /api/faceatlas/scans` and
+  `GET /api/faceatlas/scans/:id`.
+- Added `POST/GET /api/faceatlas/annotations`. Annotation writes accept only
+  user-labelled records, validate lesion taxonomy, facial zone, coordinates,
+  and certainty, and verify that the scan belongs to the authenticated user.
+- Scan creation uses the existing idempotency ledger and audits only bounded
+  metadata. Raw image bytes are not accepted by this boundary. A new scan is
+  therefore reported as `pending_upload`; it is not marked queued or analysed
+  until a separate signed-upload/finalization boundary exists.
+- Raw-image retention is blocked unless the existing account consent row has
+  `raw_image_retention = true`. No raw retention success is inferred from a
+  request flag alone.
+- Applied Supabase migration `20260713104346_faceatlas_annotation_zone_contract`
+  adds the nullable `annotations.zone` column, a facial-zone check constraint,
+  and an owner/scan/created index. The live `zone` column was verified through
+  `information_schema`.
+- `/face-atlas`, `/face-atlas/capture`, `/face-atlas/annotations`, and
+  `/face-atlas/history` now render the capture panel. It saves only after a
+  Supabase session is present and shows explicit auth, consent, database, and
+  not-configured states.
+
+### FaceAtlas validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test -- src/lib/acnetrex/faceatlas src/app/api/faceatlas --run` | Pass: 2 files, 9 tests |
+| `npm.cmd test` | Pass: 31 files, 156 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass: all three FaceAtlas API routes included |
+| `npm.cmd run lint` | Pass |
+| `npm.cmd run test:coverage` | Pass: 80.2% statements, 71.6% branches |
+| `npm.cmd run test:e2e` | Pass: route smoke for 66 routes |
+| `GET http://127.0.0.1:3200/face-atlas` | HTTP 200 on existing dev preview |
+| `GET http://127.0.0.1:3200/api/faceatlas/scans` without bearer | HTTP 401 |
+| Supabase migration list / column query | Applied migration and `annotations.zone` verified |
+| Playwright visual browser | Not run: browser executable is not installed in this environment |
+
+This proves the authenticated server boundary, live schema target, and honest
+capture UI state. It does not prove camera upload, signed raw-image storage,
+Cloud Run inference, or a real authenticated user write.
