@@ -1,5 +1,6 @@
 FROM cgr.dev/chainguard/python:latest-dev AS builder
 
+USER root
 WORKDIR /build
 
 COPY requirements.txt .
