@@ -4,7 +4,7 @@ const DATABASE_NAME_PATTERN = /^(?!.*\.\.)[a-zA-Z0-9._-]+$/;
 
 export interface EncryptedDatabase {
   execAsync(source: string): Promise<void>;
-  getFirstAsync<T>(source: string): Promise<T | null>;
+  getFirstAsync(source: string): Promise<unknown>;
   closeAsync(): Promise<void>;
 }
 
@@ -54,7 +54,7 @@ export async function openEncryptedDatabase<TDatabase extends EncryptedDatabase>
     database = await dependencies.openDatabase(name);
     await database.execAsync(`PRAGMA key = "x'${key}'"`);
     await database.execAsync("PRAGMA cipher_memory_security = ON");
-    await database.getFirstAsync<{ count: number }>("SELECT count(*) AS count FROM sqlite_master");
+    await database.getFirstAsync("SELECT count(*) AS count FROM sqlite_master");
     return database;
   } catch {
     if (database) {

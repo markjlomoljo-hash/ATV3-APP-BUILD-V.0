@@ -22,11 +22,15 @@ const operation = {
 };
 
 function fakeDatabase() {
+  let firstRow: unknown = null;
   const database = {
-    execAsync: vi.fn(async () => undefined),
-    runAsync: vi.fn(async () => ({ changes: 1, lastInsertRowId: 0 })),
-    getFirstAsync: vi.fn(async () => null),
-    getAllAsync: vi.fn(async () => []),
+    execAsync: vi.fn(async (_source: string) => undefined),
+    runAsync: vi.fn(async (_source: string, _params: Array<string | number | null>) => ({ changes: 1, lastInsertRowId: 0 })),
+    getFirstAsync: vi.fn(async <T>(_source: string, _params: Array<string | number | null>) => firstRow as T | null),
+    getAllAsync: vi.fn(async <T>(_source: string, _params: Array<string | number | null>) => [] as T[]),
+    setFirstRow(value: unknown) {
+      firstRow = value;
+    },
   };
   return database as typeof database & QueueDatabase;
 }
@@ -53,7 +57,7 @@ describe("Expo SQLite ML offline operation store", () => {
 
   it("deserializes a stored operation and preserves replay identities", async () => {
     const database = fakeDatabase();
-    database.getFirstAsync.mockResolvedValueOnce({
+    database.setFirstRow({
       ...operation,
       validated_payload_json: JSON.stringify(operation.validated_payload),
       dependencies_json: "[]",

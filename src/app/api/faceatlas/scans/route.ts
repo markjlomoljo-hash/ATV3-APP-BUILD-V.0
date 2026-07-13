@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DatabaseConfigurationError, getDb } from "@/db";
@@ -20,7 +19,6 @@ const idempotencyKeySchema = z.string().min(16).max(200).regex(/^[A-Za-z0-9._:-]
 function jsonError(error: string, status: number, details?: unknown) {
   return NextResponse.json({ ok: false, error, ...(details ? { details } : {}) }, { status });
 }
-
 export async function GET(request: Request) {
   const auth = await authenticateSupabaseRequest(request);
   if (!auth.ok) return jsonError(auth.error, auth.status);
@@ -74,7 +72,3 @@ export async function POST(request: Request) {
   }
 }
 
-export function requestCorrelationId(request: Request) {
-  const value = request.headers.get("x-request-id");
-  return value && idempotencyKeySchema.safeParse(value).success ? value : randomUUID();
-}

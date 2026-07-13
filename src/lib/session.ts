@@ -38,7 +38,7 @@ async function verifySession(req: NextRequest): Promise<SessionContext | null> {
 }
 
 /** Derive the protected actor only from a Supabase-verified bearer token. */
-export function withSession<T = { params?: unknown }>(
+export function withSession<T = { params: Promise<Record<string, never>> }>(
   handler: (req: NextRequest, ctx: SessionContext, routeCtx: T) => Promise<NextResponse>,
 ) {
   return async (req: NextRequest, routeCtx: T): Promise<NextResponse> => {

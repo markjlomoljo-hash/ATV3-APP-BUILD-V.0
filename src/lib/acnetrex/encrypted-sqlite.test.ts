@@ -4,8 +4,8 @@ import { openEncryptedDatabase } from "../../../packages/ml-local-runtime/src/en
 
 function dependencies(storedKey: string | null = null) {
   const database = {
-    execAsync: vi.fn(async () => undefined),
-    getFirstAsync: vi.fn(async () => ({ count: 0 })),
+    execAsync: vi.fn(async (_source: string) => undefined),
+    getFirstAsync: vi.fn(async (_source: string): Promise<unknown> => ({ count: 0 })),
     closeAsync: vi.fn(async () => undefined),
   };
   return {
@@ -61,7 +61,9 @@ describe("encrypted SQLite opener", () => {
 
   it("closes the handle when key verification fails", async () => {
     const deps = dependencies("a".repeat(64));
-    deps.database.getFirstAsync.mockRejectedValueOnce(new Error("file is not a database"));
+    deps.database.getFirstAsync.mockImplementationOnce(async () => {
+      throw new Error("file is not a database");
+    });
 
     await expect(openEncryptedDatabase("acnetrex-private.db", deps)).rejects.toThrow(
       "encrypted_database_open_failed",
