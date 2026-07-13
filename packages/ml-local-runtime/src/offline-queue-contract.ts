@@ -63,3 +63,44 @@ export function prepareReplay(operation: OfflineOperation): { headers: Record<st
     body: operation.validated_payload,
   };
 }
+
+export function scheduleRetry<TPayload>(
+  operation: OfflineOperation<TPayload>,
+  options: {
+    errorCode: string;
+    now: string;
+    jitterRatio: number;
+    maxAttempts: number;
+    baseDelayMs?: number;
+    maxDelayMs?: number;
+  },
+): OfflineOperation<TPayload> {
+  if (operation.status === "completed" || operation.status === "cancelled") {
+    throw new Error("offline_operation_not_retryable");
+  }
+  if (!Number.isFinite(options.jitterRatio) || options.jitterRatio < 0 || options.jitterRatio > 1) {
+    throw new Error("invalid_retry_jitter_ratio");
+  }
+  const attemptCount = operation.attempt_count + 1;
+  const terminal = attemptCount >= options.maxAttempts;
+  const baseDelayMs = options.baseDelayMs ?? 1_000;
+  const maxDelayMs = options.maxDelayMs ?? 60_000;
+  const retryCeiling = Math.min(maxDelayMs, baseDelayMs * 2 ** Math.max(0, attemptCount - 1));
+  const nextAttempt = new Date(new Date(options.now).getTime() + Math.round(retryCeiling * options.jitterRatio));
+
+  return {
+    ...operation,
+    attempt_count: attemptCount,
+    next_attempt_at: terminal ? options.now : nextAttempt.toISOString(),
+    status: terminal ? "failed_terminal" : "retry_wait",
+    last_error_code: options.errorCode,
+  };
+}
+
+export function cancelOperation<TPayload>(
+  operation: OfflineOperation<TPayload>,
+  reason: string,
+): OfflineOperation<TPayload> {
+  if (operation.status === "completed") throw new Error("completed_operation_cannot_be_cancelled");
+  return { ...operation, status: "cancelled", last_error_code: reason };
+}
