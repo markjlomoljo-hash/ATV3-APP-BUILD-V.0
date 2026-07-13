@@ -237,6 +237,31 @@ direct prediction against the still-placeholder Cloud Run service:
   complete replay-safe result delivery. It now requires both the existing
   proxy flag and an explicit `ML_PREDICTION_WORKER_ENABLED=true` gate.
 
+## 2026-07-13 ML worker boundary
+
+- Added `POST /api/internal/ml/worker`, protected by the server-only
+  `ACNETREX_ML_WORKER_SECRET` and explicit
+  `ACNETREX_ML_WORKER_ENABLED=true` configuration.
+- The worker claims only queued `ml.analysis.requested` outbox events with a
+  two-minute lease, forwards the stored request to the real Cloud Run `/predict`
+  endpoint, and persists only validated upstream prediction payloads into
+  `ml_analysis_results` before marking the outbox event processed.
+- HTTP 408/429/5xx and network timeout failures are requeued with bounded
+  backoff until `max_attempts`; malformed or exhausted responses become
+  terminal `failed` states. No fallback payload is generated.
+- `/api/health` now exposes non-secret worker configuration status and reports
+  `ml_worker_not_configured` while the worker is not deployed/configured.
+- This is source-level worker readiness, not a claim that Railway, Vercel Cron,
+  Cloud Run Jobs, or another production scheduler is active.
+
+### Worker validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test` | Pass: 26 files, 129 tests |
+| `npm.cmd run test:coverage` | Pass: 80.76% statements, 74.01% branches |
+| `npm.cmd run typecheck` | Pass |
+
 ### Durable ML job validation
 
 | Command / check | Result |

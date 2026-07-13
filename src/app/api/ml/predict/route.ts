@@ -3,6 +3,7 @@ import { z } from "zod";
 import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
 import { readJsonBodyLimited } from "@/lib/http/read-json-body";
 import { randomUUID } from "node:crypto";
+import { hasPredictionPayload, isRecord } from "@/lib/acnetrex/ml-analysis-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -27,26 +28,6 @@ function mlApiBaseUrl(): string | null {
 
 function jsonError(error: string, status: number, details?: unknown) {
   return NextResponse.json({ ok: false, error, ...(details ? { details } : {}) }, { status });
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function hasPredictionPayload(payload: unknown): payload is Record<string, unknown> {
-  if (!isRecord(payload)) {
-    return false;
-  }
-
-  if (Array.isArray(payload.predictions)) {
-    return true;
-  }
-
-  if ("prediction" in payload) {
-    return true;
-  }
-
-  return payload.ok === true && ("predictions" in payload || "prediction" in payload || "result" in payload);
 }
 
 export async function POST(req: Request) {

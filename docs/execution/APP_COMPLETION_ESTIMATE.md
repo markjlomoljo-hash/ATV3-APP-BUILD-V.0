@@ -3,7 +3,7 @@
 ## Current estimate
 
 - Starting estimate for the 2026-07-13 infrastructure verification session: 48%
-- Ending estimate: 53%
+- Ending estimate: 54%
 - Confidence: medium
 
 ## Evidence
@@ -40,7 +40,11 @@
 - Durable ML analysis enqueue/status routes now create a queued job and outbox
   event in one idempotent transaction, with authenticated owner scoping and
   no acknowledgement when the database is unavailable. Direct prediction
-  remains disabled until a worker persists results.
+  remains disabled until the worker is deployed and configured.
+- A server-only ML worker boundary now claims leased analysis jobs, calls the
+  real Cloud Run contract, persists validated results, retries transient
+  failures, and exposes worker configuration through `/api/health`. Live
+  scheduler deployment is still unverified.
 
 ## Category breakdown
 
@@ -50,12 +54,12 @@
 | Supabase/database/storage contracts | 8.25/12 | production `/api/health` confirms DB connectivity and complete canonical, compatibility, memory, ML-lineage, and RBAC schema groups; ML job/outbox writes are now transactionally contracted | signed-session write/read proof, durable memory writes, export/deletion workflows |
 | Core logging modules | 7/12 | all log routes represented; SleepDerm and DermDiet have deterministic computation contracts | live writes and feature snapshots for secondary logs |
 | FaceAtlas | 5.25/12 | capture/history/annotation routes, schemas, workflow UI, and capture-readiness adapter | live camera/upload/inference |
-| AI/ML, TriggerGraph, Forecasting, Skin Twin | 8.25/15 | AI workspace, readiness, Skin Twin schemas/routes/forms, bounded ML proxy, durable queued-job/status boundary | Cloud Run/Vertex/local model execution and worker result persistence |
+| AI/ML, TriggerGraph, Forecasting, Skin Twin | 8.75/15 | AI workspace, readiness, Skin Twin schemas/routes/forms, bounded ML proxy, durable queued-job/status boundary, leased worker/result persistence source | Cloud Run/Vertex/local model execution and live worker scheduler |
 | CutisAI/evidence/memory | 4/8 | CutisAI route, message schema, memory/evidence readiness body, production memory schema readiness, `/api/cutisai/memory/status` | backend tools, evidence, conversation persistence |
 | Treatment/task/gamification | 4.25/8 | treatment/check-in/task route bodies, task credit no-fake adapter | durable task generation and streak rules |
 | Reports/exports/profile | 4/8 | report/export/profile routes, schemas, request/history bodies, missing-data report readiness | PDF/export storage verification |
 | Native mobile/device readiness | 2.25/7 | native readiness route plus SecureStore-compatible Supabase auth storage adapter | Expo/device validation and offline queue |
-| Testing/security/release | 6.25/8 | 120 unit tests after durable ML job and prediction safety-gate coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, runtime error inspection | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
+| Testing/security/release | 6.5/8 | 129 unit tests after durable ML worker/job and prediction safety-gate coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, runtime error inspection | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
 
 ## Remaining release blockers
 

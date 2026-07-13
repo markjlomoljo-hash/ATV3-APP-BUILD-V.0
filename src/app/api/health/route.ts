@@ -166,6 +166,8 @@ export async function GET() {
       "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
     ),
     mlApiUrl: envConfigured("ACNETREX_ML_API_URL"),
+    mlWorkerSecret: envConfigured("ACNETREX_ML_WORKER_SECRET"),
+    mlWorkerEnabled: process.env.ACNETREX_ML_WORKER_ENABLED === "true",
     vertexEndpoint: envConfigured("VERTEX_AI_ENDPOINT_ID"),
     vercel: envConfigured("VERCEL", "VERCEL_ENV"),
     clerkPublishableKey: envConfigured("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"),
@@ -183,6 +185,14 @@ export async function GET() {
   };
 
   const cloudRun = await checkCloudRunHealth();
+  const mlWorker = {
+    configured: environment.mlWorkerSecret,
+    enabled: environment.mlWorkerEnabled,
+    status:
+      environment.mlWorkerSecret && environment.mlWorkerEnabled
+        ? ("configured" as const)
+        : ("not_configured" as const),
+  };
 
   try {
     // Bypass Drizzle for connectivity probe: test directly with pg.Pool
@@ -237,11 +247,13 @@ export async function GET() {
           },
         },
         cloudRun,
+        mlWorker,
         warnings: [
           ...schema.warnings,
           ...(cloudRun.status === "not_configured" ? ["ml_api_not_configured"] : []),
           ...(cloudRun.status === "offline" || cloudRun.status === "timeout" ? ["ml_api_unreachable"] : []),
           ...(cloudRun.status === "degraded" ? ["ml_api_degraded"] : []),
+          ...(mlWorker.status === "not_configured" ? ["ml_worker_not_configured"] : []),
           ...(!clerkConfigured ? ["clerk_not_configured"] : []),
           ...(missingRbacTables.length > 0 ? ["clerk_rbac_migration_missing"] : []),
         ],
@@ -260,6 +272,7 @@ export async function GET() {
           environment,
           clerk: clerkBase,
           cloudRun,
+          mlWorker,
           updatedAt: new Date().toISOString(),
         },
         { status: 503 },
@@ -280,6 +293,7 @@ export async function GET() {
           environment,
           clerk: clerkBase,
           cloudRun,
+          mlWorker,
           updatedAt: new Date().toISOString(),
         },
         { status: 503 },

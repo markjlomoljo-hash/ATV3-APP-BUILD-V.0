@@ -51,5 +51,7 @@ requests. It validates the request, requires a stable idempotency key, inserts
 completes the idempotency record in one transaction. `GET /api/ml/jobs/:id`
 filters by the verified owner. The direct `/api/ml/predict` proxy remains
 disabled behind both `ML_PROXY_ENABLED` and `ML_PREDICTION_WORKER_ENABLED`
-until a worker claims jobs, invokes the real Cloud Run/Vertex service, persists
-`ml_analysis_results`, and supports replay-safe result delivery.
+until the worker is deployed/configured. The server-only worker boundary now
+claims leased jobs, invokes the real Cloud Run/Vertex service, persists
+`ml_analysis_results`, retries transient failures, and supports replay-safe
+result delivery; live scheduler deployment remains pending.

@@ -49,6 +49,17 @@ export function mlAppVersion(request: MlAnalysisRequest): string | null {
   return typeof value === "string" && value.length <= 80 ? value : null;
 }
 
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function hasPredictionPayload(payload: unknown): payload is Record<string, unknown> {
+  if (!isRecord(payload)) return false;
+  if (Array.isArray(payload.predictions)) return true;
+  if ("prediction" in payload) return true;
+  return payload.ok === true && ("predictions" in payload || "prediction" in payload || "result" in payload);
+}
+
 export async function enqueueMlAnalysisJob(options: {
   actorId: string;
   idempotencyKey: string;

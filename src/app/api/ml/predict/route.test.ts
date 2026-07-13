@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("server-only", () => ({}));
 vi.mock("@/lib/supabase-request-auth", () => ({
   authenticateSupabaseRequest: vi.fn(),
 }));
