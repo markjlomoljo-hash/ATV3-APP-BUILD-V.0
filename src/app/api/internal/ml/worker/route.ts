@@ -15,12 +15,48 @@ function secretMatches(expected: string, received: string | null): boolean {
   return expectedBytes.length === receivedBytes.length && timingSafeEqual(expectedBytes, receivedBytes);
 }
 
+function receivedWorkerSecret(request: Request): string | null {
+  const directSecret = request.headers.get("x-worker-secret");
+  if (directSecret) return directSecret;
+  const authorization = request.headers.get("authorization");
+  return authorization?.startsWith("Bearer ") ? authorization.slice(7).trim() || null : null;
+}
+
+function isAuthorizedWorkerRequest(request: Request, expectedSecret: string): boolean {
+  const received = receivedWorkerSecret(request);
+  return secretMatches(expectedSecret, received) || secretMatches(process.env.CRON_SECRET?.trim() ?? "", received);
+}
+
+async function runWorker(request: Request, maxJobs: number) {
+  const expectedSecret = process.env.ACNETREX_ML_WORKER_SECRET;
+  if (process.env.ACNETREX_ML_WORKER_ENABLED !== "true" || !expectedSecret) {
+    return NextResponse.json({ ok: false, error: "worker_not_configured" }, { status: 503 });
+  }
+  if (!isAuthorizedWorkerRequest(request, expectedSecret)) {
+    return NextResponse.json({ ok: false, error: "worker_auth_required" }, { status: 401 });
+  }
+
+  try {
+    const outcomes = await processMlAnalysisBatch({
+      maxJobs,
+      workerId: request.headers.get("x-worker-id") ?? undefined,
+    });
+    return NextResponse.json({ ok: true, outcomes });
+  } catch {
+    return NextResponse.json({ ok: false, error: "worker_database_unavailable" }, { status: 503 });
+  }
+}
+
+export async function GET(request: Request) {
+  return runWorker(request, 1);
+}
+
 export async function POST(request: Request) {
   const expectedSecret = process.env.ACNETREX_ML_WORKER_SECRET;
   if (process.env.ACNETREX_ML_WORKER_ENABLED !== "true" || !expectedSecret) {
     return NextResponse.json({ ok: false, error: "worker_not_configured" }, { status: 503 });
   }
-  if (!secretMatches(expectedSecret, request.headers.get("x-worker-secret"))) {
+  if (!isAuthorizedWorkerRequest(request, expectedSecret)) {
     return NextResponse.json({ ok: false, error: "worker_auth_required" }, { status: 401 });
   }
 
@@ -33,14 +69,5 @@ export async function POST(request: Request) {
   }
   const parsed = workerRequestSchema.safeParse(body.value);
   if (!parsed.success) return NextResponse.json({ ok: false, error: "invalid_worker_payload" }, { status: 400 });
-
-  try {
-    const outcomes = await processMlAnalysisBatch({
-      maxJobs: parsed.data.maxJobs,
-      workerId: request.headers.get("x-worker-id") ?? undefined,
-    });
-    return NextResponse.json({ ok: true, outcomes });
-  } catch {
-    return NextResponse.json({ ok: false, error: "worker_database_unavailable" }, { status: 503 });
-  }
+  return runWorker(request, parsed.data.maxJobs);
 }

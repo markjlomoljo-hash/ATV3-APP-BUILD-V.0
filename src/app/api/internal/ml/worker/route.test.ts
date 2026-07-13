@@ -4,7 +4,7 @@ vi.mock("@/lib/acnetrex/ml-analysis-worker", () => ({
   processMlAnalysisBatch: vi.fn(),
 }));
 
-import { POST } from "./route";
+import { GET, POST } from "./route";
 import { processMlAnalysisBatch } from "@/lib/acnetrex/ml-analysis-worker";
 
 const processBatch = vi.mocked(processMlAnalysisBatch);
@@ -53,5 +53,27 @@ describe("POST /api/internal/ml/worker", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, outcomes: [{ status: "idle" }] });
     expect(processBatch).toHaveBeenCalledWith({ maxJobs: 2, workerId: undefined });
+  });
+});
+
+describe("GET /api/internal/ml/worker", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it("supports a Vercel Cron-style bearer secret", async () => {
+    vi.stubEnv("ACNETREX_ML_WORKER_ENABLED", "true");
+    vi.stubEnv("ACNETREX_ML_WORKER_SECRET", "worker-secret");
+    vi.stubEnv("CRON_SECRET", "cron-secret");
+    processBatch.mockResolvedValue([{ status: "idle" }]);
+    const response = await GET(
+      new Request("https://example.test/api/internal/ml/worker", {
+        headers: { authorization: "Bearer cron-secret" },
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true, outcomes: [{ status: "idle" }] });
+    expect(processBatch).toHaveBeenCalledWith({ maxJobs: 1, workerId: undefined });
   });
 });
