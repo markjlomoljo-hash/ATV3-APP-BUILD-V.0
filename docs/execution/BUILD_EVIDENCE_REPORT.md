@@ -44,6 +44,43 @@ Commands were run with local Node tooling from `.tooling/node-v22.23.1-win-x64` 
 | `npm.cmd run lint` | Pass with 4 pre-existing warnings |
 | `git diff --check` | Pass |
 
+## 2026-07-13 Report request, history, and download workflow
+
+- Added a client report workflow to `/reports`, `/reports/export`, and the
+  report-history surface. It loads history through the authenticated API,
+  validates section selection in the UI, submits an idempotent request, and
+  displays completed, failed, and empty states without inventing a report.
+- Completed reports download through `/api/reports/:id/download` with the
+  Supabase bearer token. The server continues to scope the request and file
+  lookup by the authenticated user ID.
+- Report history now includes the persisted worker failure reason from the
+  latest owner-scoped `report_jobs` row. Report API routes classify database
+  configuration and connection failures as typed `503` responses instead of
+  exposing an uncaught server error.
+- Vercel deployment `dpl_5FE7q9nwUESTEu9xXgWzpjGYtm3z` reached `READY` from
+  commit `739efa1`. Its build logs show a successful Next.js/Turbopack build
+  and include all report API routes. Production `/reports` returned HTTP 200.
+- Production `/api/health` returned HTTP 503 by design: Supabase was
+  connected and all canonical, legacy, web-compatibility, memory, and RBAC
+  table groups were present, while Cloud Run still returned an unexpected
+  provider placeholder payload and the ML worker remained disabled.
+
+### Report workflow validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test -- src/app/api/reports/dermatologist/route.test.ts` | Pass: 1 file, 4 tests |
+| `npm.cmd test` | Pass: 35 files, 176 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass: report request/history/detail/status/download routes included |
+| `npm.cmd run lint` | Pass |
+| `npm.cmd run test:coverage` | Pass: 81.32% statements, 70.71% branches |
+| `npm.cmd run test:e2e` | Pass: route smoke for 66 routes |
+| `git diff --check` | Pass |
+| Vercel build log for `739efa1` | Pass: deployment `READY` |
+| `GET https://atv-3-app-build-v-0.vercel.app/reports` | HTTP 200 |
+| `GET https://atv-3-app-build-v-0.vercel.app/api/health` | HTTP 503 with DB connected and ML/Clerk blockers classified |
+
 ## Scan results
 
 - Secret scan: no committed plaintext production secret found in new code. Findings are documentation placeholders, lockfile package names, or server-boundary env references.

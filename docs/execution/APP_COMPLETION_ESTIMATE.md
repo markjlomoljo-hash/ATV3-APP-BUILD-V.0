@@ -2,8 +2,8 @@
 
 ## Current estimate
 
-- Starting estimate for the current Skin Twin worker finalization session: 58%
-- Ending estimate: 59%
+- Starting estimate for the current report workflow session: 59%
+- Ending estimate: 60%
 - Confidence: medium
 
 ## Evidence
@@ -64,6 +64,14 @@
 - The durable ML worker now carries Skin Twin snapshot lineage through the
   queued job and finalizes the matching owner-scoped snapshot only after a
   validated upstream result is durably stored.
+- Reports now have a user-facing request/history/download workflow backed by
+  the existing authenticated report APIs. Requests use idempotency, history
+  exposes persisted worker failures, and report endpoints fail closed with
+  typed database-unavailable responses.
+- Vercel deployment `dpl_5FE7q9nwUESTEu9xXgWzpjGYtm3z` is `READY` from
+  `739efa1`; production `/reports` returns HTTP 200. Production health still
+  reports `503` because Cloud Run is the provider placeholder and the ML
+  worker/Clerk configuration is absent.
 
 ## Category breakdown
 
@@ -76,9 +84,9 @@
 | AI/ML, TriggerGraph, Forecasting, Skin Twin | 9.75/15 | AI workspace, readiness, Skin Twin readiness-gated scenario persistence, worker result finalization, bounded ML proxy, durable queued-job/status boundary, leased worker/result persistence source | Cloud Run/Vertex/local model execution and live worker scheduler |
 | CutisAI/evidence/memory | 5/8 | CutisAI route, validated conversation UI, authenticated consent-gated conversation create/list/detail APIs, production memory schema readiness, `/api/cutisai/memory/status` | backend tools, evidence retrieval, assistant generation, memory fact extraction |
 | Treatment/task/gamification | 4.25/8 | treatment/check-in/task route bodies, task credit no-fake adapter | durable task generation and streak rules |
-| Reports/exports/profile | 4/8 | report/export/profile routes, schemas, request/history bodies, missing-data report readiness | PDF/export storage verification |
+| Reports/exports/profile | 4.75/8 | report/export/profile routes, validated request form, authenticated history, owner-scoped PDF download boundary, persisted worker failure visibility, missing-data report readiness | production PDF/object storage verification and signed-download validation |
 | Native mobile/device readiness | 2.25/7 | native readiness route plus SecureStore-compatible Supabase auth storage adapter | Expo/device validation and offline queue |
-| Testing/security/release | 7/8 | 172 unit tests, 81.2% statement coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, live migration verification | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
+| Testing/security/release | 7.25/8 | 176 unit tests, 81.32% statement coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment from `739efa1`, live migration verification | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
 
 ## Remaining release blockers
 
@@ -91,4 +99,4 @@
 
 ## Why not 75-80% yet
 
-The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 59%.
+The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 60%.

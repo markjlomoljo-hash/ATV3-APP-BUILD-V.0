@@ -19,7 +19,7 @@ This matrix tracks the current code body, not production-live status. A module c
 | CutisAI/AI Workspace | `/cutisai`, `/ai`, `/intelligence` | message schema | contract only | conversations/memory/ML tables planned | evidence unavailable state | schema coverage | scaffolded |
 | Treatment Plan Center | `/treatments`, `/treatments/checkins`, `/log/treatment` | treatment draft schema | treatment adapters | treatment plans/check-ins/tasks | safety readiness | registry coverage | partial |
 | Task Board/Gamification | `/tasks`, `/gamification` | module registry | gamification adapters | tasks, streak state, badges | real-data-only gates | registry coverage | partial |
-| Reports/Exports/Profile | `/reports`, `/reports/history`, `/reports/export`, `/export`, `/profile` | report request schema | report/export/profile services | report/export/profile tables | missing-data report contract | schema coverage | partial |
+| Reports/Exports/Profile | `/reports`, `/reports/history`, `/reports/export`, `/export`, `/profile` | validated report request form and section selection | authenticated request/history/download workflow | report/export/profile tables | missing-data report and typed failure states | route and API tests | partial |
 | Native Mobile/Secure Storage | `/mobile` | module registry | contract only | offline/telemetry targets | local fallback readiness | registry coverage | scaffolded |
 | CI/Security/Release | docs and local scripts | not applicable | local validation | deployment contracts | no-fake policy | pending command results | blocked by external auth |
 
