@@ -12,11 +12,47 @@ const { fakeClient, getPoolMock } = vi.hoisted(() => {
   return { fakeClient, fakePool, getPoolMock: vi.fn(() => fakePool) };
 });
 vi.mock("@/db", () => ({ getPool: getPoolMock }));
-import { mlAnalysisRequestSchema, mlJobStatusSchema } from "./ml-analysis-jobs";
+import { hasPredictionPayload, mlAnalysisRequestSchema, mlJobStatusSchema } from "./ml-analysis-jobs";
 import { enqueueMlAnalysisJob, getMlAnalysisJob } from "./ml-analysis-jobs";
 import { requestHash } from "@/lib/reliability/idempotency";
 
 describe("durable ML analysis job contracts", () => {
+  it("accepts only the canonical inference response contract", () => {
+    expect(hasPredictionPayload({ ok: true, predictions: [{ direction: "observed" }] })).toBe(false);
+    expect(hasPredictionPayload({
+      ok: false,
+      request_id: "11111111-1111-4111-8111-111111111111",
+      job_id: null,
+      module: "faceatlas",
+      task: "lesion_analysis",
+      result_type: "model_unavailable",
+      result: null,
+      runtime_mode: "unavailable",
+      runtime_provider: "none",
+      readiness_state: "model_unavailable",
+      model_name: null,
+      model_version: null,
+      training_data_version: null,
+      feature_schema_version: "1.0.0",
+      input_record_refs: [],
+      features_used: [],
+      features_missing: [],
+      sample_count: 0,
+      coverage: 0,
+      confidence: null,
+      confidence_label: "not_applicable",
+      calibration_state: "not_applicable",
+      uncertainty: [],
+      limitations: ["No approved model is available."],
+      confounders: [],
+      evidence_state: "not_applicable",
+      safety_state: "model_unavailable",
+      sync_status: "not_applicable",
+      latency_ms: 1,
+      created_at: "2026-07-14T00:00:00.000Z",
+    })).toBe(true);
+  });
+
   it("accepts a bounded analysis request and preserves source references", () => {
     const result = mlAnalysisRequestSchema.safeParse({
       engine: "sleepderm",
