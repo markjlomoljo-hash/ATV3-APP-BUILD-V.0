@@ -1,4 +1,12 @@
-FROM python:3.11-slim-bookworm
+FROM cgr.dev/chainguard/python:3.11-dev AS builder
+
+WORKDIR /build
+
+COPY requirements.txt .
+RUN python -m venv /venv \
+    && /venv/bin/pip install --no-cache-dir -r requirements.txt
+
+FROM cgr.dev/chainguard/python:3.11
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -6,20 +14,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-
-RUN groupadd --system acnetrex && useradd --system --gid acnetrex --home-dir /app acnetrex
-
-COPY acnetrex_ml ./acnetrex_ml
-COPY manifests ./manifests
-COPY reports ./reports
-COPY schemas ./schemas
-COPY main.py .
-
-RUN chown -R acnetrex:acnetrex /app
-USER acnetrex
+COPY --from=builder /venv /venv
+COPY --chown=nonroot:nonroot acnetrex_ml ./acnetrex_ml
+COPY --chown=nonroot:nonroot manifests ./manifests
+COPY --chown=nonroot:nonroot reports ./reports
+COPY --chown=nonroot:nonroot schemas ./schemas
+COPY --chown=nonroot:nonroot main.py .
 
 EXPOSE 8080
 
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+ENTRYPOINT ["/venv/bin/python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]

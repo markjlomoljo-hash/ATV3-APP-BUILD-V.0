@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -114,4 +115,8 @@ def test_container_copies_every_checksummed_artifact_directory() -> None:
     }
 
     for directory in top_level_directories:
-        assert f"COPY {directory} ./{directory}" in dockerfile
+        assert re.search(
+            rf"^COPY(?:\s+--[^\s]+)*\s+{re.escape(directory)}\s+\./{re.escape(directory)}$",
+            dockerfile,
+            re.MULTILINE,
+        )
