@@ -29,8 +29,8 @@ Source: the controlling ML execution objective and supplied foundation, not a se
 - `npm run test:coverage -- --reporter=dot`: 81.62% statements, 84.46% functions, 86.7% lines; branch coverage is 68.19%.
 - `npm run typecheck`, `npm run lint`, and `npm run build -- --webpack`: passed.
 - `npm run test:e2e`: 66 route smoke checks passed.
-- Python Ruff check/format and pytest: 15 tests passed.
+- Python Ruff check/format and pytest: 16 tests passed.
 - Mobile clean `npm ci` and `npm run typecheck`: passed.
+- Mobile Expo config/native build-tool API check passed; production npm audit reports zero vulnerabilities after the pinned `uuid@11.1.1` override.
 
 Known gaps: branch coverage is below 80%; no Docker runtime/scanner, local PostgreSQL/Supabase CLI execution, EAS builds, or physical devices were available. Live push, migration, secrets, Cloud Run deployment, and device testing require external authorization/resources.
-
