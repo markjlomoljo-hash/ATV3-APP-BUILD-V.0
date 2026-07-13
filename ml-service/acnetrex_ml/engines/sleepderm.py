@@ -81,14 +81,15 @@ def analyze_sleep(
     beds = [float(n["bedtime_minutes"]) for n in nights]
     wakes = [float(n["wake_minutes"]) for n in nights]
     bedtime_drift = (
-        fmean(_circular_diff(value, beds[index]) for index, value in enumerate(beds[1:]))
+        fmean(
+            _circular_diff(value, beds[index]) for index, value in enumerate(beds[1:])
+        )
         if len(beds) > 1
         else None
     )
     wake_drift = (
         fmean(
-            _circular_diff(value, wakes[index])
-            for index, value in enumerate(wakes[1:])
+            _circular_diff(value, wakes[index]) for index, value in enumerate(wakes[1:])
         )
         if len(wakes) > 1
         else None

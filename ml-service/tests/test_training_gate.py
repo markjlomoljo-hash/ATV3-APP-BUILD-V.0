@@ -33,6 +33,7 @@ def test_training_plan_requires_immutable_governed_snapshot(tmp_path) -> None:
                         "consent_status": "approved",
                         "deidentification_status": "verified",
                         "phi_review_status": "passed",
+                        "synthetic": False,
                     }
                 ]
             }

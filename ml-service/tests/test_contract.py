@@ -52,7 +52,9 @@ def test_readiness_fails_closed_on_artifact_checksum_mismatch(
         json.dumps(
             {
                 "algorithm": "sha256",
-                "artifacts": {"model-registry.json": hashlib.sha256(b"different").hexdigest()},
+                "artifacts": {
+                    "model-registry.json": hashlib.sha256(b"different").hexdigest()
+                },
             }
         ),
         encoding="utf-8",

@@ -20,10 +20,7 @@ def test_python_sleep_engine_matches_shared_mobile_parity_fixture() -> None:
 
     result = analyze_sleep(fixture["records"])
 
-    assert {
-        key: result[key]
-        for key in fixture["expected"]
-    } == fixture["expected"]
+    assert {key: result[key] for key in fixture["expected"]} == fixture["expected"]
 
 
 def inference_payload() -> dict:
