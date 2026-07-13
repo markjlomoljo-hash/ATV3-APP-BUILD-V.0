@@ -4,6 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from acnetrex_ml.runtime.vertex import VertexConfig
 from acnetrex_ml.service.app import create_app
 from acnetrex_ml.service.idempotency import MemoryIdempotencyStore
 from acnetrex_ml.service.jobs import SQLiteJobStore
@@ -11,6 +12,18 @@ from main import app
 
 
 client = TestClient(app)
+
+
+def test_vertex_config_uses_deployment_timeout_name(monkeypatch) -> None:
+    monkeypatch.setenv("VERTEX_AI_PROJECT_ID", "project")
+    monkeypatch.setenv("VERTEX_AI_LOCATION", "us-central1")
+    monkeypatch.setenv("VERTEX_AI_ENDPOINT_ID", "endpoint")
+    monkeypatch.setenv("VERTEX_AI_TIMEOUT_SECONDS", "20")
+
+    config = VertexConfig.from_env()
+
+    assert config is not None
+    assert config.timeout_seconds == 20.0
 
 
 def test_root_returns_canonical_service_metadata() -> None:

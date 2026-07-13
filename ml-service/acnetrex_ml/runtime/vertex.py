@@ -58,7 +58,10 @@ class VertexConfig:
             project,
             location,
             endpoint,
-            float(os.getenv("VERTEX_TIMEOUT_SECONDS", "15")),
+            float(
+                os.getenv("VERTEX_AI_TIMEOUT_SECONDS")
+                or os.getenv("VERTEX_TIMEOUT_SECONDS", "15")
+            ),
         )
 
 
