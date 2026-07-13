@@ -1,6 +1,7 @@
 {
   "manifest_version": "1.1.0",
   "algorithm": "sha256",
+  "base_path": "..",
   "generated_at": "2026-07-14T00:00:00Z",
   "artifacts": {
     "schemas/feature-schema.json": "3d1b320eeada190351171f4628b755f04750584d2308e95080bd367181088a8a",

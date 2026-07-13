@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import secrets
 import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
@@ -30,6 +32,9 @@ from acnetrex_ml.safety.output_validation import validate_safe_output
 from .dependencies import build_idempotency_store, build_job_store
 from .idempotency import IdempotencyStore, canonical_hash
 from .middleware import RequestContextMiddleware
+
+
+SERVICE_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _safe_state(state: str) -> ReadinessState:
@@ -198,17 +203,30 @@ def create_app(*, idempotency_store: IdempotencyStore | None = None) -> FastAPI:
     async def health_ready() -> JSONResponse:
         vertex = VertexAdapter().status()
         registry_path = os.getenv(
-            "MODEL_REGISTRY_PATH", "manifests/model-registry.json"
+            "MODEL_REGISTRY_PATH", str(SERVICE_ROOT / "manifests/model-registry.json")
         )
-        registry = LocalModelRegistry(registry_path).summary()
+        checksum_path = os.getenv(
+            "ARTIFACT_CHECKSUM_MANIFEST",
+            str(SERVICE_ROOT / "manifests/artifact-checksums.json"),
+        )
+        artifact_integrity = LocalModelRegistry.verify_checksum_manifest(checksum_path)
+        try:
+            registry = LocalModelRegistry(registry_path).summary()
+            registry_state = "ready"
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            registry = {"count": 0, "active": [], "approved": []}
+            registry_state = "error"
+        ready = artifact_integrity["state"] == "ready" and registry_state == "ready"
         return JSONResponse(
-            status_code=200,
+            status_code=200 if ready else 503,
             content={
-                "ok": True,
+                "ok": ready,
                 "service": "acnetrex-ml",
                 "contractVersion": CONTRACT_VERSION,
                 "deterministicEngines": "ready",
                 "modelRegistry": registry,
+                "modelRegistryState": registry_state,
+                "artifactIntegrity": artifact_integrity,
                 "vertex": {
                     "configured": bool(vertex.get("configured")),
                     "state": str(vertex.get("state", "not_configured")),
@@ -225,7 +243,7 @@ def create_app(*, idempotency_store: IdempotencyStore | None = None) -> FastAPI:
     @application.get("/v1/models", dependencies=[Depends(_authenticate)])
     async def list_models() -> dict[str, Any]:
         registry_path = os.getenv(
-            "MODEL_REGISTRY_PATH", "manifests/model-registry.json"
+            "MODEL_REGISTRY_PATH", str(SERVICE_ROOT / "manifests/model-registry.json")
         )
         entries = LocalModelRegistry(registry_path).load()
         return {

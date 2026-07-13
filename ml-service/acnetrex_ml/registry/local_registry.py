@@ -33,6 +33,36 @@ class LocalModelRegistry:
         digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
         return digest == expected_sha256.lower()
 
+    @staticmethod
+    def verify_checksum_manifest(manifest_path: str | Path) -> dict[str, Any]:
+        path = Path(manifest_path).resolve()
+        missing: list[str] = []
+        mismatched: list[str] = []
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            artifacts = payload["artifacts"]
+            if payload.get("algorithm") != "sha256" or not isinstance(artifacts, dict):
+                raise ValueError("invalid checksum manifest")
+            base = (path.parent / str(payload.get("base_path", "."))).resolve()
+            for relative, expected in sorted(artifacts.items()):
+                artifact = (base / relative).resolve()
+                if not artifact.is_relative_to(base) or not artifact.is_file():
+                    missing.append(str(relative))
+                    continue
+                if not isinstance(expected, str) or len(expected) != 64:
+                    mismatched.append(str(relative))
+                    continue
+                if not LocalModelRegistry.verify_artifact(artifact, expected):
+                    mismatched.append(str(relative))
+        except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
+            missing = ["checksum_manifest"]
+            mismatched = []
+        return {
+            "state": "ready" if not missing and not mismatched else "error",
+            "missing": missing,
+            "mismatched": mismatched,
+        }
+
     def summary(self) -> dict[str, Any]:
         entries = self.load()
         return {
