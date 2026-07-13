@@ -14,18 +14,32 @@ async function zipCsvFiles(bundle: Record<string, Array<Record<string, unknown>>
     const archive = new ZipArchive({ zlib: { level: 9 } });
     const stream = new PassThrough();
     const chunks: Buffer[] = [];
+    let settled = false;
+
+    const fail = (error: unknown) => {
+      if (settled) return;
+      settled = true;
+      reject(error);
+    };
 
     stream.on("data", (chunk) => chunks.push(chunk as Buffer));
-    stream.on("end", () => resolve(Buffer.concat(chunks)));
-    stream.on("error", reject);
-    archive.on("error", reject);
+    stream.on("end", () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks));
+    });
+    stream.on("error", fail);
+    archive.on("error", fail);
     archive.pipe(stream);
 
-    for (const [name, rows] of Object.entries(bundle)) {
-      archive.append(toCsv(rows), { name: `${name}.csv` });
+    try {
+      for (const [name, rows] of Object.entries(bundle)) {
+        archive.append(toCsv(rows), { name: `${name}.csv` });
+      }
+      void archive.finalize().catch(fail);
+    } catch (error) {
+      fail(error);
     }
-
-    archive.finalize().catch(reject);
   });
 }
 
