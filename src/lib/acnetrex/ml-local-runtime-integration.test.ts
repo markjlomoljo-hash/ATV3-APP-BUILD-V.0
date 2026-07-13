@@ -47,6 +47,7 @@ describe("ML local runtime integration contract", () => {
       ok: false,
       result: null,
       runtime_mode: "unavailable",
+      readiness_state: "model_unavailable",
       safety_state: "model_unavailable",
       confidence: null,
       calibration_state: "not_applicable",
