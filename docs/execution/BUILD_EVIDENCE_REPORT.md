@@ -329,3 +329,18 @@ Implemented and locally validated the first durable CutisAI conversation path:
 This proves the server boundary and no-fabrication behavior locally. It does
 not prove a real signed-session write until an authenticated Supabase user
 session is available in the environment.
+
+## 2026-07-13 CutisAI post-push verification
+
+- Commit `2c75ce2 feat(cutisai): persist consented conversations` was pushed to
+  `feat/phase7-profile-reports`.
+- Vercel deployment `dpl_95MvvvuboMWBv85xDbkXMgXTbkPD` reached `READY`, is
+  aliased to `https://atv-3-app-build-v-0.vercel.app`, and GitHub reports the
+  Vercel check as successful.
+- Production `GET /cutisai` returned HTTP 200 and production
+  `GET /api/cutisai/conversations` without a bearer returned HTTP 401. This
+  verifies the route is deployed and still protected by authentication.
+- Production `/api/health` remains HTTP 503 for the previously verified
+  external blockers: Cloud Run still serves provider placeholder HTML, the
+  durable worker is disabled, and Clerk production configuration is absent.
+  This deployment did not change those infrastructure states.
