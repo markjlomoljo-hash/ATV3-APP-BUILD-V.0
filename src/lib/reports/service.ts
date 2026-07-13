@@ -291,13 +291,19 @@ export async function listReportHistory(userId: string): Promise<ReportMetadata[
       .from(reportFiles)
       .where(and(eq(reportFiles.reportRequestId, r.id), eq(reportFiles.userId, userId)))
       .limit(1);
+    const [job] = await db
+      .select({ failureReason: reportJobs.failureReason })
+      .from(reportJobs)
+      .where(and(eq(reportJobs.reportRequestId, r.id), eq(reportJobs.userId, userId)))
+      .orderBy(desc(reportJobs.createdAt))
+      .limit(1);
     results.push({
       id: r.id,
       requestedAt: r.requestedAt.toISOString(),
       status: r.status as ReportMetadata["status"],
       inclusionOptions: r.inclusionOptions as ReportInclusionOptions,
       fileSizeBytes: file?.sizeBytes ?? null,
-      failureReason: null,
+      failureReason: job?.failureReason ?? null,
     });
   }
   return results;

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { DatabaseConfigurationError } from "@/db";
 import { withSession } from "@/lib/session";
 import { getReportFileBuffer } from "@/lib/reports/service";
+import { classifyDatabaseFailure } from "@/lib/acnetrex/services/database-error-classifier";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +11,13 @@ export const dynamic = "force-dynamic";
 // standing in for a private, signed object-storage download URL.
 export const GET = withSession<{ params: Promise<{ id: string }> }>(async (_req, { userId }, routeCtx) => {
   const { id } = await routeCtx.params;
-  const buffer = await getReportFileBuffer(userId, id);
+  let buffer;
+  try {
+    buffer = await getReportFileBuffer(userId, id);
+  } catch (error) {
+    const reason = error instanceof DatabaseConfigurationError ? "database_unavailable" : classifyDatabaseFailure(error);
+    return NextResponse.json({ ok: false, error: reason }, { status: 503 });
+  }
   if (!buffer) {
     return NextResponse.json({ ok: false, error: "Report not available" }, { status: 404 });
   }
