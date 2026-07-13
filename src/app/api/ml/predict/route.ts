@@ -53,6 +53,9 @@ export async function POST(req: Request) {
   if (process.env.ML_PROXY_ENABLED !== "true") {
     return jsonError("ml_proxy_not_enabled", 503);
   }
+  if (process.env.ML_PREDICTION_WORKER_ENABLED !== "true") {
+    return jsonError("ml_proxy_requires_durable_worker", 503);
+  }
 
   const auth = await authenticateSupabaseRequest(req);
   if (!auth.ok) {

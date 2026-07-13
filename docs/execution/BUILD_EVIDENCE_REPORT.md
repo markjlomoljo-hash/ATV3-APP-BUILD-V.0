@@ -198,3 +198,28 @@ Verified the live state after rebasing onto the current remote branch and pushin
 | `git diff --check` | Pass |
 | Python ML tests | Not run: Python is not installed on this workstation |
 | Cloud Run root/health | HTTP 200 placeholder HTML; blocked deployment state |
+
+## 2026-07-13 Durable ML Job Boundary
+
+Implemented a server-only durable enqueue/status boundary without enabling
+direct prediction against the still-placeholder Cloud Run service:
+
+- `POST /api/ml/jobs` authenticates the Supabase bearer, validates the bounded
+  engine request, requires an idempotency key, and writes `ml_analysis_jobs`
+  and `outbox_events` through the existing transactional idempotency helper.
+- `GET /api/ml/jobs/:id` scopes reads by both job ID and authenticated owner;
+  it never exposes another user's job.
+- A successful new request returns `202 queued_for_cloud` with a durable job
+  reference. Replays return the stored idempotent reference. Missing database
+  configuration returns `503 database_unavailable` before acknowledgement.
+- The direct `/api/ml/predict` route remains disabled until a worker can claim
+  queued jobs, invoke Cloud Run/Vertex, persist `ml_analysis_results`, and
+  complete replay-safe result delivery. It now requires both the existing
+  proxy flag and an explicit `ML_PREDICTION_WORKER_ENABLED=true` gate.
+
+### Durable ML job validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test -- src/app/api/ml/predict/route.test.ts src/lib/acnetrex/ml-analysis-jobs.test.ts src/app/api/ml/jobs/route.test.ts src/app/api/ml/jobs/[id]/route.test.ts` | Pass: 4 files, 21 tests |
+| `npm.cmd run typecheck` | Pass |

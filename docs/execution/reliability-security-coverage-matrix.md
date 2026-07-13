@@ -43,3 +43,13 @@ Supabase Auth is canonical. Every protected server action derives `user_id` from
 - Live schema: `api_idempotency_keys`, `outbox_events`, `consumer_inbox`, `deletion_jobs`
 - Destructive legacy deletion and client-directed rewards fail closed until their durable workers exist.
 
+## ML job boundary update
+
+`POST /api/ml/jobs` is now the durable entrypoint for authenticated analysis
+requests. It validates the request, requires a stable idempotency key, inserts
+`ml_analysis_jobs`, publishes `ml.analysis.requested` to `outbox_events`, and
+completes the idempotency record in one transaction. `GET /api/ml/jobs/:id`
+filters by the verified owner. The direct `/api/ml/predict` proxy remains
+disabled behind both `ML_PROXY_ENABLED` and `ML_PREDICTION_WORKER_ENABLED`
+until a worker claims jobs, invokes the real Cloud Run/Vertex service, persists
+`ml_analysis_results`, and supports replay-safe result delivery.
