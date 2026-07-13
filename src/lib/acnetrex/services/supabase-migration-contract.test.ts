@@ -32,6 +32,12 @@ const mlGovernanceHardeningMigrationPath = join(
   "migrations",
   "20260714060500_ml_governance_security_hardening.sql",
 );
+const legacyGrantHardeningMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260714070000_revoke_legacy_anon_and_client_writes.sql",
+);
 
 describe("Supabase migration contract", () => {
   it("defines persistent memory and ML lineage tables with RLS enabled", () => {
@@ -207,5 +213,33 @@ describe("ML governance and private artifact boundary", () => {
     expect(sql).toContain("bucket_id = 'face-scans-raw'");
     expect(sql).toContain("raw_image_retention is true");
     expect(sql).not.toContain("for insert to authenticated\nwith check (\n  bucket_id = any (array['reports', 'skin-twin'])");
+  });
+});
+
+describe("legacy public grant hardening", () => {
+  it("removes anonymous table access and direct authenticated writes now and by default", () => {
+    const sql = readFileSync(legacyGrantHardeningMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("revoke all privileges on all tables in schema public from anon");
+    expect(sql).toContain(
+      "revoke insert, update, delete, truncate, references, trigger on all tables in schema public from authenticated",
+    );
+    expect(sql).toContain(
+      "alter default privileges for role postgres in schema public revoke all on tables from anon",
+    );
+    expect(sql).toContain(
+      "alter default privileges for role postgres in schema public revoke insert, update, delete, truncate, references, trigger on tables from authenticated",
+    );
+    expect(sql).not.toContain("grant all on all tables in schema public to authenticated");
+  });
+
+  it("keeps backend lineage undiscoverable and removes duplicate ML read policies", () => {
+    const sql = readFileSync(legacyGrantHardeningMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain(
+      "revoke select on public.ml_model_versions, public.ml_dataset_versions, public.ml_training_runs",
+    );
+    expect(sql).toContain('drop policy if exists "owner read" on public.ml_analysis_jobs');
+    expect(sql).toContain('drop policy if exists "owner read" on public.ml_analysis_results');
   });
 });
