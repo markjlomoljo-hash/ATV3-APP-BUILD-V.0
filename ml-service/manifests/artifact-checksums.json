@@ -17,7 +17,7 @@
     "reports/model-cards/vision-pipeline-models.md": "a44d05b88df6ffe1fdb93b0a6fab345bdfb205ed8de968f3be2c39396c904ced",
     "reports/calibration/README.md": "c35ca26331e8ebf73ab67f4faeccde871fe17e2ca6d64bdb504af709ee4bc9a9",
     "reports/fairness/README.md": "3c47287cbf38527c061136921e0f349fc8e55e67cdf856e3975666a486471dab",
-    "reports/parity/README.md": "f886d105e6b611b552a71e0b102c18153d5fb106b5d1a8f537dc4703237c0646"
+    "reports/parity/README.md": "4ce45ac81c7ccc5934c8c3f4dfc3b18d7c271ce535bfe4b61d0f26945b84aa72"
   },
   "model_artifacts": [],
   "note": "Every listed path exists. No model artifact exists because no dataset passed the production training gate."

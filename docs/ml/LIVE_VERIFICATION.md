@@ -2,7 +2,7 @@
 
 Date: 2026-07-14. This file records evidence, not an assertion of deployment.
 
-Local: root TypeScript check passed; Next.js webpack production build passed; focused API/worker/local-runtime tests passed; mobile clean npm install and TypeScript check passed; Python Ruff and six FastAPI tests passed; ten static migration-policy tests passed. Docker, Supabase CLI, and a local PostgreSQL service were unavailable, so container execution and SQL execution are not verified.
+Local: 44 Vitest files/216 tests passed; coverage was 81.62% statements, 84.46% functions, 86.7% lines, and 68.19% branches. Root TypeScript, ESLint, Next.js webpack production build, and a 66-route live smoke passed. Mobile clean npm install and TypeScript passed. Python Ruff and 15 tests passed, including shared cloud/mobile sleep parity, checksum/persistence readiness, and fabrication safety. Static migration-policy tests passed. The secret scan found no high-signal credential patterns. Mobile production audit reported 10 moderate transitive `uuid` findings in Expo build tooling; the automated fix proposes a breaking Expo downgrade and was not applied. Docker/container scanners, Supabase CLI, and a local PostgreSQL service were unavailable, so container execution/scan and SQL execution are not verified.
 
 Read-only Google Cloud inspection used the existing active account and project without changing configuration. Cloud Run service `mlatv` routes 100% to ready revision `mlatv-00002-4ww`, but its image is `gcr.io/cloudrun/placeholder`; ingress is all and invoker IAM enforcement is disabled. Artifact Registry repository `us-central1/acnetrex-ml` exists. Neither required Secret Manager entry (`acnetrex-ml-shared-secret`, `acnetrex-ml-database-url`) exists.
 
