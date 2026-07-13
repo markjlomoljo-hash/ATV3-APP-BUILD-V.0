@@ -43,8 +43,9 @@
   remains disabled until the worker is deployed and configured.
 - A server-only ML worker boundary now claims leased analysis jobs, calls the
   real Cloud Run contract, persists validated results, retries transient
-  failures, and exposes worker configuration through `/api/health`. Live
-  scheduler deployment is still unverified.
+  failures, and exposes worker configuration through `/api/health`. A
+  Vercel Cron-compatible GET trigger is now declared in `vercel.json`; live
+  scheduled execution and production secret configuration remain unverified.
 
 ## Category breakdown
 
@@ -59,7 +60,7 @@
 | Treatment/task/gamification | 4.25/8 | treatment/check-in/task route bodies, task credit no-fake adapter | durable task generation and streak rules |
 | Reports/exports/profile | 4/8 | report/export/profile routes, schemas, request/history bodies, missing-data report readiness | PDF/export storage verification |
 | Native mobile/device readiness | 2.25/7 | native readiness route plus SecureStore-compatible Supabase auth storage adapter | Expo/device validation and offline queue |
-| Testing/security/release | 6.5/8 | 129 unit tests after durable ML worker/job and prediction safety-gate coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, runtime error inspection | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
+| Testing/security/release | 6.5/8 | 130 unit tests after durable ML worker/job, Vercel Cron trigger, and prediction safety-gate coverage, production build/typecheck/lint, 66-route smoke, READY Vercel deployment, runtime error inspection | Python ML tests, Cloud Run/Vertex deployment, native device, remote CI promotion |
 
 ## Remaining release blockers
 

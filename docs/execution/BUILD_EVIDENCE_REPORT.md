@@ -251,6 +251,11 @@ direct prediction against the still-placeholder Cloud Run service:
   terminal `failed` states. No fallback payload is generated.
 - `/api/health` now exposes non-secret worker configuration status and reports
   `ml_worker_not_configured` while the worker is not deployed/configured.
+- `vercel.json` now declares a five-minute Vercel Cron invocation of the
+  worker route. The route accepts Vercel's bearer-style cron secret as well as
+  the explicit `x-worker-secret` header; execution remains disabled until the
+  production flag/secrets are configured and the account plan permits the
+  declared schedule.
 - This is source-level worker readiness, not a claim that Railway, Vercel Cron,
   Cloud Run Jobs, or another production scheduler is active.
 
@@ -258,8 +263,8 @@ direct prediction against the still-placeholder Cloud Run service:
 
 | Command / check | Result |
 |---|---|
-| `npm.cmd test` | Pass: 26 files, 129 tests |
-| `npm.cmd run test:coverage` | Pass: 80.76% statements, 74.01% branches |
+| `npm.cmd test` | Pass: 26 files, 130 tests |
+| `npm.cmd run test:coverage` | Pass: 80.84% statements, 74.15% branches |
 | `npm.cmd run typecheck` | Pass |
 
 ### Durable ML job validation
