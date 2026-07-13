@@ -62,6 +62,7 @@ export const inferenceResponseSchema = z.object({
   result: z.record(z.string(), z.unknown()).nullable(),
   runtime_mode: runtimeModeSchema,
   runtime_provider: z.string().min(1).max(96),
+  readiness_state: readinessStateSchema,
   model_name: z.string().max(160).nullable(),
   model_version: z.string().max(160).nullable(),
   training_data_version: z.string().max(160).nullable(),
@@ -92,7 +93,7 @@ export const inferenceResponseSchema = z.object({
     "evidence_unavailable",
     "error_retryable",
     "error_terminal",
-  ].includes(response.safety_state);
+  ].includes(response.readiness_state);
   if (!unavailable) return;
   if (response.result !== null) {
     context.addIssue({ code: "custom", path: ["result"], message: "Unavailable results must not contain substitute output" });
@@ -128,6 +129,7 @@ export function unavailableResponse(
     result: null,
     runtime_mode: mode,
     runtime_provider: "acnetrex-local-runtime",
+    readiness_state: state,
     model_name: null,
     model_version: null,
     training_data_version: null,
