@@ -168,6 +168,18 @@ export async function GET() {
     mlApiUrl: envConfigured("ACNETREX_ML_API_URL"),
     vertexEndpoint: envConfigured("VERTEX_AI_ENDPOINT_ID"),
     vercel: envConfigured("VERCEL", "VERCEL_ENV"),
+    clerkPublishableKey: envConfigured("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY"),
+    clerkSecretKey: envConfigured("CLERK_SECRET_KEY"),
+    clerkOwnerBootstrap: envConfigured("ACNETREX_OWNER_CLERK_USER_ID"),
+  };
+
+  const clerkConfigured = environment.clerkPublishableKey && environment.clerkSecretKey;
+  const clerkBase = {
+    configured: clerkConfigured,
+    status: clerkConfigured ? ("configured" as const) : ("not_configured" as const),
+    githubSignIn: clerkConfigured ? ("dashboard_verification_required" as const) : ("not_configured" as const),
+    sessionClaims: clerkConfigured ? ("owner_action_required" as const) : ("not_configured" as const),
+    ownerBootstrap: environment.clerkOwnerBootstrap ? ("configured" as const) : ("owner_action_required" as const),
   };
 
   const cloudRun = await checkCloudRunHealth();
@@ -195,7 +207,10 @@ export async function GET() {
       from information_schema.tables
       where table_schema = 'public'
     `);
-    const schema = summarizeDatabaseSchema(tableRows.rows.map((row) => row.table_name));
+    const tableNames = tableRows.rows.map((row) => row.table_name);
+    const schema = summarizeDatabaseSchema(tableNames);
+    const rbacTables = ["clerk_identity_map", "clerk_role_history", "admin_break_glass_sessions", "audit_logs"];
+    const missingRbacTables = rbacTables.filter((table) => !tableNames.includes(table));
     const schemaReady = schema.status === "ready";
     // The Expo/FastAPI/Supabase contract is authoritative. The old Drizzle
     // compatibility tables are intentionally not created as duplicate sources
@@ -213,12 +228,22 @@ export async function GET() {
           schema,
         },
         environment,
+        clerk: {
+          ...clerkBase,
+          rbac: {
+            status: missingRbacTables.length === 0 ? "ready" : "migration_missing",
+            requiredTables: rbacTables,
+            missingTables: missingRbacTables,
+          },
+        },
         cloudRun,
         warnings: [
           ...schema.warnings,
           ...(cloudRun.status === "not_configured" ? ["ml_api_not_configured"] : []),
           ...(cloudRun.status === "offline" || cloudRun.status === "timeout" ? ["ml_api_unreachable"] : []),
           ...(cloudRun.status === "degraded" ? ["ml_api_degraded"] : []),
+          ...(!clerkConfigured ? ["clerk_not_configured"] : []),
+          ...(missingRbacTables.length > 0 ? ["clerk_rbac_migration_missing"] : []),
         ],
         updatedAt: new Date().toISOString(),
       },
@@ -233,6 +258,7 @@ export async function GET() {
           app: "acnetrex-v3",
           database: { configured: false, status: "not_configured" },
           environment,
+          clerk: clerkBase,
           cloudRun,
           updatedAt: new Date().toISOString(),
         },
@@ -252,6 +278,7 @@ export async function GET() {
             failureCategory: "tls_configuration_invalid",
           },
           environment,
+          clerk: clerkBase,
           cloudRun,
           updatedAt: new Date().toISOString(),
         },
@@ -276,6 +303,7 @@ export async function GET() {
           errorDiagnostics,
         },
         environment,
+        clerk: clerkBase,
         cloudRun,
         updatedAt: new Date().toISOString(),
       },
