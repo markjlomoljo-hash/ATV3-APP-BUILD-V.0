@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createExpoOfflineOperationStore } from "../../../apps/mobile/src/lib/ml-offline-store";
+import {
+  createSqliteOfflineOperationStore,
+  type QueueDatabase,
+} from "../../../packages/ml-local-runtime/src/sqlite-operation-store";
 
 const operation = {
   local_operation_id: "11111111-1111-4111-8111-111111111111",
@@ -19,18 +22,19 @@ const operation = {
 };
 
 function fakeDatabase() {
-  return {
+  const database = {
     execAsync: vi.fn(async () => undefined),
     runAsync: vi.fn(async () => ({ changes: 1, lastInsertRowId: 0 })),
     getFirstAsync: vi.fn(async () => null),
     getAllAsync: vi.fn(async () => []),
   };
+  return database as typeof database & QueueDatabase;
 }
 
 describe("Expo SQLite ML offline operation store", () => {
   it("initializes a WAL-backed queue table without interpolating payloads", async () => {
     const database = fakeDatabase();
-    const store = createExpoOfflineOperationStore(database);
+    const store = createSqliteOfflineOperationStore(database);
 
     await store.initialize();
     await store.put(operation);
@@ -54,7 +58,7 @@ describe("Expo SQLite ML offline operation store", () => {
       validated_payload_json: JSON.stringify(operation.validated_payload),
       dependencies_json: "[]",
     });
-    const store = createExpoOfflineOperationStore(database);
+    const store = createSqliteOfflineOperationStore(database);
 
     await expect(store.get(operation.local_operation_id)).resolves.toEqual(operation);
     expect(database.getFirstAsync).toHaveBeenCalledWith(
@@ -65,7 +69,7 @@ describe("Expo SQLite ML offline operation store", () => {
 
   it("lists only ready replay states with a bounded batch size", async () => {
     const database = fakeDatabase();
-    const store = createExpoOfflineOperationStore(database);
+    const store = createSqliteOfflineOperationStore(database);
 
     await store.listReady(new Date("2026-07-13T12:31:00.000Z"), 500);
 

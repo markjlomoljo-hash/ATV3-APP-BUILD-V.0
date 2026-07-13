@@ -5,3 +5,4 @@ export * from "./deterministic/readiness.js";
 export * from "./deterministic/sleep.js";
 export * from "./offline-queue-contract.js";
 export * from "./runtime-selector.js";
+export * from "./sqlite-operation-store.js";
