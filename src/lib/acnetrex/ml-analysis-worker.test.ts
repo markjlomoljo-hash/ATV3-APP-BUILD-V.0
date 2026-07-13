@@ -39,6 +39,42 @@ function upstream(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } });
 }
 
+function canonicalResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    ok: true,
+    request_id: job.jobId,
+    job_id: null,
+    module: "sleepderm",
+    task: "sleep_pattern_analysis",
+    result_type: "deterministic_analysis",
+    result: { state: "ready" },
+    runtime_mode: "local_deterministic",
+    runtime_provider: "acnetrex_ml",
+    readiness_state: "ready",
+    model_name: null,
+    model_version: null,
+    training_data_version: null,
+    feature_schema_version: "1.0.0",
+    input_record_refs: ["sleep_logs:sleep-1"],
+    features_used: ["sleepDebtMinutes"],
+    features_missing: [],
+    sample_count: 7,
+    coverage: 1,
+    confidence: null,
+    confidence_label: "not_applicable",
+    calibration_state: "not_applicable",
+    uncertainty: ["No calibrated predictive probability is produced."],
+    limitations: ["not diagnostic"],
+    confounders: [],
+    evidence_state: "not_applicable",
+    safety_state: "ready",
+    sync_status: "local_only",
+    latency_ms: 3,
+    created_at: "2026-07-14T00:00:00.000Z",
+    ...overrides,
+  };
+}
+
 describe("ML analysis worker", () => {
   beforeEach(() => {
     vi.stubEnv("ACNETREX_ML_API_URL", "https://ml.example.test/");
@@ -74,11 +110,7 @@ describe("ML analysis worker", () => {
     let commitSeenBeforeFetch = false;
     const fetcher = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => {
       commitSeenBeforeFetch = fakeClient.query.mock.calls.some(([sql]) => String(sql) === "commit");
-      return upstream({
-        ok: true,
-        predictions: [{ direction: "observed" }],
-        metadata: { modelVersion: "cloud.v1", confidence: 0.72, limitations: ["not diagnostic"] },
-      });
+      return upstream(canonicalResponse());
     });
     const result = await processNextMlAnalysisJob({ workerId: "worker-1", fetcher });
     expect(result).toEqual({ status: "completed", jobId: job.jobId, outboxId: job.outboxId });
@@ -127,11 +159,16 @@ describe("ML analysis worker", () => {
     });
     const result = await processNextMlAnalysisJob({
       workerId: "worker-skin-twin",
-      fetcher: vi.fn().mockResolvedValue(upstream({
-        ok: true,
-        predictions: [{ direction: "observed" }],
-        metadata: { modelVersion: "skin-twin.cloud.v1", confidence: 0.61, uncertainty: { low: -0.2, high: 0.2 } },
-      })),
+      fetcher: vi.fn().mockResolvedValue(upstream(canonicalResponse({
+        module: "skin_twin",
+        task: "scenario_validation",
+        result: { state: "ready", scenario_result: null },
+        model_version: "skin-twin.cloud.v1",
+        confidence: 0.61,
+        confidence_label: "moderate",
+        calibration_state: "uncalibrated",
+        uncertainty: ["Scenario output is not a guaranteed outcome."],
+      }))),
     });
     expect(result.status).toBe("completed");
     const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
@@ -153,7 +190,7 @@ describe("ML analysis worker", () => {
     });
     const result = await processNextMlAnalysisJob({
       workerId: "worker-skin-twin-missing-lineage",
-      fetcher: vi.fn().mockResolvedValue(upstream({ ok: true, predictions: [{ direction: "observed" }] })),
+      fetcher: vi.fn().mockResolvedValue(upstream(canonicalResponse({ module: "skin_twin", task: "scenario_validation" }))),
     });
     expect(result).toMatchObject({ status: "retry_scheduled", reason: "ml_result_persistence_failed" });
     const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));

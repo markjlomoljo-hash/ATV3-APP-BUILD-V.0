@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 import { getPool } from "@/db";
 import { executeIdempotent } from "@/lib/reliability/idempotency";
+import { inferenceResponseSchema } from "../../../packages/ml-local-runtime/src/contracts";
 
 const inputRecordRefSchema = z.object({
   table: z.string().min(1).max(80),
@@ -54,10 +55,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function hasPredictionPayload(payload: unknown): payload is Record<string, unknown> {
-  if (!isRecord(payload)) return false;
-  if (Array.isArray(payload.predictions)) return true;
-  if ("prediction" in payload) return true;
-  return payload.ok === true && ("predictions" in payload || "prediction" in payload || "result" in payload);
+  return inferenceResponseSchema.safeParse(payload).success;
 }
 
 export async function enqueueMlAnalysisJob(options: {

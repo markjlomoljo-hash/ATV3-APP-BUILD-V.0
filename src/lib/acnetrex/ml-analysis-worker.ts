@@ -200,27 +200,28 @@ async function withFinalizeTransaction<T>(client: PoolClient, operation: () => P
 }
 
 async function persistSuccess(client: PoolClient, job: ClaimedJob, payload: Record<string, unknown>) {
-  const metadata = isRecord(payload.metadata) ? payload.metadata : payload;
+  const metadata = payload;
   await client.query(
     `insert into public.ml_analysis_results
        (user_id, job_id, engine, operation, runtime_mode, model_name, model_version,
         training_data_version, feature_schema_version, input_record_refs, features_used,
         features_missing, confidence, limitations, result, sync_status)
-     values ($1::uuid,$2::uuid,$3,$4,'cloud_run',$5,$6,$7,$8,$9::jsonb,$10::jsonb,
-             $11::jsonb,$12,$13::jsonb,$14::jsonb,'synced')
+     values ($1::uuid,$2::uuid,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11::jsonb,
+             $12::jsonb,$13,$14::jsonb,$15::jsonb,'synced')
      on conflict (job_id) do nothing`,
     [
       job.userId,
       job.jobId,
       job.engine,
       job.operation,
-      stringOrNull(metadata.modelName),
-      stringOrNull(metadata.modelVersion),
-      stringOrNull(metadata.trainingDataVersion),
+      stringOrNull(metadata.runtime_mode) ?? "unavailable",
+      stringOrNull(metadata.model_name),
+      stringOrNull(metadata.model_version),
+      stringOrNull(metadata.training_data_version),
       job.featureSchemaVersion,
       JSON.stringify(job.inputRecordRefs ?? []),
-      JSON.stringify(stringArray(metadata.featuresUsed)),
-      JSON.stringify(stringArray(metadata.featuresMissing)),
+      JSON.stringify(stringArray(metadata.features_used)),
+      JSON.stringify(stringArray(metadata.features_missing)),
       numberOrNull(metadata.confidence),
       JSON.stringify(stringArray(metadata.limitations)),
       JSON.stringify(payload),
@@ -238,7 +239,7 @@ async function persistSuccess(client: PoolClient, job: ClaimedJob, payload: Reco
         snapshotId,
         job.userId,
         JSON.stringify(payload),
-        stringOrNull(metadata.modelVersion),
+        stringOrNull(metadata.model_version),
         numberOrNull(metadata.confidence),
         JSON.stringify(metadata.uncertainty ?? null),
       ],
