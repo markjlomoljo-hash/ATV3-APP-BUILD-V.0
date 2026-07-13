@@ -26,6 +26,12 @@ const trainingLineageBoundaryMigrationPath = join(
   "migrations",
   "20260713020013_revoke_ml_training_runs_client_read.sql",
 );
+const mlGovernanceHardeningMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260714060500_ml_governance_security_hardening.sql",
+);
 
 describe("Supabase migration contract", () => {
   it("defines persistent memory and ML lineage tables with RLS enabled", () => {
@@ -137,5 +143,56 @@ describe("mobile backend write boundary", () => {
     expect(sql).toContain(
       "grant select, insert, update, delete on table public.ml_training_runs to service_role",
     );
+  });
+});
+
+describe("ML governance and private artifact boundary", () => {
+  it("keeps registry, dataset, training, audit, and raw lineage server-only", () => {
+    const sql = readFileSync(mlGovernanceHardeningMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("revoke all privileges on table public.ml_model_versions");
+    expect(sql).toContain("public.ml_dataset_versions");
+    expect(sql).toContain("public.ml_training_runs");
+    expect(sql).toContain("public.audit_logs");
+    expect(sql).toContain("public.ml_feature_snapshots");
+    expect(sql).toContain("public.intelligence_events");
+    expect(sql).toContain('drop policy if exists "authenticated model metadata read"');
+    expect(sql).toContain('drop policy if exists "authenticated dataset metadata read"');
+    expect(sql).toContain('drop policy if exists "owner read" on public.audit_logs');
+  });
+
+  it("adds governed model, dataset, training, job, and result lineage", () => {
+    const sql = readFileSync(mlGovernanceHardeningMigrationPath, "utf8").toLowerCase();
+
+    for (const column of [
+      "status text",
+      "artifact_sha256 text",
+      "label_schema_version text",
+      "code_commit text",
+      "snapshot_uri text",
+      "split_manifest jsonb",
+      "consent_review jsonb",
+      "request_id uuid",
+      "idempotency_key text",
+      "readiness_state text",
+      "safety_state text",
+      "calibration_state text",
+    ]) {
+      expect(sql).toContain(column);
+    }
+    expect(sql).toContain("check (status in ('candidate', 'validated', 'approved', 'active', 'deprecated', 'rejected')) not valid");
+  });
+
+  it("makes generated report and Skin Twin artifacts read-only to clients", () => {
+    const sql = readFileSync(mlGovernanceHardeningMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("insert into storage.buckets");
+    expect(sql).toContain("on conflict (id) do update");
+    expect(sql).toContain('drop policy if exists "own folder insert" on storage.objects');
+    expect(sql).toContain('drop policy if exists "own folder update" on storage.objects');
+    expect(sql).toContain('drop policy if exists "own folder delete" on storage.objects');
+    expect(sql).toContain("bucket_id = 'face-scans-raw'");
+    expect(sql).toContain("raw_image_retention is true");
+    expect(sql).not.toContain("for insert to authenticated\nwith check (\n  bucket_id = any (array['reports', 'skin-twin'])");
   });
 });
