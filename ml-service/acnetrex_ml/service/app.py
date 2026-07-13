@@ -429,10 +429,21 @@ def create_app(
                 headers={"Idempotency-Replayed": "true"},
                 content={"ok": True, "job_id": item["job_id"], "status": "completed"},
             )
-        result = await asyncio.wait_for(
-            asyncio.to_thread(_predict_core, payload),
-            timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
-        )
+        try:
+            result = await asyncio.wait_for(
+                asyncio.to_thread(_predict_core, payload),
+                timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
+            )
+        except TimeoutError as exc:
+            failure = {
+                "ok": False,
+                "readiness_state": "error_retryable",
+                "error": {"code": "prediction_timeout", "retryable": True},
+            }
+            jobs.fail(job_id, failure)
+            raise HTTPException(
+                status_code=504, detail={"code": "prediction_timeout"}
+            ) from exc
         body = result.model_copy(update={"job_id": job_id}).model_dump(mode="json")
         jobs.complete(job_id, body)
         return JSONResponse(
