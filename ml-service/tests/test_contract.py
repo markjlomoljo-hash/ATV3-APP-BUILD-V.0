@@ -1,3 +1,6 @@
+import hashlib
+import json
+
 from fastapi.testclient import TestClient
 
 from main import app
@@ -33,3 +36,31 @@ def test_protected_diagnostics_require_auth_in_production(monkeypatch) -> None:
     response = client.get("/v1/models")
 
     assert response.status_code == 401
+
+
+def test_readiness_fails_closed_on_artifact_checksum_mismatch(
+    monkeypatch, tmp_path
+) -> None:
+    registry = tmp_path / "model-registry.json"
+    registry.write_text('{"models": []}', encoding="utf-8")
+    checksums = tmp_path / "artifact-checksums.json"
+    checksums.write_text(
+        json.dumps(
+            {
+                "algorithm": "sha256",
+                "artifacts": {"model-registry.json": hashlib.sha256(b"different").hexdigest()},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MODEL_REGISTRY_PATH", str(registry))
+    monkeypatch.setenv("ARTIFACT_CHECKSUM_MANIFEST", str(checksums))
+
+    response = client.get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["artifactIntegrity"] == {
+        "state": "error",
+        "missing": [],
+        "mismatched": ["model-registry.json"],
+    }
