@@ -39,4 +39,22 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: python -m pip install -r ml-service/requirements-dev.txt
+      - run: python -m ruff check ml-service
+      - run: python -m ruff format --check ml-service
       - run: python -m pytest ml-service/tests
+
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/mobile/package-lock.json
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm run typecheck
