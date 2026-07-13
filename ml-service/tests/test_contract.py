@@ -1,5 +1,6 @@
 import hashlib
 import json
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -83,3 +84,19 @@ def test_readiness_fails_closed_when_persistence_probe_fails(tmp_path) -> None:
 
     assert response.status_code == 503
     assert response.json()["persistence"] == {"state": "error"}
+
+
+def test_container_copies_every_checksummed_artifact_directory() -> None:
+    service_root = Path(__file__).resolve().parents[1]
+    manifest = json.loads(
+        (service_root / "manifests/artifact-checksums.json").read_text(encoding="utf-8")
+    )
+    dockerfile = (service_root / "Dockerfile").read_text(encoding="utf-8")
+    top_level_directories = {
+        artifact.split("/", 1)[0]
+        for artifact in manifest["artifacts"]
+        if "/" in artifact
+    }
+
+    for directory in top_level_directories:
+        assert f"COPY {directory} ./{directory}" in dockerfile
