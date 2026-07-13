@@ -74,7 +74,7 @@ describe("Skin Twin scenario service", () => {
   });
 
   it("queues only when real source records meet the minimum gate", async () => {
-    const { client } = clientWithResponses([
+    const { client, query } = clientWithResponses([
       { rows: [{ personalLearning: true }] },
       { rows: [{ faceScans: 2, sleepLogs: 8, foodLogs: 8 }] },
       { rows: [snapshot("queued_for_cloud")] },
@@ -85,6 +85,7 @@ describe("Skin Twin scenario service", () => {
     const result = await createSkinTwinScenario(client, userId, input);
     expect(result.status).toBe("queued_for_cloud");
     expect(result.snapshot.simulation).toBeNull();
+    expect(JSON.stringify(query.mock.calls)).toContain(snapshotId);
   });
 
   it("loads only owner-scoped scenario history", async () => {

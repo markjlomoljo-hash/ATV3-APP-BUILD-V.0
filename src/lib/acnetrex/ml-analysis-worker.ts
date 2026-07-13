@@ -58,6 +58,16 @@ function stringArray(value: unknown): string[] {
   return value.filter((item): item is string => typeof item === "string" && item.length <= 160).slice(0, 100);
 }
 
+function uuidOrNull(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value) ? value : null;
+}
+
+function skinTwinSnapshotId(job: ClaimedJob): string | null {
+  if (job.engine !== "skin_twin" || !isRecord(job.features)) return null;
+  return uuidOrNull(job.features.snapshotId);
+}
+
 function failureReason(status: number, payload: unknown): string {
   if (isRecord(payload) && typeof payload.error === "string" && payload.error.length <= 160) return payload.error;
   return `ml_upstream_http_${status}`;
@@ -166,6 +176,25 @@ async function persistSuccess(client: PoolClient, job: ClaimedJob, payload: Reco
       JSON.stringify(payload),
     ],
   );
+  if (job.engine === "skin_twin") {
+    const snapshotId = skinTwinSnapshotId(job);
+    if (!snapshotId) throw new Error("skin_twin_snapshot_reference_missing");
+    const updated = await client.query(
+      `update public.skin_twin_snapshots
+          set status='completed', simulation=$3::jsonb, model_version=$4,
+              confidence=$5, uncertainty=$6::jsonb, updated_at=now()
+        where id=$1::uuid and user_id=$2::uuid and status='queued_for_cloud'`,
+      [
+        snapshotId,
+        job.userId,
+        JSON.stringify(payload),
+        stringOrNull(metadata.modelVersion),
+        numberOrNull(metadata.confidence),
+        JSON.stringify(metadata.uncertainty ?? null),
+      ],
+    );
+    if (updated.rowCount !== 1) throw new Error("skin_twin_snapshot_update_missing");
+  }
   await client.query(
     `update public.ml_analysis_jobs set status='completed', failure_reason=null, updated_at=now() where id=$1::uuid`,
     [job.jobId],
@@ -218,7 +247,11 @@ async function processClaimedJob(client: PoolClient, job: ClaimedJob, fetcher: W
     await withFinalizeTransaction(client, () => persistSuccess(client, job, payload));
     return { status: "completed", jobId: job.jobId, outboxId: job.outboxId };
   } catch (error) {
-    const reason = error instanceof DOMException && error.name === "AbortError" ? "ml_api_timeout" : "ml_api_unreachable";
+    const reason = error instanceof DOMException && error.name === "AbortError"
+      ? "ml_api_timeout"
+      : error instanceof Error && error.message.startsWith("skin_twin_snapshot_")
+        ? "ml_result_persistence_failed"
+        : "ml_api_unreachable";
     const terminal = job.attemptCount >= job.maxAttempts;
     await withFinalizeTransaction(client, () => updateRetry(client, job, reason, terminal));
     return terminal

@@ -110,19 +110,19 @@ export async function createSkinTwinScenario(
   const status: SkinTwinScenarioStatus = ready ? "queued_for_cloud" : "insufficient_data";
   const sourceRefs = input.sourceRecordRefs;
   const payload = JSON.stringify(input);
-  const features = JSON.stringify({ sourceCounts: counts, variables: input.variables, window: input.window });
   const inserted = await client.query<SnapshotRow>(
     `insert into public.skin_twin_snapshots
        (user_id, scenario, scenario_payload, "window", status, source_record_refs,
         confidence, simulation, uncertainty)
      values ($1::uuid, $2, $3::jsonb, $4, $5, $6::jsonb, 'insufficient_data', null, null)
-     returning id, scenario, window, status, source_record_refs as "sourceRecordRefs",
+     returning id, scenario, "window", status, source_record_refs as "sourceRecordRefs",
                confidence, model_version as "modelVersion", simulation, uncertainty,
                snapshot_at as "snapshotAt"`,
     [userId, input.name, payload, input.window, status, JSON.stringify(sourceRefs)],
   );
   const row = inserted.rows[0];
   if (!row) throw new Error("skin_twin_snapshot_insert_missing");
+  const features = JSON.stringify({ snapshotId: row.id, sourceCounts: counts, variables: input.variables, window: input.window });
 
   if (ready) {
     const job = await client.query<{ id: string }>(

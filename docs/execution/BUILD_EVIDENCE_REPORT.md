@@ -430,3 +430,31 @@ This proves the readiness-gated persistence and queue boundary. It does not
 prove a Skin Twin projection, FaceAtlas image inference, or worker completion;
 those remain intentionally unavailable until Cloud Run/Vertex and the durable
 worker are live.
+
+## 2026-07-13 Skin Twin worker result finalization
+
+- Skin Twin queued jobs now carry the newly created snapshot ID in their
+  versioned feature payload.
+- The durable ML worker validates the upstream prediction envelope, persists
+  the result in `ml_analysis_results`, and then updates only the matching
+  authenticated user's `queued_for_cloud` snapshot to `completed`.
+- The snapshot receives the real upstream payload, model version, bounded
+  confidence, and uncertainty metadata. Missing or non-UUID snapshot linkage
+  fails closed; the worker never marks a scenario complete without that
+  owner-scoped update.
+- This closes the persistence-to-consumer path without enabling the worker or
+  claiming Cloud Run/Vertex availability. The live worker remains disabled
+  until its service credentials and scheduler are configured.
+
+### Worker finalization validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test -- src/lib/acnetrex/ml-analysis-worker.test.ts src/lib/acnetrex/skin-twin src/app/api/skin-twin --run` | Pass: 4 files, 21 tests |
+| `npm.cmd test` | Pass: 34 files, 172 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run build` | Pass |
+| `npm.cmd run lint` | Pass |
+| `npm.cmd run test:coverage` | Pass: 81.2% statements, 70.77% branches |
+| `npm.cmd run test:e2e` | Pass: route smoke for 66 routes |
+| `git diff --check` | Pass |

@@ -91,6 +91,54 @@ describe("ML analysis worker", () => {
     expect(queries.some((sql) => sql.includes("status='processed'"))).toBe(true);
   });
 
+  it("finalizes only the owner-scoped Skin Twin snapshot after a real upstream result", async () => {
+    const snapshotId = "11111111-1111-4111-8111-111111111114";
+    const skinTwinJob = {
+      ...job,
+      engine: "skin_twin" as const,
+      operation: "scenario_simulation",
+      features: { snapshotId, variables: ["better_sleep"] },
+    };
+    fakeClient.query.mockImplementation(async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: 0 };
+      if (sql.includes("with candidate")) return { rows: [skinTwinJob], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const result = await processNextMlAnalysisJob({
+      workerId: "worker-skin-twin",
+      fetcher: vi.fn().mockResolvedValue(upstream({
+        ok: true,
+        predictions: [{ direction: "observed" }],
+        metadata: { modelVersion: "skin-twin.cloud.v1", confidence: 0.61, uncertainty: { low: -0.2, high: 0.2 } },
+      })),
+    });
+    expect(result.status).toBe("completed");
+    const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(queries.some((sql) => sql.includes("update public.skin_twin_snapshots"))).toBe(true);
+    expect(queries.some((sql) => sql.includes("status='completed'"))).toBe(true);
+  });
+
+  it("does not complete a Skin Twin result when snapshot lineage is missing", async () => {
+    const skinTwinJob = {
+      ...job,
+      engine: "skin_twin" as const,
+      operation: "scenario_simulation",
+      features: { variables: ["better_sleep"] },
+    };
+    fakeClient.query.mockImplementation(async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: 0 };
+      if (sql.includes("with candidate")) return { rows: [skinTwinJob], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const result = await processNextMlAnalysisJob({
+      workerId: "worker-skin-twin-missing-lineage",
+      fetcher: vi.fn().mockResolvedValue(upstream({ ok: true, predictions: [{ direction: "observed" }] })),
+    });
+    expect(result).toMatchObject({ status: "retry_scheduled", reason: "ml_result_persistence_failed" });
+    const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(queries.some((sql) => sql.includes("status='processed'"))).toBe(false);
+  });
+
   it("requeues transient upstream failures with bounded retry state", async () => {
     claimQueries();
     const result = await processNextMlAnalysisJob({
