@@ -1,6 +1,7 @@
 import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { AuthControls } from "@/components/auth/AuthControls";
 import "./globals.css";
 
@@ -25,6 +26,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             {children}
           </ClerkProvider>
         ) : children}
+        <SpeedInsights />
       </body>
     </html>
   );
