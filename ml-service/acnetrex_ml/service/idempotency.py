@@ -201,7 +201,7 @@ class SQLiteIdempotencyStore:
 
 
 class PostgresIdempotencyStore:
-    """Production adapter for the application's api_idempotency_keys table."""
+    """Production adapter for the server-only ml_service_idempotency table."""
 
     def __init__(self, connection_string: str) -> None:
         self.connection_string = connection_string
@@ -219,12 +219,10 @@ class PostgresIdempotencyStore:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO api_idempotency_keys
-                  (actor_id, scope, idempotency_key, http_method, route,
-                   request_hash, status, expires_at)
-                VALUES ('ml-service', %s, %s, 'POST', '/v1/predict', %s,
-                        'processing', now() + interval '24 hours')
-                ON CONFLICT (actor_id, scope, idempotency_key) DO NOTHING
+                INSERT INTO ml_service_idempotency
+                  (scope, idempotency_key, request_hash, status, expires_at)
+                VALUES (%s, %s, %s, 'processing', now() + interval '24 hours')
+                ON CONFLICT (scope, idempotency_key) DO NOTHING
                 RETURNING id
                 """,
                 (scope, key, request_hash),
@@ -233,8 +231,8 @@ class PostgresIdempotencyStore:
                 return Reservation("reserved")
             cursor.execute(
                 """SELECT request_hash, status, response_status, response_reference
-                FROM api_idempotency_keys
-                WHERE actor_id='ml-service' AND scope=%s AND idempotency_key=%s FOR UPDATE""",
+                FROM ml_service_idempotency
+                WHERE scope=%s AND idempotency_key=%s FOR UPDATE""",
                 (scope, key),
             )
             row = cursor.fetchone()
@@ -246,8 +244,8 @@ class PostgresIdempotencyStore:
                 return Reservation("replay", row[2], row[3])
             if row[1] == "failed_retryable":
                 cursor.execute(
-                    """UPDATE api_idempotency_keys SET status='processing', updated_at=now()
-                    WHERE actor_id='ml-service' AND scope=%s AND idempotency_key=%s""",
+                    """UPDATE ml_service_idempotency SET status='processing', updated_at=now()
+                    WHERE scope=%s AND idempotency_key=%s""",
                     (scope, key),
                 )
                 return Reservation("reserved")
@@ -258,9 +256,9 @@ class PostgresIdempotencyStore:
     ) -> None:
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                """UPDATE api_idempotency_keys SET status='completed', response_status=%s,
+                """UPDATE ml_service_idempotency SET status='completed', response_status=%s,
                 response_reference=%s, completed_at=now(), updated_at=now()
-                WHERE actor_id='ml-service' AND scope=%s AND idempotency_key=%s""",
+                WHERE scope=%s AND idempotency_key=%s""",
                 (status, json.dumps(response, default=str), scope, key),
             )
 
@@ -276,8 +274,8 @@ class PostgresIdempotencyStore:
         state = "failed_terminal" if terminal else "failed_retryable"
         with self._connect() as connection, connection.cursor() as cursor:
             cursor.execute(
-                """UPDATE api_idempotency_keys SET status=%s, response_status=%s,
+                """UPDATE ml_service_idempotency SET status=%s, response_status=%s,
                 response_reference=%s, updated_at=now()
-                WHERE actor_id='ml-service' AND scope=%s AND idempotency_key=%s""",
+                WHERE scope=%s AND idempotency_key=%s""",
                 (state, status, json.dumps(response, default=str), scope, key),
             )

@@ -13,7 +13,7 @@ from .jobs import JobStore, PostgresJobStore, SQLiteJobStore
 
 
 def build_idempotency_store() -> IdempotencyStore:
-    postgres_url = os.getenv("IDEMPOTENCY_STORE_URL")
+    postgres_url = os.getenv("IDEMPOTENCY_STORE_URL") or os.getenv("DATABASE_URL")
     if postgres_url and postgres_url.startswith(("postgres://", "postgresql://")):
         return PostgresIdempotencyStore(postgres_url)
     if os.getenv("APP_ENV") == "production":
@@ -25,7 +25,7 @@ def build_idempotency_store() -> IdempotencyStore:
 
 
 def build_job_store() -> JobStore:
-    postgres_url = os.getenv("JOBS_STORE_URL")
+    postgres_url = os.getenv("JOBS_STORE_URL") or os.getenv("DATABASE_URL")
     if postgres_url and postgres_url.startswith(("postgres://", "postgresql://")):
         return PostgresJobStore(postgres_url)
     if os.getenv("APP_ENV") == "production":

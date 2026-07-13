@@ -147,6 +147,19 @@ describe("mobile backend write boundary", () => {
 });
 
 describe("ML governance and private artifact boundary", () => {
+  it("provides server-only durable stores for the production ML service", () => {
+    const sql = readFileSync(mlGovernanceHardeningMigrationPath, "utf8").toLowerCase();
+
+    for (const table of ["ml_service_idempotency", "ml_service_jobs"]) {
+      expect(sql).toContain(`create table if not exists public.${table}`);
+      expect(sql).toContain(`alter table public.${table} enable row level security`);
+    }
+    expect(sql).toContain(
+      "revoke all on public.ml_service_idempotency, public.ml_service_jobs from anon, authenticated",
+    );
+    expect(sql).toContain("grant all on public.ml_service_idempotency, public.ml_service_jobs to service_role");
+  });
+
   it("keeps registry, dataset, training, audit, and raw lineage server-only", () => {
     const sql = readFileSync(mlGovernanceHardeningMigrationPath, "utf8").toLowerCase();
 

@@ -5,6 +5,41 @@ begin;
 set local lock_timeout = '5s';
 set local statement_timeout = '60s';
 
+-- Dedicated service persistence avoids overloading user-scoped API idempotency.
+create table if not exists public.ml_service_idempotency (
+  scope text not null,
+  idempotency_key text not null,
+  request_hash text not null,
+  status text not null check (status in ('processing','completed','failed_retryable','failed_terminal','expired')),
+  response_status integer,
+  response_reference jsonb not null default '{}'::jsonb,
+  expires_at timestamptz not null,
+  completed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (scope, idempotency_key)
+);
+
+create table if not exists public.ml_service_jobs (
+  job_id uuid primary key,
+  idempotency_key text unique not null,
+  request_hash text not null,
+  status text not null check (status in ('queued','processing','completed','failed')),
+  request_json jsonb not null,
+  result_json jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.ml_service_idempotency enable row level security;
+alter table public.ml_service_jobs enable row level security;
+revoke all on public.ml_service_idempotency, public.ml_service_jobs from anon, authenticated;
+grant all on public.ml_service_idempotency, public.ml_service_jobs to service_role;
+drop policy if exists "service role only" on public.ml_service_idempotency;
+create policy "service role only" on public.ml_service_idempotency for all to service_role using (true) with check (true);
+drop policy if exists "service role only" on public.ml_service_jobs;
+create policy "service role only" on public.ml_service_jobs for all to service_role using (true) with check (true);
+
 -- Model registry lifecycle and immutable artifact evidence.
 alter table if exists public.ml_model_versions
   add column if not exists status text,
