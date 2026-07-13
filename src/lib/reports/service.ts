@@ -94,13 +94,12 @@ async function buildRawBundle(userId: string): Promise<RawProfileBundle> {
       hasRetainedImage: Boolean(s.imageStorageRef),
     })),
     treatmentPlans: plans.map((p) => ({
-      name: p.name,
-      activeIngredient: p.activeIngredient,
+      title: p.title,
+      description: p.description,
       status: p.status,
-      startDate: p.startDate,
-      reviewDate: p.reviewDate,
-      instructions: p.instructions,
-      providerDirected: p.providerDirected,
+      startedAt: p.startedAt?.toISOString() ?? null,
+      endedAt: p.endedAt?.toISOString() ?? null,
+      schedule: p.schedule,
     })),
     treatmentCheckins: checkins.map((c) => ({
       checkinDate: c.checkinDate,

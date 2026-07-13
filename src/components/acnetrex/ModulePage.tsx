@@ -15,6 +15,7 @@ import { CutisAiConversationPanel } from "@/components/acnetrex/CutisAiConversat
 import { FaceAtlasCapturePanel } from "@/components/acnetrex/FaceAtlasCapturePanel";
 import { SkinTwinScenarioPanel } from "@/components/acnetrex/SkinTwinScenarioPanel";
 import { ReportWorkflowPanel } from "@/components/acnetrex/ReportWorkflowPanel";
+import { TreatmentWorkflowPanel } from "@/components/acnetrex/TreatmentWorkflowPanel";
 
 function ModuleCard({ module }: { module: AcneTrexModule }) {
   return (
@@ -126,6 +127,8 @@ export function ModulePage({ module }: { module: AcneTrexModule }) {
               <SkinTwinScenarioPanel />
             ) : module.id.startsWith("report") ? (
               <ReportWorkflowPanel historyOnly={module.id === "report-history"} />
+            ) : module.id === "treatments" || module.id === "treatment-log" || module.id === "treatment-checkins" ? (
+              <TreatmentWorkflowPanel checkinsOnly={module.id === "treatment-checkins"} />
             ) : (
               <>
                 <ModuleActionCard

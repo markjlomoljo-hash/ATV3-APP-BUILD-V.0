@@ -201,14 +201,14 @@ export function compileReportData(
           title: "Active & Archived Treatment Plans",
           insufficientData: false,
           table: {
-            headers: ["Plan", "Active ingredient", "Status", "Started", "Review date", "Provider-directed"],
+            headers: ["Plan", "Description", "Status", "Started", "Ended", "Schedule"],
             rows: bundle.treatmentPlans.map((p) => [
-              p.name,
-              p.activeIngredient ?? "—",
+              p.title,
+              p.description ?? "Not recorded",
               p.status,
-              p.startDate,
-              p.reviewDate ?? "Not scheduled",
-              p.providerDirected ? "Yes" : "No",
+              p.startedAt ?? "Not recorded",
+              p.endedAt ?? "Ongoing",
+              p.schedule ? JSON.stringify(p.schedule) : "Not recorded",
             ]),
           },
         }

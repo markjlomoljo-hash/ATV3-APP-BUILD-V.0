@@ -19,6 +19,7 @@ import {
   real,
   text,
   timestamp,
+  uuid,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { randomUUID } from "crypto";
@@ -165,15 +166,14 @@ export const faceAtlasScans = pgTable("face_atlas_scans", {
 });
 
 export const treatmentPlans = pgTable("treatment_plans", {
-  id: id(),
-  userId: text("user_id").notNull(),
-  name: text("name").notNull(),
-  activeIngredient: text("active_ingredient"),
-  status: text("status").notNull().default("active"), // active | archived
-  startDate: text("start_date").notNull(),
-  reviewDate: text("review_date"),
-  instructions: text("instructions"),
-  providerDirected: boolean("provider_directed").notNull().default(false),
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: uuid("user_id").notNull(),
+  title: text("title").notNull(),
+  description: text("description"),
+  schedule: jsonb("schedule"),
+  status: text("status").notNull().default("draft"), // draft | active | paused | completed | abandoned
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  endedAt: timestamp("ended_at", { withTimezone: true }),
   ...timestamps,
 });
 

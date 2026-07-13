@@ -51,13 +51,12 @@ export interface RawProfileBundle {
     hasRetainedImage: boolean;
   }>;
   treatmentPlans: Array<{
-    name: string;
-    activeIngredient: string | null;
+    title: string;
+    description: string | null;
     status: string;
-    startDate: string;
-    reviewDate: string | null;
-    instructions: string | null;
-    providerDirected: boolean;
+    startedAt: string | null;
+    endedAt: string | null;
+    schedule: unknown;
   }>;
   treatmentCheckins: Array<{
     checkinDate: string;
