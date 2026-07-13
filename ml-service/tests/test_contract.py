@@ -3,6 +3,9 @@ import json
 
 from fastapi.testclient import TestClient
 
+from acnetrex_ml.service.app import create_app
+from acnetrex_ml.service.idempotency import MemoryIdempotencyStore
+from acnetrex_ml.service.jobs import SQLiteJobStore
 from main import app
 
 
@@ -64,3 +67,19 @@ def test_readiness_fails_closed_on_artifact_checksum_mismatch(
         "missing": [],
         "mismatched": ["model-registry.json"],
     }
+
+
+def test_readiness_fails_closed_when_persistence_probe_fails(tmp_path) -> None:
+    class UnavailableIdempotencyStore(MemoryIdempotencyStore):
+        def healthcheck(self) -> bool:
+            return False
+
+    isolated = create_app(
+        idempotency_store=UnavailableIdempotencyStore(),
+        job_store=SQLiteJobStore(tmp_path / "jobs.sqlite3"),
+    )
+
+    response = TestClient(isolated).get("/health/ready")
+
+    assert response.status_code == 503
+    assert response.json()["persistence"] == {"state": "error"}
