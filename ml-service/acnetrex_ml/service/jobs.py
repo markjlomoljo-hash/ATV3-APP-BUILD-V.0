@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class JobStore(Protocol):
@@ -118,7 +122,12 @@ class PostgresJobStore:
             with self._connect() as connection, connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 return cursor.fetchone()[0] == 1
-        except Exception:
+        except Exception as error:
+            LOGGER.warning(
+                "postgres_job_healthcheck_failed error_type=%s sqlstate=%s",
+                type(error).__name__,
+                getattr(error, "sqlstate", None),
+            )
             return False
 
     def create(

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 def canonical_hash(payload: dict[str, Any]) -> str:
@@ -232,7 +236,12 @@ class PostgresIdempotencyStore:
             with self._connect() as connection, connection.cursor() as cursor:
                 cursor.execute("SELECT 1")
                 return cursor.fetchone()[0] == 1
-        except Exception:
+        except Exception as error:
+            LOGGER.warning(
+                "postgres_idempotency_healthcheck_failed error_type=%s sqlstate=%s",
+                type(error).__name__,
+                getattr(error, "sqlstate", None),
+            )
             return False
 
     def reserve(self, key: str, request_hash: str, scope: str) -> Reservation:
