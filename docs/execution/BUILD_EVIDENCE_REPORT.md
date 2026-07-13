@@ -251,11 +251,11 @@ direct prediction against the still-placeholder Cloud Run service:
   terminal `failed` states. No fallback payload is generated.
 - `/api/health` now exposes non-secret worker configuration status and reports
   `ml_worker_not_configured` while the worker is not deployed/configured.
-- `vercel.json` now declares a five-minute Vercel Cron invocation of the
-  worker route. The route accepts Vercel's bearer-style cron secret as well as
-  the explicit `x-worker-secret` header; execution remains disabled until the
-  production flag/secrets are configured and the account plan permits the
-  declared schedule.
+- The worker route also accepts Vercel's bearer-style cron secret as well as
+  the explicit `x-worker-secret` header, so it can be invoked by an approved
+  external scheduler. A five-minute `vercel.json` Cron declaration was
+  rejected by the linked Vercel plan check and was removed; no scheduled
+  production execution is claimed.
 - This is source-level worker readiness, not a claim that Railway, Vercel Cron,
   Cloud Run Jobs, or another production scheduler is active.
 

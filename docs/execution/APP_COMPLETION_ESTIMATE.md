@@ -44,8 +44,9 @@
 - A server-only ML worker boundary now claims leased analysis jobs, calls the
   real Cloud Run contract, persists validated results, retries transient
   failures, and exposes worker configuration through `/api/health`. A
-  Vercel Cron-compatible GET trigger is now declared in `vercel.json`; live
-  scheduled execution and production secret configuration remain unverified.
+  Vercel Cron-compatible GET trigger can be used by an approved external
+  scheduler; Vercel's plan check rejected a five-minute `vercel.json` Cron
+  declaration, so no scheduled production execution is claimed.
 
 ## Category breakdown
 
