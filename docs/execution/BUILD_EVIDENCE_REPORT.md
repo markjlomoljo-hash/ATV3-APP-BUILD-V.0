@@ -169,10 +169,16 @@ user bearer session was available for a live write/read assertion.
 
 ## External blockers
 
-- Git push remains dependent on local Git credentials.
-- Vercel env/deploy verification requires project linkage/auth.
-- Supabase live migration and RLS verification require CLI/MCP/database credentials.
-- Cloud Run and Vertex verification require authenticated GCP tooling and deployed ML service source.
+- Git push is currently verified for `feat/phase7-profile-reports` through
+  commit `4e3358a`; future pushes still require the local credential path.
+- Vercel project linkage and production deployment are verified through the
+  linked project and the latest READY deployment; environment changes still
+  require the project credential boundary.
+- Supabase database connectivity, expected table groups, and the relevant
+  treatment/gamification columns are verified through the Supabase connector;
+  authenticated user write/read testing and advisor remediation remain open.
+- Cloud Run and Vertex verification remain blocked by the live `mlatv`
+  placeholder response and unavailable authenticated GCP deployment tooling.
 
 ## 2026-07-05 Live Preview + Module Body Pass
 
