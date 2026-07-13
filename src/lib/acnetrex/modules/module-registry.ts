@@ -664,7 +664,7 @@ export const ACNETREX_MODULES: AcneTrexModule[] = [
     readinessStatus: "insufficient_data",
     implementedSurfaces: allSurfaces,
     missingSurfaces: ["Task generation rules", "streak state and completion E2E"],
-    nextAction: "Derive streaks only after a canonical streak table is available.",
+    nextAction: "Add server-side task generation and derive streaks only from durable completions.",
   },
   {
     id: "gamification",

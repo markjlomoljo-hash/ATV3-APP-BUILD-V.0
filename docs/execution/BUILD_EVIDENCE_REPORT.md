@@ -122,6 +122,44 @@ The remaining live blocker is authenticated user-session write verification;
 the production database is reachable and the schema is present, but no test
 user bearer session was available for a live write/read assertion.
 
+## 2026-07-13 Durable Task Board and canonical gamification mapping
+
+- Added owner-scoped durable task CRUD against the live `treatment_tasks`
+  contract. Task creation verifies ownership of the referenced treatment plan;
+  list and completion/skip updates are owner-scoped and return typed not-found,
+  validation, conflict, authentication, and database-unavailable states.
+- Added a real `/tasks` workflow with plan selection, task creation, persisted
+  history, completion/skip controls, and explicit no-fake points/streak copy.
+  The UI remains disabled until a signed session and saved plan are available.
+- Replaced stale report/profile gamification reads with canonical live-schema
+  mappings: `gamification` owns points and streak values, `user_badges` joins
+  awarded badges to `badges`, and `treatment_tasks` supplies durable task
+  activity. The reader does not derive points from task rows.
+- Read-only Supabase inspection confirmed the live columns for
+  `treatment_tasks`, `gamification`, `badges`, `user_badges`, and the existing
+  treatment plan/check-in tables. No remote schema mutation was required.
+- Vercel deployment `dpl_CK768dtUCPXvDsVBATumuQudvia1` reached `READY` from
+  commit `06c9084`; production `/tasks` returned HTTP 200 and rendered the
+  durable task workflow. Production `/api/health` returned HTTP 503 with the
+  database connected and schema groups present, while Cloud Run remained
+  degraded and the ML worker/Clerk configuration remained absent.
+
+### Task Board validation
+
+| Command / check | Result |
+|---|---|
+| `npm.cmd test -- src/lib/acnetrex/treatment/tasks.test.ts src/app/api/treatments/tasks/route.test.ts src/app/api/treatments/tasks/[id]/route.test.ts src/lib/profile/gamification.test.ts` | Pass: 4 files, 16 tests |
+| `npm.cmd test` | Pass: 42 files, 212 tests |
+| `npm.cmd run typecheck` | Pass |
+| `npm.cmd run lint` | Pass |
+| `npm.cmd run build` | Pass: task routes and canonical gamification schema included |
+| `npm.cmd run test:e2e` | Pass: 66-route smoke |
+| `npm.cmd run test:coverage` | Pass: 81.87% statements, 69.62% branches |
+| `git diff --check` | Pass |
+| Vercel build log for `06c9084` | Pass: deployment `READY` |
+| `GET https://atv-3-app-build-v-0.vercel.app/tasks` | HTTP 200 |
+| `GET https://atv-3-app-build-v-0.vercel.app/api/health` | HTTP 503 with DB connected and Cloud Run/worker/Clerk blockers classified |
+
 ## Scan results
 
 - Secret scan: no committed plaintext production secret found in new code. Findings are documentation placeholders, lockfile package names, or server-boundary env references.
