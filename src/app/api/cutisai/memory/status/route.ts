@@ -1,5 +1,6 @@
 import { getDb, isDatabaseConfigurationError } from "@/db";
 import { buildCutisAiMemoryReadiness } from "@/lib/acnetrex/memory/readiness";
+import { classifyDatabaseFailure } from "@/lib/acnetrex/services/database-error-classifier";
 import { sql } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,7 @@ export async function GET() {
         ok: false,
         service: "cutisai-memory",
         error: status,
+        ...(status === "database_unavailable" ? { failureReason: classifyDatabaseFailure(error) } : {}),
         readiness: buildCutisAiMemoryReadiness([]),
         updatedAt: new Date().toISOString(),
       },
