@@ -22,6 +22,7 @@
     "plugins": [
       "expo-router",
       "expo-secure-store",
+      ["expo-sqlite", { "useSQLCipher": true }],
       ["expo-camera", { "cameraPermission": "Allow AcneTrex to capture a private FaceAtlas scan." }],
       ["expo-location", { "locationWhenInUsePermission": "Allow AcneTrex to use approximate location for optional weather context." }],
       "expo-notifications"
