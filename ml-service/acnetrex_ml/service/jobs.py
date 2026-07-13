@@ -8,6 +8,8 @@ from typing import Any, Protocol
 
 
 class JobStore(Protocol):
+    def healthcheck(self) -> bool: ...
+
     def create(
         self, job_id: str, key: str, request_hash: str, request: dict[str, Any]
     ) -> tuple[str, dict[str, Any]]: ...
@@ -45,6 +47,13 @@ class SQLiteJobStore:
             )
         return "created", {"job_id": job_id, "status": "queued", "created_at": now}
 
+    def healthcheck(self) -> bool:
+        try:
+            with sqlite3.connect(self.path) as connection:
+                return connection.execute("SELECT 1").fetchone()[0] == 1
+        except sqlite3.Error:
+            return False
+
     def get(self, job_id: str) -> dict[str, Any] | None:
         with sqlite3.connect(self.path) as connection:
             connection.row_factory = sqlite3.Row
@@ -75,6 +84,14 @@ class PostgresJobStore:
                 "Install the postgres extra for PostgresJobStore"
             ) from exc
         return psycopg.connect(self.connection_string)
+
+    def healthcheck(self) -> bool:
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                return cursor.fetchone()[0] == 1
+        except Exception:
+            return False
 
     def create(
         self, job_id: str, key: str, request_hash: str, request: dict[str, Any]

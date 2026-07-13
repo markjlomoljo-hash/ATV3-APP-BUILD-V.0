@@ -25,6 +25,8 @@ class Reservation:
 
 
 class IdempotencyStore(Protocol):
+    def healthcheck(self) -> bool: ...
+
     def reserve(self, key: str, request_hash: str, scope: str) -> Reservation: ...
 
     def complete(
@@ -48,6 +50,9 @@ class MemoryIdempotencyStore:
     def __init__(self) -> None:
         self._items: dict[tuple[str, str], dict[str, Any]] = {}
         self._lock = threading.Lock()
+
+    def healthcheck(self) -> bool:
+        return True
 
     def reserve(self, key: str, request_hash: str, scope: str) -> Reservation:
         with self._lock:
@@ -104,6 +109,13 @@ class SQLiteIdempotencyStore:
         connection = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         connection.row_factory = sqlite3.Row
         return connection
+
+    def healthcheck(self) -> bool:
+        try:
+            with self._connect() as connection:
+                return connection.execute("SELECT 1").fetchone()[0] == 1
+        except sqlite3.Error:
+            return False
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -214,6 +226,14 @@ class PostgresIdempotencyStore:
                 "Install the postgres extra to use PostgresIdempotencyStore"
             ) from exc
         return psycopg.connect(self.connection_string)
+
+    def healthcheck(self) -> bool:
+        try:
+            with self._connect() as connection, connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+                return cursor.fetchone()[0] == 1
+        except Exception:
+            return False
 
     def reserve(self, key: str, request_hash: str, scope: str) -> Reservation:
         with self._connect() as connection, connection.cursor() as cursor:

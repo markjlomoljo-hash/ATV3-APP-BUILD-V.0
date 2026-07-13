@@ -31,6 +31,7 @@ from acnetrex_ml.safety.output_validation import validate_safe_output
 
 from .dependencies import build_idempotency_store, build_job_store
 from .idempotency import IdempotencyStore, canonical_hash
+from .jobs import JobStore
 from .middleware import RequestContextMiddleware
 
 
@@ -153,9 +154,13 @@ def _predict_core(payload: InferenceRequest) -> InferenceResponse:
     )
 
 
-def create_app(*, idempotency_store: IdempotencyStore | None = None) -> FastAPI:
+def create_app(
+    *,
+    idempotency_store: IdempotencyStore | None = None,
+    job_store: JobStore | None = None,
+) -> FastAPI:
     store = idempotency_store or build_idempotency_store()
-    jobs = build_job_store()
+    jobs = job_store or build_job_store()
     batch_limit = asyncio.Semaphore(int(os.getenv("MAX_BATCH_CONCURRENCY", "4")))
     maximum_batch_size = int(os.getenv("MAX_BATCH_SIZE", "32"))
 
@@ -216,7 +221,14 @@ def create_app(*, idempotency_store: IdempotencyStore | None = None) -> FastAPI:
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             registry = {"count": 0, "active": [], "approved": []}
             registry_state = "error"
-        ready = artifact_integrity["state"] == "ready" and registry_state == "ready"
+        persistence_ready = await asyncio.to_thread(
+            lambda: store.healthcheck() and jobs.healthcheck()
+        )
+        ready = (
+            artifact_integrity["state"] == "ready"
+            and registry_state == "ready"
+            and persistence_ready
+        )
         return JSONResponse(
             status_code=200 if ready else 503,
             content={
@@ -227,6 +239,7 @@ def create_app(*, idempotency_store: IdempotencyStore | None = None) -> FastAPI:
                 "modelRegistry": registry,
                 "modelRegistryState": registry_state,
                 "artifactIntegrity": artifact_integrity,
+                "persistence": {"state": "ready" if persistence_ready else "error"},
                 "vertex": {
                     "configured": bool(vertex.get("configured")),
                     "state": str(vertex.get("state", "not_configured")),
