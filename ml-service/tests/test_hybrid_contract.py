@@ -1,11 +1,29 @@
+import json
+from pathlib import Path
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from main import app
+from acnetrex_ml.engines.sleepderm import analyze_sleep
 
 
 client = TestClient(app)
+
+
+def test_python_sleep_engine_matches_shared_mobile_parity_fixture() -> None:
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "packages/ml-local-runtime/tests/fixtures/sleep-parity.json"
+    )
+    fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    result = analyze_sleep(fixture["records"])
+
+    assert {
+        key: result[key]
+        for key in fixture["expected"]
+    } == fixture["expected"]
 
 
 def inference_payload() -> dict:

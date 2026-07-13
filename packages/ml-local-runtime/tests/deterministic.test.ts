@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import {
   analyzeDietDay,
@@ -8,6 +10,38 @@ import {
 } from "../src/index";
 
 describe("deterministic local engines", () => {
+  it("matches the shared cloud/local sleep parity fixture", () => {
+    const fixture = JSON.parse(
+      readFileSync(resolve("packages/ml-local-runtime/tests/fixtures/sleep-parity.json"), "utf8"),
+    ) as {
+      records: Array<{ date: string; bedtime: string; wake_time: string; target_minutes: number }>;
+      expected: Record<string, unknown>;
+    };
+    const result = analyzeSleep(fixture.records.map((record) => ({
+      logDate: record.date,
+      bedTime: record.bedtime,
+      wakeTime: record.wake_time,
+      targetMinutes: record.target_minutes,
+    })));
+
+    expect({
+      sample_count: result.nights,
+      durations_minutes: result.durationsMinutes,
+      midpoints_minutes: result.midpointsMinutes,
+      average_duration_minutes: result.averageDurationMinutes,
+      bedtime_drift_minutes: result.bedtimeDriftMinutes,
+      wake_time_drift_minutes: result.wakeTimeDriftMinutes,
+      regularity_minutes: result.regularityMinutes,
+      sleep_debt_minutes: {
+        "3d": result.debtMinutes.days3,
+        "7d": result.debtMinutes.days7,
+        "14d": result.debtMinutes.days14,
+        "30d": result.debtMinutes.days30,
+      },
+      state: result.readiness,
+    }).toEqual(fixture.expected);
+  });
+
   it("deduplicates same-day sleep edits and handles cross-midnight debt windows", () => {
     const result = analyzeSleep([
       { logDate: "2026-07-10", bedTime: "23:00", wakeTime: "07:00", targetMinutes: 480 },
