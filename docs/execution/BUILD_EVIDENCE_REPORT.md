@@ -268,3 +268,20 @@ direct prediction against the still-placeholder Cloud Run service:
 |---|---|
 | `npm.cmd test -- src/app/api/ml/predict/route.test.ts src/lib/acnetrex/ml-analysis-jobs.test.ts src/app/api/ml/jobs/route.test.ts src/app/api/ml/jobs/[id]/route.test.ts` | Pass: 4 files, 21 tests |
 | `npm.cmd run typecheck` | Pass |
+
+## 2026-07-13 post-push production verification
+
+- Commit `b8f4f1c` was pushed to `feat/phase7-profile-reports`.
+- Vercel deployment `dpl_2wmbiVrhr465sycjKqd7fEUwE1cR` reached `READY`, is
+  aliased to `https://atv-3-app-build-v-0.vercel.app`, and its error-only build
+  log contained only the successful build-completed event.
+- Production `/api/health` returned HTTP 503 with database status `connected`,
+  all canonical/legacy/web-compatibility/memory table groups present, and
+  explicit warnings for Cloud Run degradation, disabled worker configuration,
+  and missing Clerk configuration. No secret values were returned.
+- Production `GET /api/ml/jobs` returned HTTP 405, confirming the deployed
+  route is present and remains POST-only.
+- Cloud Run `mlatv` root and `/health` still return HTTP 200 provider
+  placeholder HTML. The CORS preflight also returns placeholder HTML without
+  the checked-in API contract headers. Cloud Run deployment remains blocked;
+  no Vertex prediction readiness is claimed.

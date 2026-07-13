@@ -31,7 +31,7 @@
   memory, ML-lineage, and RBAC table groups are present.
 - The live `ml_runtime_events`/memory schema is applied and the production
   memory readiness route returns HTTP 200 with no missing expected tables.
-- Vercel deployment for `c653f1f` reached `READY` and Vercel runtime inspection
+- Vercel deployment for `b8f4f1c` reached `READY` and Vercel build-log inspection
   found no errors for the health, ML proxy, or memory readiness routes.
 - Cloud Run remains explicitly degraded because both `/` and `/health` return
   Google placeholder HTML; no Vertex readiness or prediction claim is made.
@@ -64,11 +64,11 @@
 ## Remaining release blockers
 
 - Supabase signed-session write/read validation and durable memory write proof are still needed; schema and database connectivity are verified.
-- Vercel production deployment is green, but `/api/health` remains HTTP 503 until Cloud Run serves the checked-in ML contract.
+- Vercel production deployment is green, but `/api/health` remains HTTP 503 until Cloud Run serves the checked-in ML contract and Clerk/worker production configuration is supplied.
 - Cloud Run `mlatv` still needs source deployment and endpoint verification.
 - Vertex endpoint readiness is still unverified.
 - Native SecureStore adapter exists, but Expo/device validation, offline queue, production FaceAtlas inference, Skin Twin simulation, CutisAI tools, report export worker, and treatment/task generation remain incomplete.
 
 ## Why not 75-80% yet
 
-The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 52%.
+The app-code body is materially broader and the live database/schema boundary is now verified, but a 75-80% estimate would require signed-session persistence proof, production ML execution, native device validation, and report/task workers. Those remain external-live blockers or deeper persistence integrations, so the honest estimate is 54%.
