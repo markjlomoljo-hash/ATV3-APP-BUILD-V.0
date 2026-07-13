@@ -138,3 +138,29 @@ def test_contract_forbids_client_identity(monkeypatch) -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_service_job_endpoint_persists_a_completed_deterministic_result() -> None:
+    body = inference_payload()
+
+    created = client.post(
+        "/v1/jobs",
+        json=body,
+        headers={"idempotency-key": body["idempotency_key"]},
+    )
+
+    assert created.status_code == 200
+    assert created.json()["status"] == "completed"
+    fetched = client.get(f"/v1/jobs/{created.json()['job_id']}")
+    assert fetched.status_code == 200
+    assert fetched.json()["status"] == "completed"
+    assert fetched.json()["result"]["readiness_state"] == "ready"
+
+    replay = client.post(
+        "/v1/jobs",
+        json={**body, "request_id": str(uuid4())},
+        headers={"idempotency-key": body["idempotency_key"]},
+    )
+    assert replay.status_code == 200
+    assert replay.headers["idempotency-replayed"] == "true"
+    assert replay.json()["job_id"] == created.json()["job_id"]
