@@ -1,0 +1,13 @@
+{
+  "registry_version": "1.0.0",
+  "generated_at": "2026-07-12T00:00:00Z",
+  "selection_policy": "Only approved or active models with verified artifacts may be loaded.",
+  "active_models": [],
+  "models": [
+    {"model_name":"faceatlas_lesion_v1","model_version":"0.0.0-untrained","status":"rejected","task":"lesion_detection_classification","runtime_targets":["cloud_vertex"],"artifact_uri":null,"artifact_hash":null,"dataset_version":null,"feature_schema_version":"1.0.0","label_schema_version":null,"training_run_id":null,"evaluation_report":"reports/evaluation/training-eligibility-report.md","model_card":"reports/model-cards/faceatlas-lesion-model.md","created_at":"2026-07-12T00:00:00Z","approved_at":null,"approval_state":"rejected","limitations":["No licensed consented real image cohort","No identity-safe holdout","Must not return lesion counts"]},
+    {"model_name":"flare_direction_local_v1","model_version":"0.0.0-untrained","status":"rejected","task":"flare_direction","runtime_targets":["local_model","cloud_run"],"artifact_uri":null,"artifact_hash":null,"dataset_version":null,"feature_schema_version":"1.0.0","label_schema_version":null,"training_run_id":null,"evaluation_report":"reports/evaluation/training-eligibility-report.md","model_card":"reports/model-cards/longitudinal-models.md","created_at":"2026-07-12T00:00:00Z","approved_at":null,"approval_state":"rejected","limitations":["No real longitudinal targets","No grouped temporal holdout"]},
+    {"model_name":"face_skin_segmentation_v1","model_version":"0.0.0-untrained","status":"rejected","task":"face_skin_segmentation","runtime_targets":["cloud_vertex"],"artifact_uri":null,"artifact_hash":null,"dataset_version":null,"feature_schema_version":"1.0.0","label_schema_version":null,"training_run_id":null,"evaluation_report":"reports/evaluation/training-eligibility-report.md","model_card":"reports/model-cards/vision-pipeline-models.md","created_at":"2026-07-13T00:00:00Z","approved_at":null,"approval_state":"rejected","limitations":["No licensed mask corpus","No fairness holdout"]},
+    {"model_name":"acne_severity_scorer_v1","model_version":"0.0.0-untrained","status":"rejected","task":"severity_scoring","runtime_targets":["cloud_run","cloud_vertex"],"artifact_uri":null,"artifact_hash":null,"dataset_version":null,"feature_schema_version":"1.0.0","label_schema_version":null,"training_run_id":null,"evaluation_report":"reports/evaluation/training-eligibility-report.md","model_card":"reports/model-cards/vision-pipeline-models.md","created_at":"2026-07-13T00:00:00Z","approved_at":null,"approval_state":"rejected","limitations":["No dermatologist-reviewed labels","No calibrated holdout"]}
+  ]
+}
+

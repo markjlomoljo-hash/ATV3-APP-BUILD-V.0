@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acnetrex.app/schemas/ml/telemetry/1.0.0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["event_id", "request_id", "event_type", "module", "runtime_mode", "status", "latency_ms", "created_at"],
+  "properties": {
+    "event_id": {"type": "string", "format": "uuid"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "event_type": {"type": "string"},
+    "module": {"type": "string"},
+    "runtime_mode": {"type": "string"},
+    "status": {"type": "string"},
+    "latency_ms": {"type": "number", "minimum": 0},
+    "error_code": {"type": ["string", "null"]},
+    "model_name": {"type": ["string", "null"]},
+    "model_version": {"type": ["string", "null"]},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}
+

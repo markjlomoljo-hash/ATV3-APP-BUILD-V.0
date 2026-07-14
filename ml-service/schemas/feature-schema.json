@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://acnetrex.app/schemas/ml/features/1.0.0",
+  "version": "1.0.0",
+  "features": [
+    {"name":"sleep_duration_hours","type":"number","unit":"hours","source":"sleep_logs","calculation":"cross-midnight elapsed time minus known awake time","valid_range":[0,24],"missing_behavior":"missing","privacy_class":"health","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"sleep_midpoint_minutes","type":"number","unit":"minutes after local midnight","source":"sleep_logs","calculation":"circular midpoint of start and wake","valid_range":[0,1439],"missing_behavior":"missing","privacy_class":"health","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"sleep_debt_hours_7d","type":"number","unit":"hours","source":"sleep_logs+profile","calculation":"sum of nightly deficits minus capped recovery credits","valid_range":[0,168],"missing_behavior":"insufficient_data","privacy_class":"health","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"meal_completion_ratio","type":"number","unit":"ratio","source":"food_logs+profile","calculation":"logged required meals divided by personal 1/2/3 meal baseline","valid_range":[0,1],"missing_behavior":"unknown_not_skipped","privacy_class":"health","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"snack_event_count","type":"integer","unit":"events","source":"food_logs","calculation":"count distinct stable snack event ids","valid_range":[0,100],"missing_behavior":"unknown","privacy_class":"health","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"faceatlas_capture_completeness","type":"number","unit":"ratio","source":"face_scans","calculation":"required angle slots present divided by five","valid_range":[0,1],"missing_behavior":"zero","privacy_class":"biometric_sensitive","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"faceatlas_blur_variance","type":"number","unit":"laplacian variance","source":"local image bytes","calculation":"variance of Laplacian on a consented frame","valid_range":[0,1000000],"missing_behavior":"unsupported","privacy_class":"derived_biometric","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"trigger_coverage","type":"number","unit":"ratio","source":"exposure+outcome records","calculation":"paired valid observations divided by requested window","valid_range":[0,1],"missing_behavior":"insufficient_data","privacy_class":"health","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"treatment_adherence_ratio","type":"number","unit":"ratio","source":"treatment_tasks","calculation":"durably completed scheduled events divided by eligible scheduled events","valid_range":[0,1],"missing_behavior":"insufficient_data","privacy_class":"health","cloud_availability":true,"offline_availability":true,"version_introduced":"1.0.0"},
+    {"name":"weather_humidity_mean_3d","type":"number","unit":"percent","source":"weather_snapshots","calculation":"mean humidity over prior 72 hours","valid_range":[0,100],"missing_behavior":"missing","privacy_class":"contextual","cloud_availability":true,"offline_availability":false,"version_introduced":"1.0.0"}
+  ]
+}
+

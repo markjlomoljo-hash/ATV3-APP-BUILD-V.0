@@ -1,0 +1,24 @@
+{
+  "manifest_version": "1.1.0",
+  "algorithm": "sha256",
+  "base_path": "..",
+  "generated_at": "2026-07-14T00:00:00Z",
+  "artifacts": {
+    "schemas/feature-schema.json": "3d1b320eeada190351171f4628b755f04750584d2308e95080bd367181088a8a",
+    "schemas/inference-request.schema.json": "1bc3ba619765c5d7db310179f38b0d35a7d22fac5442a3db50c168efe91cd430",
+    "schemas/inference-response.schema.json": "128f3bbb8d3a48964967409d46b7a15475459599fa0e649bc21eddba1575be4a",
+    "schemas/telemetry.schema.json": "6cc76f95ba7e5cd2620950bc110ba3f3dd4c4fcb0366982788c27068a2542838",
+    "manifests/model-registry.json": "021abbba3afddf713270c9c6eae35a9f49110680936fb52175565fc8026b79a3",
+    "manifests/dataset-manifest.json": "76694489722f499c3cc1e0cb19e50a908644acbb9a0a022202deea6860a451e9",
+    "manifests/integration-manifest.json": "bd70146c2bb610d0c713d82c22b2d369b5f7350c6d2226a7752be3b6cd8f0bc2",
+    "reports/evaluation/training-eligibility-report.md": "1cc60a5645926b76739dbabc1316763a336181ae6106e0ae25cb84f63b465e0f",
+    "reports/model-cards/faceatlas-lesion-model.md": "ec9c2ac76f641bc5e43e3ad4046836368b686a789f453268839496f3e0a74f65",
+    "reports/model-cards/longitudinal-models.md": "5265ab72d0d1309464304a20e7aca52bbb56190f2272e4a90c89ec9cfe9b5c68",
+    "reports/model-cards/vision-pipeline-models.md": "a44d05b88df6ffe1fdb93b0a6fab345bdfb205ed8de968f3be2c39396c904ced",
+    "reports/calibration/README.md": "c35ca26331e8ebf73ab67f4faeccde871fe17e2ca6d64bdb504af709ee4bc9a9",
+    "reports/fairness/README.md": "3c47287cbf38527c061136921e0f349fc8e55e67cdf856e3975666a486471dab",
+    "reports/parity/README.md": "4ce45ac81c7ccc5934c8c3f4dfc3b18d7c271ce535bfe4b61d0f26945b84aa72"
+  },
+  "model_artifacts": [],
+  "note": "Every listed path exists. No model artifact exists because no dataset passed the production training gate."
+}

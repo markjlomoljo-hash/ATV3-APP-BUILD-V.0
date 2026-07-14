@@ -1,0 +1,13 @@
+{
+  "manifest_version": "1.0.0",
+  "generated_at": "2026-07-14T00:00:00Z",
+  "training_eligible_datasets": [],
+  "non_training_references": [
+    {
+      "name": "V4AcneTrex_ML_Representation_Pack_v4",
+      "status": "accepted_for_non_training_only",
+      "reason": "Interface and representation reference; no legitimate labeled cohort or training authority."
+    }
+  ],
+  "decision_record": "docs/ml-research/dataset-candidate-register.csv"
+}
