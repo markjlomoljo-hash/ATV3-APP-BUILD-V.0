@@ -270,7 +270,7 @@ class PostgresIdempotencyStore:
                   (scope, idempotency_key, request_hash, status, expires_at)
                 VALUES (%s, %s, %s, 'processing', now() + interval '24 hours')
                 ON CONFLICT (scope, idempotency_key) DO NOTHING
-                RETURNING id
+                RETURNING scope
                 """,
                 (scope, key, request_hash),
             )
