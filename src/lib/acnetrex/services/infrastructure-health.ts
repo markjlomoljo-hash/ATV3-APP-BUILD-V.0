@@ -149,3 +149,9 @@ export function classifyCloudRunHealthPayload(payload: unknown):
 export function cloudRunReadinessUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/health/ready`;
 }
+
+export function cloudRunHealthTimeoutMs(value: string | undefined): number {
+  const parsed = Number(value ?? "10000");
+  if (!Number.isFinite(parsed)) return 10_000;
+  return Math.min(30_000, Math.max(1_000, Math.trunc(parsed)));
+}

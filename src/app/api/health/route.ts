@@ -6,6 +6,7 @@ import {
 } from "@/db";
 import {
   classifyCloudRunHealthPayload,
+  cloudRunHealthTimeoutMs,
   cloudRunReadinessUrl,
   summarizeDatabaseSchema,
 } from "@/lib/acnetrex/services/infrastructure-health";
@@ -125,7 +126,10 @@ async function checkCloudRunHealth() {
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2_500);
+  const timeout = setTimeout(
+    () => controller.abort(),
+    cloudRunHealthTimeoutMs(process.env.ML_HEALTH_TIMEOUT_MS),
+  );
 
   try {
     const response = await fetch(cloudRunReadinessUrl(baseUrl), {
