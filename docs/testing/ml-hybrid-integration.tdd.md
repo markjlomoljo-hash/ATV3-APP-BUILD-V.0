@@ -25,7 +25,7 @@ Source: the controlling ML execution objective and supplied foundation, not a se
 | Training cannot start without an approved immutable snapshot | `47603b2` (training module absent) | `2952750` | `test_training_gate.py` and blocked CLI run |
 | Service compatibility jobs complete/replay instead of remaining queued | `3e05324` | `a9dbc02` | completed job create/get/replay integration test |
 | Service job timeouts persist a retryable terminal state | `41cac3f` (500 and queued row) | `8457a79` | timeout create/get integration test |
-| Expo submits or durably queues the same ML job identity | `5443037` (coordinator module missing) | `59b6d8c` | `mobile-ml-coordinator.test.ts` (2 tests) and mobile typecheck |
+| Expo submits or durably queues the same ML job identity | `5443037` (coordinator module missing) | `59b6d8c`, clean-CI portability `832ac1b` | `mobile-ml-coordinator.test.ts` (2 tests) and mobile typecheck |
 
 ## Validation evidence
 

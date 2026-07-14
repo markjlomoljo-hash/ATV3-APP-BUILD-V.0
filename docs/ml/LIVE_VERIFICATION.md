@@ -40,8 +40,8 @@ Date: 2026-07-14. Evidence below was captured from the named live resources; no 
 
 ## Repository and validation
 
-- Branch: `feat/phase7-profile-reports`; current evidence commit: `92c57bc`.
-- GitHub Actions push and pull-request CI runs for `92c57bc` both completed successfully.
+- Branch: `feat/phase7-profile-reports`; deployed Cloud Run evidence commit: `92c57bc`; native coordinator implementation is present through `832ac1b`.
+- GitHub Actions push and pull-request CI runs for `92c57bc` both completed successfully. The branch protection checks remain the authoritative promotion gate for later native-integration commits.
 - CI covers the app test/lint/typecheck/build/route smoke, mobile clean install/typecheck, and ML-service Ruff format/lint plus Python tests.
 - Local app verification after native job integration: 49 Vitest files and 238 tests passed, root and mobile TypeScript passed, and ESLint passed. Mobile npm audit reports zero vulnerabilities.
 - Tracked-file secret scan found no private keys, OpenAI keys, or GitHub tokens. Four credential-shaped PostgreSQL URLs were confirmed to be documentation examples or test fixtures, not live credentials.
