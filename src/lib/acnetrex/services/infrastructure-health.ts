@@ -120,18 +120,32 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 export function classifyCloudRunHealthPayload(payload: unknown):
   | { healthy: true; reason: "ok" }
-  | { healthy: false; reason: "missing_payload" | "unexpected_health_payload" | "service_auth_not_configured" } {
+  | { healthy: false; reason: "missing_payload" | "unexpected_health_payload" | "persistence_not_ready" } {
   if (!isObject(payload)) {
     return { healthy: false, reason: "missing_payload" };
   }
 
-  if (payload.ok === true && payload.service === "acnetrex-ml" && payload.serviceAuthConfigured !== true) {
-    return { healthy: false, reason: "service_auth_not_configured" };
+  const persistence = isObject(payload.persistence) ? payload.persistence : null;
+  if (payload.ok === true && payload.service === "acnetrex-ml" && persistence?.state !== "ready") {
+    return { healthy: false, reason: "persistence_not_ready" };
   }
 
-  if (payload.ok === true && payload.service === "acnetrex-ml" && payload.vertexConfigured === true) {
+  const artifactIntegrity = isObject(payload.artifactIntegrity) ? payload.artifactIntegrity : null;
+  const vertex = isObject(payload.vertex) ? payload.vertex : null;
+  if (
+    payload.ok === true &&
+    payload.service === "acnetrex-ml" &&
+    persistence?.state === "ready" &&
+    artifactIntegrity?.state === "ready" &&
+    payload.modelRegistryState === "ready" &&
+    vertex?.configured === true
+  ) {
     return { healthy: true, reason: "ok" };
   }
 
   return { healthy: false, reason: "unexpected_health_payload" };
+}
+
+export function cloudRunReadinessUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/health/ready`;
 }

@@ -6,6 +6,7 @@ import {
 } from "@/db";
 import {
   classifyCloudRunHealthPayload,
+  cloudRunReadinessUrl,
   summarizeDatabaseSchema,
 } from "@/lib/acnetrex/services/infrastructure-health";
 import { sql } from "drizzle-orm";
@@ -127,7 +128,7 @@ async function checkCloudRunHealth() {
   const timeout = setTimeout(() => controller.abort(), 2_500);
 
   try {
-    const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/health`, {
+    const response = await fetch(cloudRunReadinessUrl(baseUrl), {
       headers: { accept: "application/json" },
       signal: controller.signal,
     });
