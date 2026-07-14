@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyCloudRunHealthPayload,
+  cloudRunReadinessUrl,
   summarizeDatabaseSchema,
 } from "./infrastructure-health";
 
@@ -93,8 +94,10 @@ describe("infrastructure health contracts", () => {
     expect(classifyCloudRunHealthPayload({
       ok: true,
       service: "acnetrex-ml",
-      vertexConfigured: true,
-      serviceAuthConfigured: true,
+      artifactIntegrity: { state: "ready" },
+      modelRegistryState: "ready",
+      persistence: { state: "ready" },
+      vertex: { configured: true, state: "verification_required" },
     })).toMatchObject({
       healthy: true,
     });
@@ -102,11 +105,18 @@ describe("infrastructure health contracts", () => {
     expect(classifyCloudRunHealthPayload({
       ok: true,
       service: "acnetrex-ml",
-      vertexConfigured: true,
-      serviceAuthConfigured: false,
+      artifactIntegrity: { state: "ready" },
+      modelRegistryState: "ready",
+      persistence: { state: "error" },
     })).toMatchObject({
       healthy: false,
-      reason: "service_auth_not_configured",
+      reason: "persistence_not_ready",
     });
+  });
+
+  it("targets the canonical Cloud Run readiness endpoint", () => {
+    expect(cloudRunReadinessUrl("https://mlatv.example.test/")).toBe(
+      "https://mlatv.example.test/health/ready",
+    );
   });
 });
