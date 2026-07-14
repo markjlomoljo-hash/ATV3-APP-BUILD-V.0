@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "AcneTrex V3",
+    "slug": "acnetrex-v3",
+    "scheme": "acnetrex",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.acnetrex.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "AcneTrex uses the camera only when you choose to capture a private FaceAtlas scan.",
+        "NSPhotoLibraryUsageDescription": "AcneTrex accesses selected photos only when you choose to add them to FaceAtlas.",
+        "NSLocationWhenInUseUsageDescription": "AcneTrex uses approximate location while the app is open to provide optional weather context."
+      }
+    },
+    "android": {
+      "package": "com.acnetrex.mobile",
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES", "ACCESS_COARSE_LOCATION", "POST_NOTIFICATIONS"]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      ["expo-sqlite", { "useSQLCipher": true }],
+      ["expo-camera", { "cameraPermission": "Allow AcneTrex to capture a private FaceAtlas scan." }],
+      ["expo-location", { "locationWhenInUsePermission": "Allow AcneTrex to use approximate location for optional weather context." }],
+      "expo-notifications"
+    ],
+    "experiments": { "typedRoutes": true }
+  }
+}

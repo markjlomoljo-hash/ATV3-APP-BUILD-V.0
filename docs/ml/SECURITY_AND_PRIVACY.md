@@ -1,0 +1,7 @@
+# Security and privacy
+
+Canonical identity is the Supabase Auth UUID. Client-supplied `user_id` is rejected; Next.js derives ownership from the authenticated session and the worker derives consent in its claim query. All job/result/object access must be owner-scoped under RLS. Private Storage is mandatory. Service-role credentials, Cloud Run secrets, and Vertex credentials are server-only.
+
+The ML service uses constant-time bearer-secret comparison for protected endpoints, bounded request bodies, UUID request IDs, no-store/nosniff responses, timeouts, batch/concurrency limits, strict Pydantic contracts, safe-output validation, and idempotency conflict detection. Health responses expose no project or endpoint identifiers. Raw images require explicit consent and are not retained in logs or model artifacts.
+
+Live verification on 2026-07-14 proved the forward-only Supabase migrations, RLS and grant assertions, private Storage posture, authenticated Cloud Run prediction boundary, Secret Manager injection, and tracked-file secret scan. The Cloud Run service is intentionally internet-reachable for health and compatibility routes; protected inference routes require the server-side shared secret, while application users authenticate at the Next.js/Supabase boundary. Remaining boundaries are external-system secret history (which no repository scan can disprove), Clerk owner bootstrap, and physical-device SecureStore/SQLCipher verification. Never paste credentials into issues, logs, documentation, or chat.

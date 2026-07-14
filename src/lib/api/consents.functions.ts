@@ -6,13 +6,18 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { sb } from "./_helpers";
 
-const consentSchema = z.object({
-  anonymous_learning: z.boolean().optional(),
-  personal_learning: z.boolean().optional(),
-  raw_image_retention: z.boolean().optional(),
-  research_share: z.boolean().optional(),
-  marketing: z.boolean().optional(),
-});
+const consentSchema = z
+  .object({
+    anonymous_learning: z.boolean().optional(),
+    personal_learning: z.boolean().optional(),
+    raw_image_retention: z.boolean().optional(),
+    research_share: z.boolean().optional(),
+    marketing: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one consent field must be provided",
+  });
 
 export const getConsents = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])

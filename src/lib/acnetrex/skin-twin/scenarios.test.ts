@@ -1,0 +1,105 @@
+import type { PoolClient } from "pg";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("server-only", () => ({}));
+vi.mock("@/db", () => ({ getPool: vi.fn() }));
+
+import { getPool } from "@/db";
+import {
+  SkinTwinConsentRequiredError,
+  createSkinTwinScenario,
+  getSkinTwinScenario,
+  listSkinTwinScenarios,
+  skinTwinScenarioRequestSchema,
+  type SkinTwinScenarioRequest,
+} from "./scenarios";
+
+const pool = vi.mocked(getPool);
+const userId = "00000000-0000-0000-0000-000000000001";
+const snapshotId = "11111111-1111-4111-8111-111111111111";
+
+const input: SkinTwinScenarioRequest = {
+  name: "Better sleep",
+  window: "7d" as const,
+  variables: ["better_sleep"],
+  sourceRecordRefs: [],
+  providerReview: false,
+};
+
+function clientWithResponses(responses: Array<{ rows?: unknown[] }>) {
+  const query = vi.fn(async (..._args: unknown[]) => responses.shift() ?? { rows: [] });
+  const client = { query, release: vi.fn() } as unknown as PoolClient;
+  return { client, query };
+}
+
+function snapshot(status: "insufficient_data" | "queued_for_cloud") {
+  return {
+    id: snapshotId,
+    scenario: "Better sleep",
+    window: "7d",
+    status,
+    sourceRecordRefs: [],
+    confidence: "insufficient_data",
+    modelVersion: null,
+    simulation: null,
+    uncertainty: null,
+    snapshotAt: "2026-07-13T00:00:00.000Z",
+  };
+}
+
+describe("Skin Twin scenario service", () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it("requires personal-learning consent before persisting a scenario", async () => {
+    const { client } = clientWithResponses([{ rows: [{ personalLearning: false }] }]);
+    await expect(createSkinTwinScenario(client, userId, input)).rejects.toBeInstanceOf(SkinTwinConsentRequiredError);
+  });
+
+  it("requires provider review for a custom timeline", () => {
+    const result = skinTwinScenarioRequestSchema.safeParse({ ...input, window: "provider_review_custom", providerReview: false });
+    expect(result.success).toBe(false);
+  });
+
+  it("persists insufficient-data scenarios without fabricating simulation output", async () => {
+    const { client, query } = clientWithResponses([
+      { rows: [{ personalLearning: true }] },
+      { rows: [{ faceScans: 0, sleepLogs: 0, foodLogs: 0 }] },
+      { rows: [snapshot("insufficient_data")] },
+      { rows: [] },
+    ]);
+    const result = await createSkinTwinScenario(client, userId, input);
+    expect(result.status).toBe("insufficient_data");
+    expect(result.snapshot.simulation).toBeNull();
+    expect(JSON.stringify(query.mock.calls)).not.toContain("Math.random");
+  });
+
+  it("queues only when real source records meet the minimum gate", async () => {
+    const { client, query } = clientWithResponses([
+      { rows: [{ personalLearning: true }] },
+      { rows: [{ faceScans: 2, sleepLogs: 8, foodLogs: 8 }] },
+      { rows: [snapshot("queued_for_cloud")] },
+      { rows: [{ id: "99999999-9999-4999-8999-999999999999" }] },
+      { rows: [] },
+      { rows: [] },
+    ]);
+    const result = await createSkinTwinScenario(client, userId, input);
+    expect(result.status).toBe("queued_for_cloud");
+    expect(result.snapshot.simulation).toBeNull();
+    expect(JSON.stringify(query.mock.calls)).toContain(snapshotId);
+  });
+
+  it("loads only owner-scoped scenario history", async () => {
+    const { client, query } = clientWithResponses([{ rows: [snapshot("insufficient_data")] }]);
+    pool.mockReturnValue({ query } as never);
+    const result = await listSkinTwinScenarios(userId);
+    expect(result[0]?.id).toBe(snapshotId);
+    expect(query.mock.calls[0]?.[0]).toContain("where user_id = $1::uuid");
+  });
+
+  it("does not disclose a foreign scenario", async () => {
+    const { client, query } = clientWithResponses([{ rows: [] }]);
+    const result = await getSkinTwinScenario(userId, snapshotId, client);
+    expect(result).toBeNull();
+    expect(query.mock.calls[0]?.[0]).toContain("where id = $1::uuid and user_id = $2::uuid");
+  });
+});

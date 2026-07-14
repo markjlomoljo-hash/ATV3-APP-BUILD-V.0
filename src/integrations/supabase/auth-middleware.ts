@@ -6,8 +6,8 @@ import type { Database } from './types'
 
 
 
-function isNewSupabaseApiKey(value: string): boolean {
-  return value.startsWith('sb_publishable_') || value.startsWith('sb_secret_');
+function isPublishableSupabaseApiKey(value: string): boolean {
+  return value.startsWith('sb_publishable_');
 }
 
 function createSupabaseFetch(supabaseKey: string): typeof fetch {
@@ -21,7 +21,7 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
     }
 
     // New Supabase API keys are opaque strings, not bearer JWTs.
-    if (isNewSupabaseApiKey(supabaseKey) && headers.get('Authorization') === `Bearer ${supabaseKey}`) {
+    if (isPublishableSupabaseApiKey(supabaseKey) && headers.get('Authorization') === `Bearer ${supabaseKey}`) {
       headers.delete('Authorization');
     }
 
@@ -44,6 +44,10 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
       const message = `Missing Supabase environment variable(s): ${missing.join(', ')}. Connect Supabase in Lovable Cloud.`;
       console.error(`[Supabase] ${message}`);
       throw new Error(message);
+    }
+
+    if (SUPABASE_PUBLISHABLE_KEY.startsWith('sb_secret_')) {
+      throw new Error('Server auth middleware is misconfigured with a Supabase secret key.');
     }
     
     const request = getRequest();

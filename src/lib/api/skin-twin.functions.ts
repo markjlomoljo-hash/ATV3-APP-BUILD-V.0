@@ -5,9 +5,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { sb } from "./_helpers";
 
 const snapshot = z.object({
-  scenario: z.string().max(120).nullable().optional(),
-  simulation: z.record(z.string(), z.any()).nullable().optional(),
-  preview_storage_path: z.string().max(500).nullable().optional(),
+  scenario: z.string().min(1).max(120),
 });
 
 export const createSkinTwinSnapshot = createServerFn({ method: "POST" })
@@ -15,7 +13,12 @@ export const createSkinTwinSnapshot = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => snapshot.parse(d))
   .handler(async ({ data, context }) => {
     const { data: row, error } = await sb(context.supabase)
-      .from("skin_twin_snapshots").insert({ user_id: context.userId, ...data })
+      .from("skin_twin_snapshots").insert({
+        user_id: context.userId,
+        scenario: data.scenario,
+        simulation: null,
+        preview_storage_path: null,
+      })
       .select().single();
     if (error) throw error;
     return row;

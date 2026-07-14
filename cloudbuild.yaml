@@ -1,0 +1,46 @@
+substitutions:
+  _ARTIFACT_REGION: us-central1
+  _ARTIFACT_REPOSITORY: acnetrex-ml
+  _IMAGE_NAME: ml-engine
+  _RUN_REGION: europe-west1
+  _RUN_SERVICE: mlatv
+  _VERTEX_AI_PROJECT_ID: project-09bedce3-3c99-4a2b-aad
+  _VERTEX_AI_LOCATION: us-central1
+  _VERTEX_AI_ENDPOINT_ID: "5976620302904328192"
+  _VERTEX_AI_ENDPOINT_DISPLAY_NAME: acnetrex-endpoint
+  _VERTEX_AI_TIMEOUT_SECONDS: "20"
+  _CORS_ORIGINS: https://atv-3-app-build-v-0.vercel.app
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -f
+      - ml-service/Dockerfile
+      - -t
+      - ${_ARTIFACT_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA
+      - ml-service
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_ARTIFACT_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_RUN_SERVICE}
+      - --image
+      - ${_ARTIFACT_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA
+      - --region
+      - ${_RUN_REGION}
+      - --allow-unauthenticated
+      - --set-env-vars
+      - APP_ENV=production,VERTEX_AI_PROJECT_ID=${_VERTEX_AI_PROJECT_ID},VERTEX_AI_LOCATION=${_VERTEX_AI_LOCATION},VERTEX_AI_ENDPOINT_ID=${_VERTEX_AI_ENDPOINT_ID},VERTEX_AI_ENDPOINT_DISPLAY_NAME=${_VERTEX_AI_ENDPOINT_DISPLAY_NAME},VERTEX_AI_TIMEOUT_SECONDS=${_VERTEX_AI_TIMEOUT_SECONDS},CORS_ORIGINS=${_CORS_ORIGINS}
+      - --set-secrets
+      - ACNETREX_ML_SHARED_SECRET=acnetrex-ml-shared-secret:latest,DATABASE_URL=acnetrex-ml-database-url:latest
+
+images:
+  - ${_ARTIFACT_REGION}-docker.pkg.dev/$PROJECT_ID/${_ARTIFACT_REPOSITORY}/${_IMAGE_NAME}:$SHORT_SHA

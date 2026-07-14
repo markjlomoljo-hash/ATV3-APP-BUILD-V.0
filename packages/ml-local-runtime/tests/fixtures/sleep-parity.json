@@ -1,0 +1,19 @@
+{
+  "records": [
+    {"date":"2026-07-10","bedtime":"23:00","wake_time":"07:00","target_minutes":480},
+    {"date":"2026-07-11","bedtime":"00:00","wake_time":"06:00","target_minutes":480},
+    {"date":"2026-07-12","bedtime":"22:00","wake_time":"05:00","target_minutes":480},
+    {"date":"2026-07-12","bedtime":"23:00","wake_time":"07:00","target_minutes":480}
+  ],
+  "expected": {
+    "sample_count": 3,
+    "durations_minutes": [480, 360, 480],
+    "midpoints_minutes": [180, 180, 180],
+    "average_duration_minutes": 440,
+    "bedtime_drift_minutes": 60,
+    "wake_time_drift_minutes": 60,
+    "regularity_minutes": 60,
+    "sleep_debt_minutes": {"3d": 120, "7d": null, "14d": null, "30d": null},
+    "state": "partial"
+  }
+}
