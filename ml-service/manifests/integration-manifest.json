@@ -1,0 +1,11 @@
+{
+  "manifest_version": "1.0.0",
+  "contract_version": "1.0.0",
+  "feature_schema_version": "1.0.0",
+  "canonical_job_route": "/api/ml/jobs",
+  "cloud_prediction_route": "/v1/predict",
+  "canonical_identity": "supabase_auth_uuid",
+  "active_predictive_models": [],
+  "runtime_order": ["local_deterministic", "durable_cloud_job", "explicit_unavailable"],
+  "client_to_vertex_allowed": false
+}
