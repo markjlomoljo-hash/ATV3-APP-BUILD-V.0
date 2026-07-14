@@ -144,6 +144,22 @@ describe("ML analysis worker", () => {
     expect(queries.some((sql) => sql.includes("status='processed'"))).toBe(true);
   });
 
+  it("allows an expired processing lease to be reclaimed after a worker crash", async () => {
+    claimQueries();
+    await processNextMlAnalysisJob({
+      workerId: "recovery-worker",
+      fetcher: vi.fn().mockResolvedValue(upstream(canonicalResponse())),
+    });
+
+    const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
+    const claimSql = queries.find((sql) => sql.includes("with candidate"));
+    const processingSql = queries.find((sql) => sql.includes("update public.ml_analysis_jobs set status='processing'"));
+
+    expect(claimSql).toContain("j.status = 'processing'");
+    expect(claimSql).toContain("o.status = 'processing' and o.lease_expires_at < now()");
+    expect(processingSql).toContain("status in ('queued', 'processing')");
+  });
+
   it("finalizes only the owner-scoped Skin Twin snapshot after a real upstream result", async () => {
     const snapshotId = "11111111-1111-4111-8111-111111111114";
     const skinTwinJob = {
