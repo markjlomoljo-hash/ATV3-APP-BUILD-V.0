@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 
@@ -32,3 +33,37 @@ def test_runtime_installs_supabase_ca_for_verify_full() -> None:
     assert certificate.is_file()
     assert "COPY certs/prod-ca-2021.crt /etc/ssl/certs/supabase-prod-ca-2021.crt" in dockerfile
     assert "PGSSLROOTCERT=/etc/ssl/certs/supabase-prod-ca-2021.crt" in dockerfile
+
+
+def test_postgres_reservation_returns_composite_key_column(monkeypatch) -> None:
+    executed: list[str] = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, query, _params):
+            executed.append(query)
+
+        def fetchone(self):
+            return ("predict",)
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def cursor(self):
+            return Cursor()
+
+    monkeypatch.setitem(sys.modules, "psycopg", SimpleNamespace(connect=lambda _url: Connection()))
+    store = MODULE.PostgresIdempotencyStore("postgresql://redacted")
+
+    assert store.reserve("key", "hash", "predict").state == "reserved"
+    assert "RETURNING scope" in executed[0]
+    assert "RETURNING id" not in executed[0]
