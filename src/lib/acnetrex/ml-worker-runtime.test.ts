@@ -110,6 +110,7 @@ describe("persistent ML worker runtime", () => {
         drainingSeconds: 30,
       },
     });
+    expect(railway.deploy.restartPolicyMaxRetries).toBeUndefined();
     expect(dockerfile).toContain("FROM oven/bun:1.3.14");
     expect(dockerfile).toContain("USER bun");
     expect(dockerfile).toContain('["bun", "--conditions=react-server", "run", "scripts/ml-worker.ts"]');
