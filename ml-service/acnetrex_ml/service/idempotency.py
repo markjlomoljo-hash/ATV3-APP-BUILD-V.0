@@ -14,6 +14,23 @@ from typing import Any, Protocol
 LOGGER = logging.getLogger(__name__)
 
 
+def _connection_error_category(error: Exception) -> str:
+    """Return a bounded diagnostic category without exposing exception details."""
+    message = str(error).lower()
+    categories = (
+        ("authentication", ("password authentication failed", "authentication failed")),
+        ("dns", ("could not translate host name", "name or service not known")),
+        ("tls", ("certificate", "ssl", "tls")),
+        ("pool_exhausted", ("remaining connection slots", "too many connections")),
+        ("timeout", ("timeout", "timed out")),
+        ("network", ("network is unreachable", "connection refused", "no route to host")),
+    )
+    for category, markers in categories:
+        if any(marker in message for marker in markers):
+            return category
+    return "other"
+
+
 def canonical_hash(payload: dict[str, Any]) -> str:
     canonical = json.dumps(
         payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False, default=str
@@ -238,9 +255,10 @@ class PostgresIdempotencyStore:
                 return cursor.fetchone()[0] == 1
         except Exception as error:
             LOGGER.warning(
-                "postgres_idempotency_healthcheck_failed error_type=%s sqlstate=%s",
+                "postgres_idempotency_healthcheck_failed error_type=%s sqlstate=%s category=%s",
                 type(error).__name__,
                 getattr(error, "sqlstate", None),
+                _connection_error_category(error),
             )
             return False
 

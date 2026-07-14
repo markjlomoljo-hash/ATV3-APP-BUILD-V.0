@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+from .idempotency import _connection_error_category
+
 
 LOGGER = logging.getLogger(__name__)
 
@@ -124,9 +126,10 @@ class PostgresJobStore:
                 return cursor.fetchone()[0] == 1
         except Exception as error:
             LOGGER.warning(
-                "postgres_job_healthcheck_failed error_type=%s sqlstate=%s",
+                "postgres_job_healthcheck_failed error_type=%s sqlstate=%s category=%s",
                 type(error).__name__,
                 getattr(error, "sqlstate", None),
+                _connection_error_category(error),
             )
             return False
 
