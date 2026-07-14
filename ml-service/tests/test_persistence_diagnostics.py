@@ -22,3 +22,13 @@ def test_connection_error_category_is_bounded_and_redacted() -> None:
     assert classify(Exception(f"remaining connection slots {secret}")) == "pool_exhausted"
     assert classify(Exception(f"network is unreachable {secret}")) == "network"
     assert classify(Exception(secret)) == "other"
+
+
+def test_runtime_installs_supabase_ca_for_verify_full() -> None:
+    service_root = Path(__file__).parents[1]
+    dockerfile = (service_root / "Dockerfile").read_text(encoding="utf-8")
+    certificate = service_root / "certs" / "prod-ca-2021.crt"
+
+    assert certificate.is_file()
+    assert "COPY certs/prod-ca-2021.crt /etc/ssl/certs/supabase-prod-ca-2021.crt" in dockerfile
+    assert "PGSSLROOTCERT=/etc/ssl/certs/supabase-prod-ca-2021.crt" in dockerfile
