@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   classifyCloudRunHealthPayload,
+  cloudRunHealthTimeoutMs,
   cloudRunReadinessUrl,
   summarizeDatabaseSchema,
 } from "./infrastructure-health";
@@ -118,5 +119,12 @@ describe("infrastructure health contracts", () => {
     expect(cloudRunReadinessUrl("https://mlatv.example.test/")).toBe(
       "https://mlatv.example.test/health/ready",
     );
+  });
+
+  it("uses a bounded production-safe Cloud Run readiness deadline", () => {
+    expect(cloudRunHealthTimeoutMs(undefined)).toBe(10_000);
+    expect(cloudRunHealthTimeoutMs("250")).toBe(1_000);
+    expect(cloudRunHealthTimeoutMs("60000")).toBe(30_000);
+    expect(cloudRunHealthTimeoutMs("invalid")).toBe(10_000);
   });
 });
