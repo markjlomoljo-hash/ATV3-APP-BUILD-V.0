@@ -10,11 +10,13 @@ FROM gcr.io/distroless/python3-debian12:nonroot
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/packages \
+    PGSSLROOTCERT=/etc/ssl/certs/supabase-prod-ca-2021.crt \
     PORT=8080
 
 WORKDIR /app
 
 COPY --from=builder /packages /packages
+COPY certs/prod-ca-2021.crt /etc/ssl/certs/supabase-prod-ca-2021.crt
 COPY --chown=nonroot:nonroot acnetrex_ml ./acnetrex_ml
 COPY --chown=nonroot:nonroot manifests ./manifests
 COPY --chown=nonroot:nonroot reports ./reports
