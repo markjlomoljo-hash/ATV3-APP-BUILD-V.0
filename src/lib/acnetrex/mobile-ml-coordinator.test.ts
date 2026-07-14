@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createMobileMlCoordinator,
   type MobileMlJobRequest,
-} from "../../../apps/mobile/src/lib/ml-coordinator";
+} from "../../../packages/ml-local-runtime/src/mobile-job-coordinator";
 
 const request: MobileMlJobRequest = {
   engine: "sleepderm",

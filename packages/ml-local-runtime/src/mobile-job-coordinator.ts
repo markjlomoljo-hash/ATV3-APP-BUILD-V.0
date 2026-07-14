@@ -1,4 +1,4 @@
-import type { OfflineOperation } from "../../../../packages/ml-local-runtime/src/offline-queue-contract";
+import type { OfflineOperation } from "./offline-queue-contract.js";
 
 export type MobileMlJobRequest = Readonly<{
   engine: "faceatlas" | "sleepderm" | "dermdiet" | "triggergraph" | "forecast" | "skin_twin" | "cutisai";
@@ -34,6 +34,7 @@ export function createMobileMlCoordinator(dependencies: {
         return { mode: "cloud" as const, jobId: reference.jobId, requestId: identity.requestId };
       }
 
+      const now = new Date().toISOString();
       await dependencies.queue({
         local_operation_id: identity.localOperationId,
         idempotency_key: identity.idempotencyKey,
@@ -42,9 +43,9 @@ export function createMobileMlCoordinator(dependencies: {
         route: "/api/ml/jobs",
         validated_payload: request,
         payload_schema_version: "1",
-        created_at: new Date().toISOString(),
+        created_at: now,
         attempt_count: 0,
-        next_attempt_at: new Date().toISOString(),
+        next_attempt_at: now,
         status: "pending",
         last_error_code: null,
         dependencies: [],
