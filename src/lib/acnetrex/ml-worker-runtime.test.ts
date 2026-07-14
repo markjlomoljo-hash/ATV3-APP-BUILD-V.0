@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -94,5 +96,22 @@ describe("persistent ML worker runtime", () => {
       status: 200,
       body: { ok: true, service: "acnetrex-ml-worker", ready: true },
     });
+  });
+
+  it("pins the Railway worker to its non-root Docker image and readiness contract", () => {
+    const railway = JSON.parse(readFileSync(path.join(process.cwd(), "railway.worker.json"), "utf8"));
+    const dockerfile = readFileSync(path.join(process.cwd(), "Dockerfile.worker"), "utf8");
+
+    expect(railway).toMatchObject({
+      build: { builder: "DOCKERFILE", dockerfilePath: "Dockerfile.worker" },
+      deploy: {
+        healthcheckPath: "/health/ready",
+        restartPolicyType: "ALWAYS",
+        drainingSeconds: 30,
+      },
+    });
+    expect(dockerfile).toContain("FROM oven/bun:1.3.14");
+    expect(dockerfile).toContain("USER bun");
+    expect(dockerfile).toContain('["bun", "--conditions=react-server", "run", "scripts/ml-worker.ts"]');
   });
 });
