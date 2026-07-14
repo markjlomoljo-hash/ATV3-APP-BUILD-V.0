@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@acnetrex/ml-local-runtime": "file:../../packages/ml-local-runtime",
     "@supabase/supabase-js": "^2.108.2",
     "expo": "^57.0.4",
     "expo-camera": "~57.0.1",
