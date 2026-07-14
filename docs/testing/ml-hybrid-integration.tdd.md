@@ -25,6 +25,7 @@ Source: the controlling ML execution objective and supplied foundation, not a se
 | Training cannot start without an approved immutable snapshot | `47603b2` (training module absent) | `2952750` | `test_training_gate.py` and blocked CLI run |
 | Service compatibility jobs complete/replay instead of remaining queued | `3e05324` | `a9dbc02` | completed job create/get/replay integration test |
 | Service job timeouts persist a retryable terminal state | `41cac3f` (500 and queued row) | `8457a79` | timeout create/get integration test |
+| Expo submits or durably queues the same ML job identity | `5443037` (coordinator module missing) | `59b6d8c` | `mobile-ml-coordinator.test.ts` (2 tests) and mobile typecheck |
 
 ## Validation evidence
 
@@ -35,5 +36,9 @@ Source: the controlling ML execution objective and supplied foundation, not a se
 - Python Ruff check/format and pytest: 21 tests passed.
 - Mobile clean `npm ci` and `npm run typecheck`: passed.
 - Mobile Expo config/native build-tool API check passed; production npm audit reports zero vulnerabilities after the pinned `uuid@11.1.1` override.
+- GitHub Actions push and pull-request CI for `92c57bc` passed the deployed app, mobile, and ML-service wall. After native job integration, the local app suite passed 49 Vitest files/238 tests plus root/mobile TypeScript and ESLint; final remote CI is recorded in `LIVE_VERIFICATION.md` after push.
+- Artifact Analysis completed successfully for the promoted image digest with 0 critical findings; Cloud Run root/live/ready/auth/predict/replay/conflict/durable-job/timeout and rollback checks passed.
+- Supabase live assertions passed for RLS, anonymous/write grants, private Storage, and public security-definer execution; Vercel production health reports database/schema/Cloud Run/worker ready.
+- Expo coordinator focused test: 2/2 passed; online work uses `/api/ml/jobs`, while offline work retains the original operation, request, idempotency key, and validated payload in encrypted SQLite.
 
-Known gaps: branch coverage is below 80%; no Docker runtime/scanner, local PostgreSQL/Supabase CLI execution, EAS builds, or physical devices were available. Live push, migration, secrets, Cloud Run deployment, and device testing require external authorization/resources.
+Known gaps: branch coverage is below 80%. EAS is not authenticated, so signed iOS/Android builds and physical-device SecureStore/SQLCipher, camera, lifecycle, offline replay, battery, thermal, memory, and performance checks remain owner-dependent. Clerk credentials and owner bootstrap are also unconfigured. Vertex has no deployed model because no legitimate approved training dataset/artifact exists; deterministic inference remains live and predictive tasks abstain honestly.

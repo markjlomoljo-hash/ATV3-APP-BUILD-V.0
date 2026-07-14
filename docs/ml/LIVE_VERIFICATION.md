@@ -1,13 +1,52 @@
 # Live verification record
 
-Date: 2026-07-14. This file records evidence, not an assertion of deployment.
+Date: 2026-07-14. Evidence below was captured from the named live resources; no secret values are recorded.
 
-Local: 44 Vitest files/216 tests passed; coverage was 81.62% statements, 84.46% functions, 86.7% lines, and 68.19% branches. Root TypeScript, ESLint, Next.js webpack production build, and a 66-route live smoke passed. Mobile clean npm install, Expo public config evaluation, TypeScript, and the native `xcode` build-tool API check passed. A pinned `uuid@11.1.1` override removed the 10 moderate transitive Expo build-tool findings; the production npm audit now reports zero vulnerabilities. Python Ruff and 21 tests passed, including shared cloud/mobile sleep parity, checksum/persistence readiness, image-packaging, fabrication safety, governed training gates, completed job replay, and durable retryable timeouts. The current training CLI exits with `training_blocked/no_approved_training_dataset`. Static migration-policy tests passed. The secret scan found no high-signal credential patterns. Docker/container scanners, Supabase CLI, and a local PostgreSQL service were unavailable, so container execution/scan and SQL execution are not verified.
+## Cloud Run
 
-Supabase project `alobmstvqutteypusmuo` accepted the forward migration and records it as version `20260713225247` (`ml_governance_security_hardening`). Both `public.ml_service_idempotency` and `public.ml_service_jobs` exist with RLS enabled; the verification query confirmed both relations and RLS. The connected project is ACTIVE_HEALTHY on PostgreSQL 17.6.1.127 in `ap-northeast-1`.
+- Project/service/region: `project-09bedce3-3c99-4a2b-aad` / `mlatv` / `europe-west1`.
+- Production revision: `mlatv-00012-biw`, 100% traffic.
+- Rollback revision: `mlatv-00002-4ww`, retained and reachable through the zero-traffic `rollback` tag.
+- Image: `us-central1-docker.pkg.dev/project-09bedce3-3c99-4a2b-aad/acnetrex-ml/ml-engine@sha256:2aa79e1a9f8f20b4d7861a2b399da93c2e9a7556650d8c56761df3cc090d418f`.
+- Artifact Analysis: finished successfully with 0 critical, 11 high, 9 medium, and 56 low findings; SLSA build level 3. The high findings are in the distroless Debian runtime rather than Python packages.
+- Production smoke: `/` identifies `acnetrex-ml`; `/health/live`, `/health/ready`, and authenticated `/v1/predict` return 200. Readiness reports artifact integrity, registry, and PostgreSQL persistence ready while predictive models remain honestly unavailable.
+- Contract wall: deterministic predict 200, same-key replay 200 with `Idempotency-Replayed: true`, changed-payload reuse 409, unauthenticated request 401, models/metrics/batch/explain 200, and durable job create/fetch/replay 200.
+- A temporary zero-traffic revision with a near-zero internal prediction deadline returned 504 and persisted a failed job with `error_retryable`, `prediction_timeout`, and `retryable=true`. The temporary tag was removed and the 20-second internal prediction deadline restored before promotion; the Cloud Run platform request timeout remains 60 seconds.
+- Post-promotion revision logs: 8 sampled requests, all 2xx, with zero ERROR entries and zero 5xx responses.
 
-Read-only Google Cloud inspection used the existing active account and project without changing configuration. Cloud Run service `mlatv` routes 100% to ready revision `mlatv-00002-4ww`, but its image is `gcr.io/cloudrun/placeholder`; ingress is all and invoker IAM enforcement is disabled. Artifact Registry repository `us-central1/acnetrex-ml` exists. The approved remote build succeeded as Cloud Build `006025b4-bdc6-4be3-a0be-b93e0c6832e5`, publishing `us-central1-docker.pkg.dev/project-09bedce3-3c99-4a2b-aad/acnetrex-ml/ml-engine:47603b262d16` at digest `sha256:b9e222a84a6f239adabd2db8d17e6619b48fbe39df280c7aba8888301606f228`. Neither required Secret Manager entry (`acnetrex-ml-shared-secret`, `acnetrex-ml-database-url`) exists.
+## Vercel application integration
 
-Vertex endpoint `5976620302904328192` (`acnetrex-endpoint`) exists in `us-central1` but has zero deployed models. Two model resources named `acnetrex-ml-v1` point to the same `ml-engine:latest` custom container; they do not establish a trained, evaluated, approved artifact and must not be treated as valid predictive models. No controlled Vertex prediction was possible. The Vercel health endpoint was previously observed degraded. No deployment, migration apply, push, EAS build, or live mutation has been performed in this worktree.
+- Project: `atv-3-app-build-v-0`; production: `https://atv-3-app-build-v-0.vercel.app`.
+- Production deployment for commit `92c57bc` is READY.
+- Production and Preview have canonical server/public ML URL variables. `ACNETREX_ML_SHARED_SECRET` and the independently generated worker secret are sensitive server-only variables; the durable worker is enabled with a bounded timeout.
+- `GET /api/health` returns 200 with `ok=true`, database `connected`, schema `ready`, Cloud Run `healthy`/`acnetrex-ml`, and worker `configured`.
+- `POST /api/ml/jobs` without Supabase authentication returns 401 `auth_required`.
+- The latest production deployment yielded 88 queried runtime events with zero error/fatal or 5xx events.
+- Clerk is not configured and remains an explicit non-ML owner action; health reports this warning without masking the green ML/database state.
 
-Production verification must capture timestamp, URL/resource name (without secrets), revision, image digest, root/live/ready results, authenticated prediction and replay/conflict tests, unauthenticated rejection, queue/result persistence, cross-user denial, private-object denial, Vertex prediction or exact blocker, rollback target, and iOS/Android build/device evidence.
+## Supabase
+
+- Project: `alobmstvqutteypusmuo`; the rotated database credential is used through Secret Manager version 2 and verified with `sslmode=verify-full` plus the published Supabase 2021 CA.
+- The forward-only ML governance and legacy-grant revocation migrations are applied.
+- Vercel health confirms database connectivity and complete canonical, legacy, web-compatibility, and persistent-memory table contracts.
+- A same-image Cloud Run SQL assertion completed successfully only when all of these counts were zero: public tables without RLS, anonymous public-table grants, authenticated public-table write grants, public Storage buckets, and PUBLIC-executable security-definer functions in `public`.
+- The disposable database probe job was deleted after verification.
+
+## Vertex AI
+
+- Endpoint `5976620302904328192` (`acnetrex-endpoint`) exists in `us-central1`.
+- Runtime service account `724627131846-compute@developer.gserviceaccount.com` has `roles/aiplatform.user`.
+- The endpoint has no `deployedModels` field and therefore zero deployed models. No Vertex prediction is claimed; readiness correctly reports `verification_required`, and predictive tasks remain unavailable until a legitimate evaluated artifact is manually approved and deployed.
+
+## Repository and validation
+
+- Branch: `feat/phase7-profile-reports`; current evidence commit: `92c57bc`.
+- GitHub Actions push and pull-request CI runs for `92c57bc` both completed successfully.
+- CI covers the app test/lint/typecheck/build/route smoke, mobile clean install/typecheck, and ML-service Ruff format/lint plus Python tests.
+- Local app verification after native job integration: 49 Vitest files and 238 tests passed, root and mobile TypeScript passed, and ESLint passed. Mobile npm audit reports zero vulnerabilities.
+- Tracked-file secret scan found no private keys, OpenAI keys, or GitHub tokens. Four credential-shaped PostgreSQL URLs were confirmed to be documentation examples or test fixtures, not live credentials.
+
+## Unverified owner-dependent evidence
+
+- The Expo readiness console is wired to the shared deterministic runtime, authenticated `/api/ml/jobs`, and encrypted offline queue with stable replay identities. EAS CLI is not authenticated in this session, so signed iOS/Android development/release builds and physical-device camera, lifecycle, battery, thermal, memory, and offline replay checks remain unverified.
+- No clinically validated predictive model exists because the supplied data lacks a legally cleared, representative patient-level outcome cohort and production image corpus. Deterministic modules are live; predictive modules abstain honestly.
