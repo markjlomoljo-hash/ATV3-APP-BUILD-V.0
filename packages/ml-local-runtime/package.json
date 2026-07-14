@@ -8,6 +8,11 @@
       "types": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./mobile-job-coordinator": {
+      "types": "./src/mobile-job-coordinator.ts",
+      "import": "./src/mobile-job-coordinator.ts",
+      "default": "./src/mobile-job-coordinator.ts"
     }
   },
   "main": "dist/src/index.js",

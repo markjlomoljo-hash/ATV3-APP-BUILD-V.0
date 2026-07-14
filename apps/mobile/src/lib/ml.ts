@@ -1,7 +1,10 @@
 import * as Crypto from "expo-crypto";
 
 import { apiMutation } from "./api";
-import { createMobileMlCoordinator, type MobileMlJobRequest } from "@acnetrex/ml-local-runtime";
+import {
+  createMobileMlCoordinator,
+  type MobileMlJobRequest,
+} from "@acnetrex/ml-local-runtime/mobile-job-coordinator";
 import { openExpoOfflineOperationStore } from "./ml-offline-store";
 
 export const mobileMlCoordinator = createMobileMlCoordinator({
