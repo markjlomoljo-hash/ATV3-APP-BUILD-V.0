@@ -23,7 +23,10 @@ def _connection_error_category(error: Exception) -> str:
         ("tls", ("certificate", "ssl", "tls")),
         ("pool_exhausted", ("remaining connection slots", "too many connections")),
         ("timeout", ("timeout", "timed out")),
-        ("network", ("network is unreachable", "connection refused", "no route to host")),
+        (
+            "network",
+            ("network is unreachable", "connection refused", "no route to host"),
+        ),
     )
     for category, markers in categories:
         if any(marker in message for marker in markers):

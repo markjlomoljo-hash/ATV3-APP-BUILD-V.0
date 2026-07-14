@@ -17,10 +17,15 @@ def test_connection_error_category_is_bounded_and_redacted() -> None:
     classify = MODULE._connection_error_category
 
     assert classify(Exception(f"timeout expired {secret}")) == "timeout"
-    assert classify(Exception(f"password authentication failed {secret}")) == "authentication"
+    assert (
+        classify(Exception(f"password authentication failed {secret}"))
+        == "authentication"
+    )
     assert classify(Exception(f"could not translate host name {secret}")) == "dns"
     assert classify(Exception(f"certificate verify failed {secret}")) == "tls"
-    assert classify(Exception(f"remaining connection slots {secret}")) == "pool_exhausted"
+    assert (
+        classify(Exception(f"remaining connection slots {secret}")) == "pool_exhausted"
+    )
     assert classify(Exception(f"network is unreachable {secret}")) == "network"
     assert classify(Exception(secret)) == "other"
 
@@ -31,7 +36,10 @@ def test_runtime_installs_supabase_ca_for_verify_full() -> None:
     certificate = service_root / "certs" / "prod-ca-2021.crt"
 
     assert certificate.is_file()
-    assert "COPY certs/prod-ca-2021.crt /etc/ssl/certs/supabase-prod-ca-2021.crt" in dockerfile
+    assert (
+        "COPY certs/prod-ca-2021.crt /etc/ssl/certs/supabase-prod-ca-2021.crt"
+        in dockerfile
+    )
     assert "PGSSLROOTCERT=/etc/ssl/certs/supabase-prod-ca-2021.crt" in dockerfile
 
 
@@ -61,7 +69,9 @@ def test_postgres_reservation_returns_composite_key_column(monkeypatch) -> None:
         def cursor(self):
             return Cursor()
 
-    monkeypatch.setitem(sys.modules, "psycopg", SimpleNamespace(connect=lambda _url: Connection()))
+    monkeypatch.setitem(
+        sys.modules, "psycopg", SimpleNamespace(connect=lambda _url: Connection())
+    )
     store = MODULE.PostgresIdempotencyStore("postgresql://redacted")
 
     assert store.reserve("key", "hash", "predict").state == "reserved"
