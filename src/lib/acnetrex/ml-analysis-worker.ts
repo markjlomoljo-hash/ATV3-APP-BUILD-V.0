@@ -136,8 +136,11 @@ async function claimNext(client: PoolClient, workerId: string): Promise<ClaimedJ
        join public.ml_analysis_jobs j on j.id::text = o.aggregate_id
        left join public.consents c on c.user_id = j.user_id
        where o.event_type = 'ml.analysis.requested'
-         and (o.status = 'pending' or (o.status = 'processing' and o.lease_expires_at < now()))
-         and o.next_attempt_at <= now() and j.status = 'queued'
+         and (
+           (o.status = 'pending' and j.status = 'queued')
+           or (o.status = 'processing' and o.lease_expires_at < now() and j.status = 'processing')
+         )
+         and o.next_attempt_at <= now()
        order by o.created_at asc
        for update of o, j skip locked
        limit 1
@@ -156,7 +159,7 @@ async function claimNext(client: PoolClient, workerId: string): Promise<ClaimedJ
   if (!job) return null;
   await client.query(
     `update public.ml_analysis_jobs set status='processing', updated_at=now()
-     where id=$1::uuid and status='queued'`,
+     where id=$1::uuid and status in ('queued', 'processing')`,
     [job.jobId],
   );
   return job;
