@@ -646,6 +646,70 @@ describe("ML analysis worker", () => {
     expect(fakeClient.query.mock.calls.some(([sql]) => String(sql).includes("status='failed_retryable'"))).toBe(true);
   });
 
+  it("uses Railway persistence mode as dispatch-only and closes the outbox after committed-state verification", async () => {
+    vi.stubEnv("ACNETREX_ML_PERSISTENCE_OWNER", "railway");
+    fakeClient.query.mockImplementation(async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: 0 };
+      if (sql.includes("with candidate")) return { rows: [job], rowCount: 1 };
+      if (sql.includes("from public.sleep_logs")) return {
+        rows: [{
+          id: "11111111-1111-4111-8111-111111111115",
+          logDate: "2026-07-13",
+          sleepTime: "2026-07-13T23:00:00+08:00",
+          wakeTime: "2026-07-14T07:00:00+08:00",
+        }],
+        rowCount: 1,
+      };
+      if (sql.includes("left join public.ml_analysis_results")) return {
+        rows: [{
+          status: "completed",
+          resultId: "11111111-1111-4111-8111-111111111119",
+          requestId: job.jobId,
+          engine: job.engine,
+          operation: job.operation,
+        }],
+        rowCount: 1,
+      };
+      return { rows: [], rowCount: 1 };
+    });
+
+    const result = await processNextMlAnalysisJob({
+      workerId: "railway-dispatcher",
+      fetcher: vi.fn().mockResolvedValue(upstream(canonicalResponse())),
+    });
+
+    expect(result).toEqual({ status: "completed", jobId: job.jobId, outboxId: job.outboxId });
+    const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(queries.some((sql) => sql.includes("insert into public.ml_analysis_results"))).toBe(false);
+    expect(queries.some((sql) => sql.includes("update public.skin_twin_snapshots"))).toBe(false);
+    expect(queries.some((sql) => sql.includes("update public.ml_analysis_jobs"))).toBe(false);
+    expect(queries.some((sql) => sql.includes("left join public.ml_analysis_results"))).toBe(true);
+    expect(queries.some((sql) => sql.includes("insert into public.consumer_inbox"))).toBe(true);
+    expect(queries.some((sql) => sql.includes("status='processed'"))).toBe(true);
+  });
+
+  it("keeps the dispatch outbox retryable when Railway returns before committed state can be verified", async () => {
+    vi.stubEnv("ACNETREX_ML_PERSISTENCE_OWNER", "railway");
+    fakeClient.query.mockImplementation(async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: 0 };
+      if (sql.includes("with candidate")) return { rows: [job], rowCount: 1 };
+      if (sql.includes("from public.sleep_logs")) return { rows: [], rowCount: 0 };
+      if (sql.includes("left join public.ml_analysis_results")) return { rows: [], rowCount: 0 };
+      return { rows: [], rowCount: 1 };
+    });
+
+    const result = await processNextMlAnalysisJob({
+      workerId: "railway-dispatcher",
+      fetcher: vi.fn().mockResolvedValue(upstream(canonicalResponse())),
+    });
+
+    expect(result).toMatchObject({ status: "retry_scheduled", reason: "ml_commit_verification_failed" });
+    const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(queries.some((sql) => sql.includes("insert into public.ml_analysis_results"))).toBe(false);
+    expect(queries.some((sql) => sql.includes("status='processed'"))).toBe(false);
+    expect(queries.some((sql) => sql.includes("status='failed_retryable'"))).toBe(true);
+  });
+
   it("marks malformed successful responses as terminal after the retry budget", async () => {
     claimQueries();
     const exhausted = { ...job, attemptCount: 5, maxAttempts: 5 };
