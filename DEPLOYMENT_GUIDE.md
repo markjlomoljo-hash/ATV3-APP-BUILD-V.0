@@ -53,7 +53,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_2az_6ia5xm-1meOvew-jauw_Q_YM1bDj
 
 # ML API (Cloud Run)
 ACNETREX_ML_API_URL=https://mlatv-pudz4xjzxa-ew.a.run.app
-NEXT_PUBLIC_ACNETREX_ML_API_URL=https://mlatv-pudz4xjzxa-ew.a.run.app
+ACNETREX_ML_API_URL=https://acnetrex-ml-api-production.up.railway.app
 
 # Vertex AI
 VERTEX_AI_PROJECT_ID=project-09bedce3-3c99-4a2b-aad
