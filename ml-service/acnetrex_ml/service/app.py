@@ -6,7 +6,6 @@ import math
 import os
 import secrets
 import time
-import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -31,9 +30,8 @@ from acnetrex_ml.runtime.vertex import VertexAdapter
 from acnetrex_ml.safety.consent import validate_consent
 from acnetrex_ml.safety.output_validation import validate_safe_output
 
-from .dependencies import build_idempotency_store, build_job_store
+from .dependencies import build_idempotency_store
 from .idempotency import IdempotencyStore, canonical_hash
-from .jobs import JobStore
 from .middleware import RequestContextMiddleware
 
 
@@ -259,10 +257,8 @@ def _predict_core(payload: InferenceRequest) -> InferenceResponse:
 def create_app(
     *,
     idempotency_store: IdempotencyStore | None = None,
-    job_store: JobStore | None = None,
 ) -> FastAPI:
     store = idempotency_store or build_idempotency_store()
-    jobs = job_store or build_job_store()
     batch_limit = asyncio.Semaphore(int(os.getenv("MAX_BATCH_CONCURRENCY", "4")))
     maximum_batch_size = int(os.getenv("MAX_BATCH_SIZE", "32"))
 
@@ -323,9 +319,7 @@ def create_app(
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             registry = {"count": 0, "active": [], "approved": []}
             registry_state = "error"
-        persistence_ready = await asyncio.to_thread(
-            lambda: store.healthcheck() and jobs.healthcheck()
-        )
+        persistence_ready = await asyncio.to_thread(store.healthcheck)
         ready = (
             artifact_integrity["state"] == "ready"
             and registry_state == "ready"
@@ -513,63 +507,6 @@ def create_app(
                 "error": {"code": "persistence_adapter_not_configured"},
             },
         )
-
-    @application.post("/v1/jobs", dependencies=[Depends(_authenticate)])
-    async def create_job(
-        payload: InferenceRequest,
-        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    ) -> JSONResponse:
-        if not idempotency_key or idempotency_key != str(payload.idempotency_key):
-            raise HTTPException(
-                status_code=400, detail={"code": "valid_idempotency_key_required"}
-            )
-        request_hash = canonical_hash(
-            payload.model_dump(mode="json", exclude={"request_id"})
-        )
-        job_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"acnetrex-ml:{idempotency_key}"))
-        state, item = jobs.create(
-            job_id, idempotency_key, request_hash, payload.model_dump(mode="json")
-        )
-        if state == "conflict":
-            raise HTTPException(
-                status_code=409,
-                detail={"code": "idempotency_key_reused_with_different_payload"},
-            )
-        if state == "replay" and item["status"] == "completed":
-            return JSONResponse(
-                status_code=200,
-                headers={"Idempotency-Replayed": "true"},
-                content={"ok": True, "job_id": item["job_id"], "status": "completed"},
-            )
-        try:
-            result = await asyncio.wait_for(
-                asyncio.to_thread(_predict_core, payload),
-                timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
-            )
-        except TimeoutError as exc:
-            failure = {
-                "ok": False,
-                "readiness_state": "error_retryable",
-                "error": {"code": "prediction_timeout", "retryable": True},
-            }
-            jobs.fail(job_id, failure)
-            raise HTTPException(
-                status_code=504, detail={"code": "prediction_timeout"}
-            ) from exc
-        body = result.model_copy(update={"job_id": job_id}).model_dump(mode="json")
-        jobs.complete(job_id, body)
-        return JSONResponse(
-            status_code=200,
-            headers={"Idempotency-Replayed": "true"} if state == "replay" else {},
-            content={"ok": True, "job_id": item["job_id"], "status": "completed"},
-        )
-
-    @application.get("/v1/jobs/{job_id}", dependencies=[Depends(_authenticate)])
-    async def get_job(job_id: str) -> dict[str, Any]:
-        item = jobs.get(job_id)
-        if not item:
-            raise HTTPException(status_code=404, detail={"code": "job_not_found"})
-        return {"ok": True, **item}
 
     return application
 

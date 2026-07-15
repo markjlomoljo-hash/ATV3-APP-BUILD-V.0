@@ -21,7 +21,8 @@ This service is intentionally fail-closed:
 - `POST /predict` - canonical inference
 - `POST /api/v1/inference` and `POST /v1/predict` - compatibility aliases to the same handler
 - `POST /v1/batch` - bounded batch inference
-- `POST /v1/jobs` and `GET /v1/jobs/{job_id}` - durable service-local job contract
+
+Application job creation, owner-scoped feature loading, result persistence, and outbox completion belong exclusively to Next.js. FastAPI exposes no application job routes and does not use the application database.
 
 ## Required Environment
 

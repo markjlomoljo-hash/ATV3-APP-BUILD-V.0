@@ -1,22 +1,14 @@
 import json
-import time
-from importlib import import_module
 from pathlib import Path
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
 from main import app
 from acnetrex_ml.engines.sleepderm import analyze_sleep
-from acnetrex_ml.service.app import create_app
-from acnetrex_ml.service.idempotency import MemoryIdempotencyStore
-from acnetrex_ml.service.jobs import SQLiteJobStore
 
 
 client = TestClient(app)
-app_module = import_module("acnetrex_ml.service.app")
-
-
 def test_python_sleep_engine_matches_shared_mobile_parity_fixture() -> None:
     fixture_path = (
         Path(__file__).resolve().parents[2]
@@ -70,8 +62,6 @@ def test_canonical_service_surface_is_complete() -> None:
         "/v1/batch",
         "/v1/explain",
         "/v1/feedback",
-        "/v1/jobs",
-        "/v1/jobs/{job_id}",
     } <= routes
 
 
@@ -244,60 +234,7 @@ def test_contract_forbids_client_identity(monkeypatch) -> None:
     assert response.status_code == 422
 
 
-def test_service_job_endpoint_persists_a_completed_deterministic_result() -> None:
-    body = inference_payload()
-
-    created = client.post(
-        "/v1/jobs",
-        json=body,
-        headers={"idempotency-key": body["idempotency_key"]},
-    )
-
-    assert created.status_code == 200
-    assert created.json()["status"] == "completed"
-    fetched = client.get(f"/v1/jobs/{created.json()['job_id']}")
-    assert fetched.status_code == 200
-    assert fetched.json()["status"] == "completed"
-    assert fetched.json()["result"]["readiness_state"] == "ready"
-
-    replay = client.post(
-        "/v1/jobs",
-        json={**body, "request_id": str(uuid4())},
-        headers={"idempotency-key": body["idempotency_key"]},
-    )
-    assert replay.status_code == 200
-    assert replay.headers["idempotency-replayed"] == "true"
-    assert replay.json()["job_id"] == created.json()["job_id"]
-
-
-def test_service_job_timeout_is_durable_and_retryable(monkeypatch, tmp_path) -> None:
-    original_predict = app_module._predict_core
-
-    def slow_predict(payload):
-        time.sleep(0.05)
-        return original_predict(payload)
-
-    monkeypatch.setattr(app_module, "_predict_core", slow_predict)
-    monkeypatch.setenv("REQUEST_TIMEOUT_SECONDS", "0.001")
-    isolated = create_app(
-        idempotency_store=MemoryIdempotencyStore(),
-        job_store=SQLiteJobStore(tmp_path / "jobs.sqlite3"),
-    )
-    isolated_client = TestClient(isolated, raise_server_exceptions=False)
-    body = inference_payload()
-
-    response = isolated_client.post(
-        "/v1/jobs",
-        json=body,
-        headers={"idempotency-key": body["idempotency_key"]},
-    )
-
-    assert response.status_code == 504
-    job_id = str(uuid5(NAMESPACE_URL, f"acnetrex-ml:{body['idempotency_key']}"))
-    fetched = isolated_client.get(f"/v1/jobs/{job_id}")
-    assert fetched.json()["status"] == "failed"
-    assert fetched.json()["result"] == {
-        "ok": False,
-        "readiness_state": "error_retryable",
-        "error": {"code": "prediction_timeout", "retryable": True},
-    }
+def test_service_does_not_own_application_job_routes() -> None:
+    routes = {route.path for route in app.routes}
+    assert "/v1/jobs" not in routes
+    assert "/v1/jobs/{job_id}" not in routes

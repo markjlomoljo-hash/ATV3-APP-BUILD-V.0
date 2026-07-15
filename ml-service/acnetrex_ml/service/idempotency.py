@@ -70,7 +70,7 @@ class IdempotencyStore(Protocol):
 
 
 class MemoryIdempotencyStore:
-    """Unit-test-only store. Production must use SQLite or PostgreSQL."""
+    """Process-local duplicate suppression for the stateless inference API."""
 
     def __init__(
         self,

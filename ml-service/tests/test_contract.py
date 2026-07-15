@@ -8,7 +8,6 @@ from fastapi.testclient import TestClient
 from acnetrex_ml.runtime.vertex import VertexConfig
 from acnetrex_ml.service.app import create_app
 from acnetrex_ml.service.idempotency import MemoryIdempotencyStore
-from acnetrex_ml.service.jobs import SQLiteJobStore
 from main import app
 
 
@@ -86,15 +85,12 @@ def test_readiness_fails_closed_on_artifact_checksum_mismatch(
     }
 
 
-def test_readiness_fails_closed_when_persistence_probe_fails(tmp_path) -> None:
+def test_readiness_fails_closed_when_idempotency_probe_fails() -> None:
     class UnavailableIdempotencyStore(MemoryIdempotencyStore):
         def healthcheck(self) -> bool:
             return False
 
-    isolated = create_app(
-        idempotency_store=UnavailableIdempotencyStore(),
-        job_store=SQLiteJobStore(tmp_path / "jobs.sqlite3"),
-    )
+    isolated = create_app(idempotency_store=UnavailableIdempotencyStore())
 
     response = TestClient(isolated).get("/health/ready")
 
