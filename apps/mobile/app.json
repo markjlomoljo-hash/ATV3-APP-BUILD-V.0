@@ -27,6 +27,13 @@
       ["expo-location", { "locationWhenInUsePermission": "Allow AcneTrex to use approximate location for optional weather context." }],
       "expo-notifications"
     ],
-    "experiments": { "typedRoutes": true }
+    "experiments": { "typedRoutes": true },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "8309bd9d-f98b-4ac2-a4c8-9bda3d47cdac"
+      }
+    },
+    "owner": "markiiiatv3"
   }
 }

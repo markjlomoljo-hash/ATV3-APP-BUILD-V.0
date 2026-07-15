@@ -18,10 +18,14 @@ An item passes only when maintenance/versioning, commercial and redistribution r
 | Q06 | 2026-07-14 | DermNet official dataset page | licensed AI dataset | 1 | 1 | 0 | 1 | 0 | Paid custom rights, consent, DPA, split keys, and redistribution scope require owner/legal review | https://dermnetnz.org/dermatology-image-dataset |
 | Q07 | 2026-07-13 | TorchVision official release/docs | MobileNetV3, EfficientNet | 2 architectures | 2 | 2 evaluation-only | 0 | 0 | Architecture definitions accepted with `weights=None`; upstream weights remain separate legal review | https://github.com/pytorch/vision |
 | Q08 | 2026-07-13 | Official runtime/framework sources | MediaPipe, ONNX Runtime RN, scikit-learn | 3 | 3 | 3 evaluation-only | 0 | 0 | Smallest maintained stack identified; adoption still requires task-specific parity/performance gates | https://github.com/google-ai-edge/mediapipe |
+| Q09 | 2026-07-14 | Google Research SCIN repository and licence | v1.0.0 / `601eb3c` / ACNE category | 1 | 1 | 0 | 1 | 0 | Broad copyright grant is not product-consent or personality-rights clearance; exact acne volume, label fitness, identity-safe splits, and external holdout remain unproven | https://github.com/google-research-datasets/scin |
+| Q10 | 2026-07-14 | Google HAI-DEF official model card, FAQ, and terms | MedSigLIP 1.0.0 | 1 | 1 | 0 | 1 | 0 | Commercial applications are permitted subject to binding HAI-DEF terms, but adoption requires owner authorization and the model is not an acne classifier or initial mobile runtime | https://developers.google.com/health-ai-developer-foundations/medsiglip/model-card |
+| Q11 | 2026-07-14 | ACNE-ECKH peer-reviewed article | data availability | 1 | 1 | 0 | 0 | 1 | Authors state the 8,242-image dataset cannot be shared for ethical, legal, and privacy reasons | https://pmc.ncbi.nlm.nih.gov/articles/PMC12024611/ |
 
 ## Results by task
 
 - Acne lesion detection/classification/segmentation: no dataset or pretrained weight passed production-training gates. MobileNetV3 Small and EfficientNet-B0 uninitialized architectures may be benchmarked only after legitimate data exists.
+- Dermatology representations: SCIN is tracked as `needs_legal_privacy_and_fit_review`; MedSigLIP is tracked as `needs_owner_legal_and_validation_approval`. Neither is approved for acquisition, training, zero-shot prediction, or activation.
 - Capture quality: MediaPipe may be evaluated for privacy-safe framing/face readiness, never represented as lesion detection. Bundled asset terms require separate verification.
 - Longitudinal/N-of-1: scikit-learn may support interpretable baselines and calibration only after a legitimate consented cohort exists. Deterministic readiness and descriptive analysis may proceed now.
 - Mobile inference: `onnxruntime-react-native` is an evaluation candidate for checksum-verified approved artifacts in Expo development builds, subject to operator parity, size, latency, memory, battery, and corruption tests.
@@ -31,9 +35,11 @@ An item passes only when maintenance/versioning, commercial and redistribution r
 
 ## Stop criteria and conclusion
 
-Search stopped after all returned Hugging Face candidates and the commonly cited original acne sources were screened without any candidate passing the independent licence/provenance/consent gate. Further mirror enumeration would not cure missing original rights.
+Search stopped after returned Hugging Face candidates, commonly cited original acne sources, SCIN, ACNE-ECKH, and the current Google dermatology foundation models were screened without any candidate passing every independent licence, consent/personality-rights, privacy, task-fitness, split, and validation gate. Further mirror enumeration would not cure missing original rights.
 
-There are **zero datasets accepted for predictive or vision training** and **zero pretrained acne weights accepted**. Deterministic engines, contracts, annotation design, readiness states, static-knowledge review, and training entrypoints may proceed. No clinical model metrics may be claimed.
+There are **zero datasets approved for predictive or vision training** and **zero pretrained acne weights approved for production inference**. SCIN and MedSigLIP are explicit gated candidates, not approvals. Deterministic engines, contracts, annotation design, readiness states, static-knowledge review, and training entrypoints may proceed. No clinical model metrics may be claimed.
+
+Longitudinal diary data remains observational. It must not be described as an N-of-1 trial or used for causal trigger/treatment claims unless a prospective intervention defines repeated periods, randomization or justified counterbalancing, carryover/washout handling, outcomes, adherence, and clinical/ethics oversight. Predictive evaluation must group by person and episode, enforce feature cutoffs before outcomes, use temporal gaps, and preserve an untouched external holdout.
 
 ## Limitations
 

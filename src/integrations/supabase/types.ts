@@ -146,7 +146,9 @@ export type Database = {
           created_at: string
           id: string
           marketing: boolean
+          personal_processing: boolean
           personal_learning: boolean
+          raw_image_processing: boolean
           raw_image_retention: boolean
           research_share: boolean
           updated_at: string
@@ -158,7 +160,9 @@ export type Database = {
           created_at?: string
           id?: string
           marketing?: boolean
+          personal_processing?: boolean
           personal_learning?: boolean
+          raw_image_processing?: boolean
           raw_image_retention?: boolean
           research_share?: boolean
           updated_at?: string
@@ -170,7 +174,9 @@ export type Database = {
           created_at?: string
           id?: string
           marketing?: boolean
+          personal_processing?: boolean
           personal_learning?: boolean
+          raw_image_processing?: boolean
           raw_image_retention?: boolean
           research_share?: boolean
           updated_at?: string

@@ -1,0 +1,17 @@
+FROM oven/bun:1.3.14
+
+WORKDIR /app
+
+COPY package.json bun.lock ./
+RUN bun install --frozen-lockfile --production
+
+COPY tsconfig.json ./
+COPY scripts ./scripts
+COPY src ./src
+COPY packages/ml-local-runtime ./packages/ml-local-runtime
+
+ENV NODE_ENV=production
+
+USER bun
+
+CMD ["bun", "--conditions=react-server", "run", "scripts/ml-worker.ts"]

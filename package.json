@@ -5,6 +5,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "start:ml-worker": "bun --conditions=react-server run scripts/ml-worker.ts",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -94,11 +95,18 @@
     "eslint-plugin-react-refresh": "^0.4.20",
     "globals": "^15.15.0",
     "nitro": "3.0.260603-beta",
-    "postcss": "8.5.8",
+    "postcss": "8.5.19",
     "prettier": "^3.7.3",
     "tailwindcss": "4.1.17",
     "typescript": "5.9.3",
     "typescript-eslint": "^8.56.1",
     "vite": "^8.0.16"
+  },
+  "overrides": {
+    "@babel/core": "7.29.7",
+    "brace-expansion@>=5.0.0 <5.0.6": "5.0.6",
+    "postcss": "8.5.19",
+    "esbuild": "0.25.12",
+    "js-yaml": "4.3.0"
   }
 }

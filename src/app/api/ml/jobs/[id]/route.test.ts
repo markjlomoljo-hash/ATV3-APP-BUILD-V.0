@@ -45,7 +45,7 @@ describe("GET /api/ml/jobs/:id", () => {
     });
   });
 
-  it("returns the durable job state without prediction data", async () => {
+  it("returns the durable job state with its normalized result projection", async () => {
     auth.mockResolvedValue({ ok: true, userId: "00000000-0000-0000-0000-000000000001" });
     getJob.mockResolvedValue({
       id: "11111111-1111-4111-8111-111111111111",
@@ -57,6 +57,34 @@ describe("GET /api/ml/jobs/:id", () => {
       featureSchemaVersion: "sleepderm.v1",
       featuresMissing: [],
       failureReason: null,
+      analysis: {
+        id: "22222222-2222-4222-8222-222222222222",
+        resultType: "deterministic_analysis",
+        readinessState: "ready",
+        safetyState: "ready",
+        output: { regularity_index: 0.8 },
+        runtimeMode: "local_deterministic",
+        coverage: 1,
+        calibrationState: "not_applicable",
+        confidence: null,
+        confidenceLabel: "not_applicable",
+        uncertainty: [],
+        limitations: ["not diagnostic"],
+        confounders: [],
+        evidenceState: "not_applicable",
+        featureSchemaVersion: "1.0.0",
+        inputRecordRefs: ["sleep_logs:sleep-1"],
+        featuresUsed: ["records"],
+        featuresMissing: [],
+        modelName: null,
+        modelVersion: null,
+        trainingDataVersion: null,
+        syncStatus: "synced",
+        latencyMs: 3,
+        requestId: "11111111-1111-4111-8111-111111111111",
+        contractVersion: "1.0.0",
+        createdAt: "2026-07-13T00:00:03.000Z",
+      },
       createdAt: "2026-07-13T00:00:00.000Z",
       updatedAt: "2026-07-13T00:00:00.000Z",
     });
@@ -64,6 +92,12 @@ describe("GET /api/ml/jobs/:id", () => {
       params: Promise.resolve({ id: "11111111-1111-4111-8111-111111111111" }),
     });
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ ok: true, job: { status: "queued" } });
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      job: {
+        status: "queued",
+        analysis: { readinessState: "ready", output: { regularity_index: 0.8 } },
+      },
+    });
   });
 });

@@ -1,0 +1,8 @@
+candidate,images_available,resolution_capture,annotation,skin_tone_device,patient_grouping,duplicates,consent_deidentification,model_training_rights,production_rights,task_fit,status
+DermNet paid,after contract,smartphone images claimed,600+ condition labels,"10+ countries; skin types I-VI claimed",must request,quality filtering claimed,anonymised/deidentified claimed,rights_unverified,rights_unverified,high if acne subset has lesion labels,needs_legal_review
+ACNE04,author repository,half-face protocol reported,"boxes; counts; severity",representation not established,unverified,file-count and quality issues reported,unverified,academic only publicly,rights_unverified,high,rights_unverified
+AcneSCU,download link,high-resolution claimed,fine-grained lesions,unverified,unverified,unverified,unverified,non-commercial,no,high,rejected
+SCIN,open bucket,smartphone crowdsourced,dermatologist differential and tone estimates,tone metadata included,contribution grouping needs audit,15 duplicate images appearing 42 times; missing labels,voluntary consent and privacy filtering,licence permits copyright reuse,product consent/personality rights unverified,medium auxiliary,rights_unverified
+DDI,registered research,clinical images,biopsy-proven labels,diverse tones,570 patients for 656 images,not stated here,deidentified clinical set,noncommercial only,no under free terms,low acne fit,rejected_free_terms
+ACNE-ECKH,no public files,clinical images,study labels,unverified,unverified,unverified,ethical/legal/privacy restriction,no,no,high,not_available
+V4 pack,no,none,synthetic metadata only,not applicable,no real subjects,not applicable,synthetic,no,no,none,rejected_training

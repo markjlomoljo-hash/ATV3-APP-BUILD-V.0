@@ -1,0 +1,12 @@
+resource,status,reason,what_changes_decision,primary_url
+DermNet website images,rejected,Official licence prohibits AI training/testing,Separate signed AI dataset agreement,https://dermnetnz.org/image-licence
+AcneSCU,rejected,Official repository restricts dataset to non-commercial use,Signed commercial rights plus consent/provenance review,https://github.com/pingguokiller/acnedetection
+DDI free terms,rejected,Personal non-commercial research only; derivatives and redistribution prohibited,Separate AIMI commercial agreement covering exact use,https://ddi-dataset.github.io/index.html
+ACNE-ECKH,not_available,Authors say data cannot be shared for ethical legal privacy reasons,New lawful author-controlled access route,https://pmc.ncbi.nlm.nih.gov/articles/PMC12024611/
+Hugging Face acne mirrors,rejected,No complete original rights and consent chain,Immutable original provenance and explicit rights,https://huggingface.co/models
+Kaggle and arbitrary web mirrors,rejected,Public visibility does not confer consent or production rights,Original source licence and consent documentation,n/a
+Community acne checkpoints,rejected,Weight licence and source training-data rights unverified,Complete checkpoint and dataset provenance with independent evaluation,https://huggingface.co/models
+V4 pack for training,rejected_training,No real images cohort or legitimate outcomes,New governed real snapshot,local supplied archive
+Derm Foundation,rejected_new_adoption,Legacy model superseded by MedSigLIP,New official evidence of unique task advantage,https://developers.google.com/health-ai-developer-foundations/derm-foundation/model-card
+LSTM or temporal transformer as first model,rejected_initial_route,Data volume and sequence evidence absent,Large governed cohort and ablation gain,n/a
+Ray Kubernetes Kubeflow Feast extra database,rejected,No measured need beyond current Supabase Cloud Run Vertex topology,Measured reliability or scale gap,n/a
