@@ -113,11 +113,11 @@ export async function enqueueMlAnalysisJob(options: {
         operation: string;
       }>(
         `insert into public.ml_analysis_jobs
-         (user_id, engine, operation, runtime_mode, status, input_record_refs,
+         (id, user_id, engine, operation, runtime_mode, status, input_record_refs,
           feature_schema_version, features, features_missing, app_version, schema_version,
           request_id, idempotency_key, module, task, payload_hash, consent_snapshot)
-         values ($1::uuid,$2,$3,'queued_for_cloud','queued',$4::jsonb,$5,$6::jsonb,
-                 '[]'::jsonb,$7,'1',$8::uuid,$9,$2,$10,$11,
+         values ($1::uuid,$2::uuid,$3,$4,'queued_for_cloud','queued',$5::jsonb,$6,$7::jsonb,
+                 '[]'::jsonb,$8,'1',$9::uuid,$10,$3,$11,$12,
                  coalesce((
                    select jsonb_build_object(
                      'personal_processing', c.personal_processing,
@@ -128,7 +128,7 @@ export async function enqueueMlAnalysisJob(options: {
                      'consented_at', c.consented_at,
                      'captured_at', now()
                    )
-                   from public.consents c where c.user_id=$1::uuid
+                   from public.consents c where c.user_id=$2::uuid
                  ), jsonb_build_object(
                    'personal_processing', false,
                    'raw_image_processing', false,
@@ -140,6 +140,7 @@ export async function enqueueMlAnalysisJob(options: {
                  )))
          returning id, engine, operation`,
         [
+          requestId,
           actorId,
           request.engine,
           request.operation,
