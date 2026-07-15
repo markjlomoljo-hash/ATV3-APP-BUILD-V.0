@@ -9,20 +9,19 @@
     "contract_version": {"const": "1.0.0"},
     "request_id": {"type": "string", "format": "uuid"},
     "idempotency_key": {"type": "string", "format": "uuid"},
-    "module": {"type": "string", "minLength": 1, "maxLength": 64},
-    "task": {"type": "string", "minLength": 1, "maxLength": 96},
+    "module": {"type": "string", "minLength": 2, "maxLength": 64, "pattern": "^[a-z0-9_-]+$"},
+    "task": {"type": "string", "minLength": 2, "maxLength": 96, "pattern": "^[a-z0-9_-]+$"},
     "runtime_preference": {"enum": ["auto", "local", "cloud", "vertex"]},
     "feature_schema_version": {"const": "1.0.0"},
-    "input_record_refs": {"type": "array", "maxItems": 1000, "items": {"type": "string", "maxLength": 128}},
-    "inputs": {"type": "object", "maxProperties": 500},
+    "input_record_refs": {"type": "array", "maxItems": 500, "items": {"type": "string", "minLength": 3, "maxLength": 241, "pattern": "^[a-z][a-z0-9_]{0,79}:[A-Za-z0-9-]{1,160}$"}},
+    "inputs": {"type": "object"},
     "context": {
       "type": "object",
       "additionalProperties": false,
+      "required": ["timezone", "locale"],
       "properties": {
-        "timezone": {"type": "string", "maxLength": 64},
-        "locale": {"type": "string", "maxLength": 32},
-        "deadline_ms": {"type": "integer", "minimum": 100, "maximum": 30000},
-        "network_available": {"type": "boolean"}
+        "timezone": {"type": "string", "minLength": 1, "maxLength": 64},
+        "locale": {"type": "string", "minLength": 2, "maxLength": 32}
       }
     },
     "consent": {
@@ -37,4 +36,3 @@
     }
   }
 }
-

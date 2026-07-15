@@ -727,4 +727,94 @@ describe("ML analysis worker", () => {
     expect(result).toMatchObject({ status: "failed", jobId: job.jobId, reason: "ml_api_unexpected_response" });
     expect(fakeClient.query.mock.calls.some(([sql]) => String(sql).includes("status='dead_letter'"))).toBe(true);
   });
+
+  it("asks Railway to terminalize an exhausted job before dead-lettering its outbox", async () => {
+    vi.stubEnv("ACNETREX_ML_PERSISTENCE_OWNER", "railway");
+    const exhausted = { ...job, attemptCount: 5, maxAttempts: 5 };
+    fakeClient.query.mockImplementation(async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: 0 };
+      if (sql.includes("with candidate")) return { rows: [exhausted], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(upstream({ ok: true, message: "metadata only" }))
+      .mockResolvedValueOnce(upstream({
+        job_id: job.jobId,
+        status: "failed",
+        terminalized: true,
+      }));
+
+    const result = await processNextMlAnalysisJob({ workerId: "railway-dispatcher", fetcher });
+
+    expect(result).toMatchObject({ status: "failed", jobId: job.jobId });
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      `https://ml.example.test/api/v1/jobs/${job.jobId}/terminalize`,
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      reason: "ml_api_unexpected_response",
+    });
+    expect(fetcher.mock.calls[1]?.[1]?.headers).toMatchObject({
+      authorization: "Bearer worker-upstream-secret",
+      "x-request-id": job.jobId,
+      "idempotency-key": job.jobId,
+    });
+    const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(queries.some((sql) => sql.includes("status='dead_letter'"))).toBe(true);
+    expect(queries.some((sql) => sql.includes("update public.ml_analysis_jobs"))).toBe(false);
+  });
+
+  it("keeps an exhausted outbox leased when Railway terminalization is unavailable", async () => {
+    vi.stubEnv("ACNETREX_ML_PERSISTENCE_OWNER", "railway");
+    const exhausted = { ...job, attemptCount: 5, maxAttempts: 5 };
+    fakeClient.query.mockImplementation(async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: 0 };
+      if (sql.includes("with candidate")) return { rows: [exhausted], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(upstream({ ok: true, message: "metadata only" }))
+      .mockRejectedValueOnce(new TypeError("network down"));
+
+    const result = await processNextMlAnalysisJob({ workerId: "railway-dispatcher", fetcher });
+
+    expect(result).toMatchObject({
+      status: "retry_scheduled",
+      reason: "ml_railway_terminalization_unavailable",
+    });
+    const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(queries.some((sql) => sql.includes("status='dead_letter'"))).toBe(false);
+    expect(queries.some((sql) => sql.includes("update public.ml_analysis_jobs"))).toBe(false);
+  });
+
+  it("reclaims an expired exhausted Railway lease for terminal reconciliation", async () => {
+    vi.stubEnv("ACNETREX_ML_PERSISTENCE_OWNER", "railway");
+    const reconciliation = {
+      ...job,
+      attemptCount: 5,
+      maxAttempts: 5,
+      terminalReconciliation: true,
+      lastErrorCode: "ml_api_timeout",
+    };
+    fakeClient.query.mockImplementation(async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: 0 };
+      if (sql.includes("with candidate")) return { rows: [reconciliation], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const fetcher = vi.fn().mockResolvedValue(upstream({
+      job_id: job.jobId,
+      status: "failed",
+      terminalized: false,
+    }));
+
+    const result = await processNextMlAnalysisJob({ workerId: "railway-reconciler", fetcher });
+
+    expect(result).toMatchObject({ status: "failed", reason: "ml_api_timeout" });
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(String(fetcher.mock.calls[0]?.[0])).toContain("/terminalize");
+    const claimSql = fakeClient.query.mock.calls
+      .map(([sql]) => String(sql))
+      .find((sql) => sql.includes("with candidate"));
+    expect(claimSql).toContain('"terminalReconciliation"');
+    expect(claimSql).toContain("o.attempt_count >= o.max_attempts");
+  });
 });

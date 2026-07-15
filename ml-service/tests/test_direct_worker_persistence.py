@@ -40,6 +40,7 @@ class FakeRailwayPersistence:
         self.finalized = []
         self.prepare_state = "reserved"
         self.replay_response = None
+        self.terminalized = []
 
     def healthcheck(self) -> bool:
         return True
@@ -90,6 +91,10 @@ class FakeRailwayPersistence:
 
     def fail(self, reservation, *, retryable: bool, code: str) -> None:
         raise AssertionError(f"unexpected persistence failure: {retryable=} {code=}")
+
+    def terminalize(self, job_id: str, *, code: str) -> dict:
+        self.terminalized.append((job_id, code))
+        return {"job_id": job_id, "status": "failed", "terminalized": True}
 
 
 def authenticated_headers(body: dict) -> dict[str, str]:
@@ -235,3 +240,37 @@ def test_stored_job_rejection_is_a_safe_terminal_contract_error(monkeypatch) -> 
 
     assert response.status_code == 422
     assert response.json() == {"detail": {"code": "stored_job_owner_mismatch"}}
+
+
+def test_service_authenticated_terminalization_is_railway_owned_and_idempotent(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ACNETREX_ML_SHARED_SECRET", "server-secret")
+    monkeypatch.setenv("ACNETREX_ML_PERSISTENCE_OWNER", "railway")
+    persistence = FakeRailwayPersistence()
+    client = TestClient(create_app(analysis_repository=persistence))
+    job_id = str(uuid4())
+
+    unauthorized = client.post(
+        f"/api/v1/jobs/{job_id}/terminalize",
+        json={"reason": "ml_api_timeout"},
+    )
+    first = client.post(
+        f"/api/v1/jobs/{job_id}/terminalize",
+        json={"reason": "ml_api_timeout"},
+        headers={
+            "authorization": "Bearer server-secret",
+            "x-request-id": job_id,
+            "idempotency-key": job_id,
+        },
+    )
+
+    assert unauthorized.status_code == 401
+    assert first.status_code == 200
+    assert first.json() == {
+        "job_id": job_id,
+        "status": "failed",
+        "terminalized": True,
+    }
+    assert persistence.terminalized == [(job_id, "ml_api_timeout")]

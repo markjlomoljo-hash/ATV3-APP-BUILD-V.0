@@ -1,9 +1,15 @@
-# Hybrid ML architecture decision
+# Railway-owned ML persistence architecture decision
 
-Status: software foundation and deterministic cloud integration deployed and production verified on 2026-07-14; predictive-model and physical-mobile validation remain blocked as documented in `LIVE_VERIFICATION.md`.
+Status: Design B is deployed and production verified for deterministic/bootstrap inference. Governed learned-model activation and physical-device release validation remain gated in `LIVE_VERIFICATION.md`.
 
-AcneTrex uses Design A and one versioned inference contract across the Expo app, Next.js API, worker, and `acnetrex-ml` FastAPI service. The Supabase Auth UUID is the canonical subject. Clients create consent-bound jobs through `/api/ml/jobs`; the sole scheduler claims the outbox job, derives owner-scoped inputs, and calls canonical `POST /predict`. `POST /api/v1/inference` and `/v1/predict` are compatibility aliases to the same handler. The durable `ml_analysis_jobs.id` is sent as `request_id`, `idempotency_key`, `Idempotency-Key`, and `X-Request-ID`, and is returned as both `request_id` and `job_id`. Clients never call the inference service or Vertex AI directly.
+AcneTrex uses one strict versioned inference contract across Expo, Next.js, the outbox worker, and the Railway `acnetrex-ml` FastAPI service. The Supabase Auth UUID is the canonical subject. Clients create consent-bound jobs through `/api/ml/jobs`; the sole Railway scheduler claims the outbox and calls canonical `POST /api/v1/inference`. Temporary `POST /predict` and `POST /v1/predict` compatibility routes use the same handler. The stored `ml_analysis_jobs.id` is bound to `request_id`, `idempotency_key`, `Idempotency-Key`, `X-Request-ID`, and response `job_id`.
 
-The runtime order is: local deterministic engine when supported; durable cloud job for heavy or unavailable work; explicit `model_unavailable`, `insufficient_data`, `unsupported_offline`, or `consent_restricted` otherwise. There is no silent heuristic-to-model substitution. Cloud Run hosts deterministic engines and is the only prospective Vertex caller. The Vertex endpoint and runtime IAM are verified, but the endpoint has zero deployed models because no approved predictive artifact exists.
+Ownership boundaries:
 
-Boundaries: Expo owns encrypted device state and sync intent; Next.js owns authentication, authorization, job/outbox claiming, owner-scoped feature loading, result/domain persistence, and terminal job/outbox state; Supabase owns governed records and private objects; FastAPI is stateless application inference and owns no user-data persistence; Railway is the primary web/API and inference runtime; Vercel and Cloud Run remain rollback targets; Vertex may host approved heavyweight artifacts later.
+- Expo owns encrypted device state, durable offline intent, reconnect replay, and polling.
+- Next.js owns authenticated enqueue, outbox claiming, bounded dispatch retries, committed-state verification, and outbox completion.
+- Railway FastAPI locks and validates the stored job, derives its owner and consent, loads owner-scoped inputs, runs inference or honest abstention, and atomically writes domain results, feature/result lineage, idempotency state, audit evidence, and terminal job state.
+- In Railway-persistence mode, Next.js does not write domain results, ML results, or terminal job state.
+- Supabase owns governed records, RLS, and private objects.
+
+The runtime order is local deterministic support where available, then a durable Railway cloud job, otherwise an explicit `model_unavailable`, `insufficient_data`, `unsupported_offline`, `consent_restricted`, or error state. There is no silent heuristic-to-model substitution. Vercel remains a scheduler-disabled web/API rollback. Cloud Run and Vertex are inactive research/rollback infrastructure; neither is evidence of a trained or validated model.

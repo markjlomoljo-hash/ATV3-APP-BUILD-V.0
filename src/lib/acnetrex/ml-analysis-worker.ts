@@ -33,6 +33,8 @@ type ClaimedJob = {
   leaseOwner: string;
   attemptCount: number;
   maxAttempts: number;
+  terminalReconciliation?: boolean;
+  lastErrorCode?: string | null;
 };
 
 export type MlWorkerOutcome =
@@ -58,6 +60,12 @@ class MlResultPersistenceError extends Error {
 class MlCommitVerificationError extends Error {
   constructor() {
     super("ml_commit_verification_failed");
+  }
+}
+
+class MlRailwayTerminalizationError extends Error {
+  constructor() {
+    super("ml_railway_terminalization_unavailable");
   }
 }
 
@@ -385,6 +393,9 @@ function jobStatusFor(response: InferenceResponse): "completed" | "failed" | "in
 }
 
 async function deadLetterExhaustedLeases(client: PoolClient, owner: MlPersistenceOwner) {
+  // Railway owns terminal job state. Its exhausted leases must be reclaimed by
+  // the dispatcher reconciliation path, not dead-lettered locally first.
+  if (owner === "railway") return;
   const exhausted = await client.query<{ jobId: string }>(
     `with exhausted as (
        select o.id, o.aggregate_id as "jobId"
@@ -403,7 +414,7 @@ async function deadLetterExhaustedLeases(client: PoolClient, owner: MlPersistenc
      returning e."jobId"`,
   );
   const jobIds = exhausted.rows.map((row) => row.jobId);
-  if (jobIds.length === 0 || owner === "railway") return;
+  if (jobIds.length === 0) return;
   await client.query(
     `update public.ml_analysis_jobs
      set status='failed', failure_reason='ml_worker_lease_expired',
@@ -430,10 +441,18 @@ async function claimNext(
           (o.status in ('pending', 'failed_retryable') and j.status = 'queued')
           or (o.status = 'leased' and o.lease_expires_at < now() and j.status = 'processing')
         )`;
+  const withinAttemptBudget = owner === "railway"
+    ? `(o.attempt_count < o.max_attempts
+        or (o.status='leased' and o.lease_expires_at < now()
+            and o.attempt_count >= o.max_attempts))`
+    : `o.attempt_count < o.max_attempts`;
   const result = await client.query<ClaimedJob>(
     `with candidate as (
        select o.id as "outboxId", o.aggregate_id as "jobId", o.attempt_count as "attemptCount",
-              o.max_attempts as "maxAttempts", j.user_id as "userId", j.engine, j.operation,
+              o.max_attempts as "maxAttempts", o.last_error_code as "lastErrorCode",
+              (o.status='leased' and o.lease_expires_at < now()
+               and o.attempt_count >= o.max_attempts) as "terminalReconciliation",
+              j.user_id as "userId", j.engine, j.operation,
               j.input_record_refs as "inputRecordRefs", j.features, j.feature_schema_version as "featureSchemaVersion",
                j.app_version as "appVersion", coalesce(c.personal_processing, false) as "personalProcessing",
                coalesce(c.raw_image_processing, false) as "rawImageProcessing",
@@ -445,7 +464,7 @@ async function claimNext(
        left join public.consents c on c.user_id = j.user_id
        where o.event_type = 'ml.analysis.requested'
          and ${eligibleState}
-          and o.attempt_count < o.max_attempts
+          and ${withinAttemptBudget}
           and o.next_attempt_at <= now()
           and (j.deadline_at is null or j.deadline_at > now())
           and j.cancelled_at is null
@@ -455,10 +474,15 @@ async function claimNext(
      )
      update public.outbox_events o
       set status='leased', lease_owner=$1, lease_expires_at=now()+interval '2 minutes',
-         attempt_count=o.attempt_count+1, updated_at=now()
+         attempt_count=case when c."terminalReconciliation" then o.attempt_count
+                            else o.attempt_count+1 end,
+         updated_at=now()
      from candidate c where o.id=c."outboxId"
-     returning c."outboxId", c."jobId", c."attemptCount" + 1 as "attemptCount",
-               c."maxAttempts", c."userId", c.engine, c.operation, c."inputRecordRefs",
+     returning c."outboxId", c."jobId",
+               case when c."terminalReconciliation" then c."attemptCount"
+                    else c."attemptCount" + 1 end as "attemptCount",
+               c."maxAttempts", c."terminalReconciliation", c."lastErrorCode",
+               c."userId", c.engine, c.operation, c."inputRecordRefs",
                 c.features, c."featureSchemaVersion", c."appVersion", c."personalProcessing",
                 c."rawImageProcessing", c."anonymousLearning", c."requestId",
                 c."idempotencyKey", c."consentSnapshot"`,
@@ -644,6 +668,106 @@ async function persistSuccess(client: PoolClient, job: ClaimedJob, payload: Infe
   if (updatedOutbox.rowCount !== 1) throw new MlWorkerLeaseLostError();
 }
 
+type RailwayTerminalization = {
+  jobId: string;
+  status: "completed" | "failed" | "insufficient_data" | "not_configured";
+};
+
+async function terminalizeRailwayJob(
+  job: ClaimedJob,
+  reason: string,
+  fetcher: WorkerFetcher,
+  cloud: { baseUrl: string; secret: string },
+): Promise<RailwayTerminalization> {
+  let response: Response;
+  let payload: unknown;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), boundedTimeoutMs());
+  try {
+    response = await fetcher(`${cloud.baseUrl}/api/v1/jobs/${job.jobId}/terminalize`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        accept: "application/json",
+        authorization: `Bearer ${cloud.secret}`,
+        "x-request-id": job.jobId,
+        "idempotency-key": job.jobId,
+      },
+      body: JSON.stringify({ reason }),
+      signal: controller.signal,
+    });
+    payload = await response.json().catch(() => null);
+  } catch {
+    throw new MlRailwayTerminalizationError();
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (!response.ok || !isRecord(payload)
+    || payload.job_id !== job.jobId
+    || !["completed", "failed", "insufficient_data", "not_configured"].includes(String(payload.status))) {
+    throw new MlRailwayTerminalizationError();
+  }
+  return {
+    jobId: job.jobId,
+    status: payload.status as RailwayTerminalization["status"],
+  };
+}
+
+async function closeReconciledRailwayOutbox(
+  client: PoolClient,
+  job: ClaimedJob,
+  state: RailwayTerminalization,
+) {
+  if (state.status === "failed") {
+    await updateRetry(client, job, job.lastErrorCode ?? "ml_dispatch_retries_exhausted", true, "railway");
+    return;
+  }
+  const committed = await client.query<{ status: string; resultId: string | null }>(
+    `select j.status, r.id as "resultId"
+       from public.ml_analysis_jobs j
+       join public.ml_analysis_results r on r.job_id=j.id and r.user_id=j.user_id
+      where j.id=$1::uuid and j.user_id=$2::uuid
+      for update of j`,
+    [job.jobId, job.userId],
+  );
+  const row = committed.rows[0];
+  if (!row || row.status !== state.status || !row.resultId) {
+    throw new MlCommitVerificationError();
+  }
+  await client.query(
+    `insert into public.consumer_inbox (consumer_name, event_id, result_reference)
+     values ('railway-ml-dispatcher',$1::uuid,
+             jsonb_build_object('jobId',$2::uuid,'status',$3::text,'resultId',$4::uuid))
+     on conflict (consumer_name, event_id) do nothing`,
+    [job.outboxId, job.jobId, row.status, row.resultId],
+  );
+  const closed = await client.query(
+    `update public.outbox_events set status='processed', processed_at=now(), lease_owner=null,
+     lease_expires_at=null, updated_at=now()
+     where id=$1::uuid and lease_owner=$2 and status='leased'`,
+    [job.outboxId, job.leaseOwner],
+  );
+  if (closed.rowCount !== 1) throw new MlWorkerLeaseLostError();
+}
+
+async function finalizeFailure(
+  client: PoolClient,
+  job: ClaimedJob,
+  reason: string,
+  terminal: boolean,
+  owner: MlPersistenceOwner,
+  fetcher: WorkerFetcher,
+  cloud: { baseUrl: string; secret: string } | null,
+) {
+  if (terminal && owner === "railway") {
+    if (!cloud) throw new MlRailwayTerminalizationError();
+    const state = await terminalizeRailwayJob(job, reason, fetcher, cloud);
+    await withFinalizeTransaction(client, () => closeReconciledRailwayOutbox(client, job, state));
+    return;
+  }
+  await withFinalizeTransaction(client, () => updateRetry(client, job, reason, terminal, owner));
+}
+
 async function verifyRailwayCommitAndCloseOutbox(
   client: PoolClient,
   job: ClaimedJob,
@@ -697,9 +821,29 @@ async function processClaimedJob(
   shutdownSignal?: AbortSignal,
 ): Promise<MlWorkerOutcome> {
   const cloud = configuredCloudRun();
+  if (owner === "railway" && job.terminalReconciliation) {
+    const reason = job.lastErrorCode ?? "ml_dispatch_retries_exhausted";
+    try {
+      await finalizeFailure(client, job, reason, true, owner, fetcher, cloud);
+      return { status: "failed", jobId: job.jobId, reason, attemptCount: job.attemptCount };
+    } catch (error) {
+      if (error instanceof MlWorkerLeaseLostError) {
+        return { status: "lease_lost", jobId: job.jobId, outboxId: job.outboxId };
+      }
+      if (error instanceof MlRailwayTerminalizationError || error instanceof MlCommitVerificationError) {
+        return {
+          status: "retry_scheduled",
+          jobId: job.jobId,
+          reason: error.message,
+          attemptCount: job.attemptCount,
+        };
+      }
+      throw error;
+    }
+  }
   if (!cloud) {
     try {
-      await withFinalizeTransaction(client, () => updateRetry(client, job, "ml_cloud_not_configured", true, owner));
+      await finalizeFailure(client, job, "ml_cloud_not_configured", true, owner, fetcher, cloud);
       return { status: "not_configured", reason: "ml_cloud_not_configured" };
     } catch (error) {
       if (error instanceof MlWorkerLeaseLostError) {
@@ -777,13 +921,21 @@ async function processClaimedJob(
 
     const reason = payload && !response.ok ? failureReason(response.status, payload) : "ml_api_unexpected_response";
     const terminal = !shouldRetry(response.status, reason, job.attemptCount, job.maxAttempts);
-    await withFinalizeTransaction(client, () => updateRetry(client, job, reason, terminal, owner));
+    await finalizeFailure(client, job, reason, terminal, owner, fetcher, cloud);
     return terminal
       ? { status: "failed", jobId: job.jobId, reason, attemptCount: job.attemptCount }
       : { status: "retry_scheduled", jobId: job.jobId, reason, attemptCount: job.attemptCount };
   } catch (error) {
     if (error instanceof MlWorkerLeaseLostError) {
       return { status: "lease_lost", jobId: job.jobId, outboxId: job.outboxId };
+    }
+    if (error instanceof MlRailwayTerminalizationError) {
+      return {
+        status: "retry_scheduled",
+        jobId: job.jobId,
+        reason: error.message,
+        attemptCount: job.attemptCount,
+      };
     }
     const reason = shutdownSignal?.aborted
       ? "ml_worker_shutdown"
@@ -796,10 +948,18 @@ async function processClaimedJob(
         : "ml_api_unreachable";
     const terminal = job.attemptCount >= job.maxAttempts;
     try {
-      await withFinalizeTransaction(client, () => updateRetry(client, job, reason, terminal, owner));
+      await finalizeFailure(client, job, reason, terminal, owner, fetcher, cloud);
     } catch (finalizeError) {
       if (finalizeError instanceof MlWorkerLeaseLostError) {
         return { status: "lease_lost", jobId: job.jobId, outboxId: job.outboxId };
+      }
+      if (finalizeError instanceof MlRailwayTerminalizationError) {
+        return {
+          status: "retry_scheduled",
+          jobId: job.jobId,
+          reason: finalizeError.message,
+          attemptCount: job.attemptCount,
+        };
       }
       throw finalizeError;
     }

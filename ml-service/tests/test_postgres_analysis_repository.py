@@ -5,15 +5,19 @@ import stat
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from acnetrex_ml.contracts.requests import InferenceRequest
 from acnetrex_ml.service.app import _predict_core
-from acnetrex_ml.service.persistence import PostgresAnalysisRepository
+from acnetrex_ml.service.persistence import PersistenceRejected, PostgresAnalysisRepository
 
 
 JOB_ID = "11111111-1111-4111-8111-111111111112"
 USER_ID = "11111111-1111-4111-8111-111111111113"
 SLEEP_ID = "11111111-1111-4111-8111-111111111115"
 RESULT_ID = "11111111-1111-4111-8111-111111111119"
+FACE_SCAN_ID = "11111111-1111-4111-8111-111111111120"
+ANNOTATION_ID = "11111111-1111-4111-8111-111111111121"
 
 
 def request() -> InferenceRequest:
@@ -38,15 +42,46 @@ def request() -> InferenceRequest:
     )
 
 
+def faceatlas_request() -> InferenceRequest:
+    payload = request().model_dump(mode="json")
+    payload.update(
+        {
+            "module": "faceatlas",
+            "task": "quality_assessment",
+            "input_record_refs": [f"face_scans:{FACE_SCAN_ID}"],
+            "inputs": {
+                "images": [
+                    {
+                        "record_id": FACE_SCAN_ID,
+                        "angle": "forged_angle",
+                        "width": 9999,
+                        "mean_brightness": 0.99,
+                    }
+                ]
+            },
+        }
+    )
+    return InferenceRequest.model_validate(payload)
+
+
 class ScriptedDatabase:
-    def __init__(self, *, replay: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        replay: bool = False,
+        stored_request_id: str = JOB_ID,
+        stored_idempotency_key: str = JOB_ID,
+    ) -> None:
         self.replay = replay
+        self.stored_request_id = stored_request_id
+        self.stored_idempotency_key = stored_idempotency_key
         self.executed: list[tuple[str, Any]] = []
         self.last_one: Any = None
         self.last_all: list[Any] = []
         self.rowcount = 1
         self.commits = 0
         self.rollbacks = 0
+        self.job_status = "queued"
 
     def connect(self):
         return self
@@ -76,6 +111,8 @@ class ScriptedDatabase:
         ):
             self.last_one = {
                 "id": JOB_ID,
+                "request_id": self.stored_request_id,
+                "idempotency_key": self.stored_idempotency_key,
                 "user_id": USER_ID,
                 "engine": "sleepderm",
                 "operation": "readiness",
@@ -93,6 +130,7 @@ class ScriptedDatabase:
                 "attempt_count": 0,
                 "max_attempts": 5,
             }
+            self.last_one["status"] = self.job_status
         elif "insert into public.ml_service_idempotency" in normalized:
             self.last_one = (
                 None
@@ -127,6 +165,7 @@ class ScriptedDatabase:
             "update public.ml_analysis_jobs" in normalized
             and "returning id" in normalized
         ):
+            self.job_status = "failed" if "dead_lettered_at" in normalized else self.job_status
             self.last_one = {"id": JOB_ID}
         elif "select j.status, r.id as result_id" in normalized:
             self.last_one = {
@@ -140,6 +179,57 @@ class ScriptedDatabase:
 
     def fetchall(self):
         return self.last_all
+
+
+class FaceAtlasDatabase(ScriptedDatabase):
+    def execute(self, sql: str, params: Any = None) -> None:
+        super().execute(sql, params)
+        normalized = " ".join(sql.split())
+        if "from public.ml_analysis_jobs j" in normalized and "for update" in normalized:
+            assert self.last_one is not None
+            self.last_one.update(
+                {
+                    "engine": "faceatlas",
+                    "operation": "quality_assessment",
+                    "module": "faceatlas",
+                    "task": "quality_assessment",
+                    "input_record_refs": [
+                        {"table": "face_scans", "id": FACE_SCAN_ID}
+                    ],
+                    "features": {"images": [{"record_id": FACE_SCAN_ID}]},
+                }
+            )
+        elif "from public.face_scans" in normalized:
+            self.last_all = [
+                {
+                    "id": FACE_SCAN_ID,
+                    "angle": "front",
+                    "image_quality": {
+                        "width": 1280,
+                        "height": 960,
+                        "bytes": 512_000,
+                        "mean_brightness": 0.5,
+                        "contrast": 0.2,
+                        "laplacian_variance": 120,
+                    },
+                }
+            ]
+        elif "from public.annotations" in normalized:
+            self.last_all = [
+                {
+                    "id": ANNOTATION_ID,
+                    "scan_id": FACE_SCAN_ID,
+                    "lesion_type": "papule",
+                    "zone": "left_cheek",
+                    "x": 0.1,
+                    "y": 0.2,
+                    "w": 0.05,
+                    "h": 0.05,
+                    "confidence": 0.8,
+                    "source": "user",
+                    "created_at": "2026-07-15T00:00:00+00:00",
+                }
+            ]
 
 
 def test_prepare_locks_stored_job_and_rebuilds_owner_scoped_inputs() -> None:
@@ -161,6 +251,94 @@ def test_prepare_locks_stored_job_and_rebuilds_owner_scoped_inputs() -> None:
     )
     assert "user_id=%s::uuid" in owner_query[0]
     assert owner_query[1][0] == USER_ID
+
+
+def test_faceatlas_uses_stored_quality_and_owner_scoped_annotations() -> None:
+    database = FaceAtlasDatabase()
+    repository = PostgresAnalysisRepository(
+        "postgresql://unused", connect_factory=database.connect
+    )
+
+    reservation = repository.prepare(faceatlas_request(), "hash-1")
+
+    assert reservation.request is not None
+    assert reservation.request.inputs["images"] == [
+        {
+            "record_id": FACE_SCAN_ID,
+            "angle": "front",
+            "width": 1280,
+            "height": 960,
+            "bytes": 512_000,
+            "mean_brightness": 0.5,
+            "contrast": 0.2,
+            "laplacian_variance": 120,
+        }
+    ]
+    assert reservation.request.inputs["annotations"] == [
+        {
+            "annotation_id": ANNOTATION_ID,
+            "record_id": FACE_SCAN_ID,
+            "lesion_type": "papule",
+            "zone": "left_cheek",
+            "x": 0.1,
+            "y": 0.2,
+            "w": 0.05,
+            "h": 0.05,
+            "confidence": 0.8,
+            "source": "user",
+            "created_at": "2026-07-15T00:00:00+00:00",
+        }
+    ]
+    assert "forged" not in str(reservation.request.inputs)
+    annotation_query = next(
+        item for item in database.executed if "from public.annotations" in item[0]
+    )
+    assert "user_id=%s::uuid" in annotation_query[0]
+    assert annotation_query[1] == (USER_ID, [FACE_SCAN_ID])
+
+
+@pytest.mark.parametrize(
+    ("stored_request_id", "stored_idempotency_key", "expected_code"),
+    [
+        (
+            "22222222-2222-4222-8222-222222222222",
+            JOB_ID,
+            "stored_job_request_id_mismatch",
+        ),
+        (
+            JOB_ID,
+            "22222222-2222-4222-8222-222222222222",
+            "stored_job_idempotency_key_mismatch",
+        ),
+    ],
+)
+def test_prepare_rejects_stored_row_identity_disagreement(
+    stored_request_id: str,
+    stored_idempotency_key: str,
+    expected_code: str,
+) -> None:
+    database = ScriptedDatabase(
+        stored_request_id=stored_request_id,
+        stored_idempotency_key=stored_idempotency_key,
+    )
+    repository = PostgresAnalysisRepository(
+        "postgresql://unused", connect_factory=database.connect
+    )
+
+    with pytest.raises(PersistenceRejected, match=expected_code):
+        repository.prepare(request(), "hash-1")
+
+    locked_job_query = next(
+        sql
+        for sql, _params in database.executed
+        if "from public.ml_analysis_jobs j" in sql and "for update" in sql
+    )
+    assert "j.request_id::text as request_id" in locked_job_query
+    assert "j.idempotency_key" in locked_job_query
+    assert not any(
+        "insert into public.ml_service_idempotency" in sql
+        for sql, _params in database.executed
+    )
 
 
 def test_finalize_commits_lineage_job_state_and_replay_record_before_readback() -> None:
@@ -248,3 +426,24 @@ def test_verified_database_ca_is_written_privately_and_used_by_psycopg() -> None
     finally:
         repository.close()
     assert not certificate_path.exists()
+
+
+def test_terminalize_marks_the_job_failed_once_under_a_row_lock() -> None:
+    database = ScriptedDatabase()
+    repository = PostgresAnalysisRepository(
+        "postgresql://unused", connect_factory=database.connect
+    )
+
+    first = repository.terminalize(JOB_ID, code="ml_api_timeout")
+    second = repository.terminalize(JOB_ID, code="ml_api_timeout")
+
+    assert first == {"job_id": JOB_ID, "status": "failed", "terminalized": True}
+    assert second == {"job_id": JOB_ID, "status": "failed", "terminalized": False}
+    statements = [sql for sql, _params in database.executed]
+    assert sum("dead_lettered_at" in sql for sql in statements) == 1
+    assert sum("ml_analysis_terminalized" in sql for sql in statements) == 1
+    assert all(
+        "for update" in sql
+        for sql in statements
+        if "select j.id::text as id, j.status" in sql
+    )

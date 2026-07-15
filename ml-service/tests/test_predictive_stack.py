@@ -154,12 +154,21 @@ def test_service_executes_only_checksum_verified_active_predictive_model(
     monkeypatch.setenv("MODEL_REGISTRY_PATH", str(registry_path))
     request = InferenceRequest.model_validate(
         {
+            "contract_version": "1.0.0",
             "request_id": "11111111-1111-4111-8111-111111111111",
             "idempotency_key": "22222222-2222-4222-8222-222222222222",
             "module": "forecast",
             "task": "flare_direction",
+            "runtime_preference": "auto",
+            "feature_schema_version": "1.0.0",
+            "input_record_refs": [],
             "inputs": {"sleep_hours": 8.0, "stress_score": 3.0},
-            "consent": {"personal_processing": True},
+            "context": {"timezone": "UTC", "locale": "en"},
+            "consent": {
+                "personal_processing": True,
+                "raw_image_processing": False,
+                "anonymous_learning": False,
+            },
         }
     )
 
@@ -186,12 +195,21 @@ def test_service_remains_unavailable_when_active_artifact_is_tampered(
     monkeypatch.setenv("MODEL_REGISTRY_PATH", str(registry_path))
     request = InferenceRequest.model_validate(
         {
+            "contract_version": "1.0.0",
             "request_id": "11111111-1111-4111-8111-111111111111",
             "idempotency_key": "22222222-2222-4222-8222-222222222222",
             "module": "forecast",
             "task": "flare_direction",
+            "runtime_preference": "auto",
+            "feature_schema_version": "1.0.0",
+            "input_record_refs": [],
             "inputs": {"sleep_hours": 8.0, "stress_score": 3.0},
-            "consent": {"personal_processing": True},
+            "context": {"timezone": "UTC", "locale": "en"},
+            "consent": {
+                "personal_processing": True,
+                "raw_image_processing": False,
+                "anonymous_learning": False,
+            },
         }
     )
 
@@ -209,12 +227,21 @@ def test_service_reports_insufficient_data_when_server_features_are_missing(
     monkeypatch.setenv("MODEL_REGISTRY_PATH", str(registry_path))
     request = InferenceRequest.model_validate(
         {
+            "contract_version": "1.0.0",
             "request_id": "11111111-1111-4111-8111-111111111111",
             "idempotency_key": "22222222-2222-4222-8222-222222222222",
             "module": "forecast",
             "task": "flare_direction",
+            "runtime_preference": "auto",
+            "feature_schema_version": "1.0.0",
+            "input_record_refs": [],
             "inputs": {"sleep_hours": 8.0},
-            "consent": {"personal_processing": True},
+            "context": {"timezone": "UTC", "locale": "en"},
+            "consent": {
+                "personal_processing": True,
+                "raw_image_processing": False,
+                "anonymous_learning": False,
+            },
         }
     )
 

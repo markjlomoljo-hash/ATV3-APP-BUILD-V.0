@@ -5,8 +5,8 @@
   "generated_at": "2026-07-14T00:00:00Z",
   "artifacts": {
     "schemas/feature-schema.json": "3d1b320eeada190351171f4628b755f04750584d2308e95080bd367181088a8a",
-    "schemas/inference-request.schema.json": "1bc3ba619765c5d7db310179f38b0d35a7d22fac5442a3db50c168efe91cd430",
-    "schemas/inference-response.schema.json": "128f3bbb8d3a48964967409d46b7a15475459599fa0e649bc21eddba1575be4a",
+    "schemas/inference-request.schema.json": "271ae77c45b224724cf776b7a82a672b4a51ac8c7d70d5aa8506f854c79479c2",
+    "schemas/inference-response.schema.json": "960c4c256d7ed0e664ef09d46ecd63ac0ee2e88289322bdae9f401ae4e4d3c92",
     "schemas/telemetry.schema.json": "6cc76f95ba7e5cd2620950bc110ba3f3dd4c4fcb0366982788c27068a2542838",
     "manifests/model-registry.json": "021abbba3afddf713270c9c6eae35a9f49110680936fb52175565fc8026b79a3",
     "manifests/dataset-manifest.json": "76694489722f499c3cc1e0cb19e50a908644acbb9a0a022202deea6860a451e9",

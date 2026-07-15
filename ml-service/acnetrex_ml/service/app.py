@@ -11,9 +11,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from acnetrex_ml import CONTRACT_VERSION
 from acnetrex_ml.contracts.requests import BatchInferenceRequest, InferenceRequest
@@ -40,6 +42,10 @@ from .persistence import PersistenceRejected
 
 
 SERVICE_ROOT = Path(__file__).resolve().parents[2]
+
+
+class TerminalizationRequest(BaseModel):
+    reason: str = Field(pattern=r"^[a-z0-9_]{1,80}$")
 
 
 def _safe_state(state: str) -> ReadinessState:
@@ -549,6 +555,48 @@ def create_app(
         request_id: str | None = Header(default=None, alias="X-Request-ID"),
     ) -> JSONResponse:
         return await execute_prediction(payload, request, idempotency_key, request_id)
+
+    @application.post(
+        "/api/v1/jobs/{job_id}/terminalize",
+        dependencies=[Depends(_authenticate)],
+    )
+    async def terminalize_analysis_job(
+        job_id: UUID,
+        payload: TerminalizationRequest,
+        request_id: str | None = Header(default=None, alias="X-Request-ID"),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> dict[str, Any]:
+        canonical_job_id = str(job_id)
+        if os.getenv("ACNETREX_ML_PERSISTENCE_OWNER", "nextjs") != "railway":
+            raise HTTPException(
+                status_code=409, detail={"code": "railway_persistence_not_active"}
+            )
+        if not request_id:
+            raise HTTPException(
+                status_code=400, detail={"code": "request_id_required"}
+            )
+        if request_id != canonical_job_id:
+            raise HTTPException(
+                status_code=409, detail={"code": "request_id_mismatch"}
+            )
+        if not idempotency_key:
+            raise HTTPException(
+                status_code=400, detail={"code": "idempotency_key_required"}
+            )
+        if idempotency_key != canonical_job_id:
+            raise HTTPException(
+                status_code=409, detail={"code": "idempotency_key_mismatch"}
+            )
+        if repository is None:
+            raise HTTPException(
+                status_code=503, detail={"code": "railway_persistence_not_configured"}
+            )
+        try:
+            return await asyncio.to_thread(
+                repository.terminalize, canonical_job_id, code=payload.reason
+            )
+        except PersistenceRejected as exc:
+            raise HTTPException(status_code=422, detail={"code": exc.code}) from exc
 
     @application.post("/v1/predict", dependencies=[Depends(_authenticate)])
     async def predict_legacy_alias(

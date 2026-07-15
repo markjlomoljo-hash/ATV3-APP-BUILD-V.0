@@ -1,6 +1,6 @@
 # AcneTrex ML Service
 
-FastAPI service for the AcneTrex V3 Cloud Run analysis backend.
+FastAPI service for the AcneTrex V3 Railway analysis backend.
 
 This service is intentionally fail-closed:
 
@@ -18,11 +18,12 @@ This service is intentionally fail-closed:
 - `GET /health/live` - liveness
 - `GET /health/ready` - persistence, registry, artifact, and Vertex configuration status
 - `GET /v1/models` - model registry entries
-- `POST /predict` - canonical inference
-- `POST /api/v1/inference` and `POST /v1/predict` - compatibility aliases to the same handler
+- `POST /api/v1/inference` - canonical inference and committed persistence
+- `POST /predict` and `POST /v1/predict` - temporary compatibility aliases to the same handler
+- `POST /api/v1/jobs/{job_id}/terminalize` - authenticated, idempotent Railway-owned retry-exhaustion reconciliation
 - `POST /v1/batch` - bounded batch inference
 
-Application job creation, owner-scoped feature loading, result persistence, and outbox completion belong exclusively to Next.js. FastAPI exposes no application job routes and does not use the application database.
+Next.js owns authenticated job creation, dispatch retries, committed-state verification, and outbox completion. In Railway-persistence mode FastAPI owns stored-job/consent validation, owner-scoped feature loading, inference, domain/result/lineage persistence, and terminal job state. It returns 200 only after committed read-back.
 
 ## Required Environment
 
@@ -33,6 +34,9 @@ VERTEX_AI_ENDPOINT_ID=5976620302904328192
 VERTEX_AI_ENDPOINT_DISPLAY_NAME=acnetrex-endpoint
 VERTEX_AI_TIMEOUT_SECONDS=20
 ACNETREX_ML_SHARED_SECRET=generate-and-store-in-secret-manager
+ACNETREX_ML_PERSISTENCE_OWNER=railway
+DATABASE_URL=server-only-application-database-url
+SUPABASE_DB_CA_CERT=escaped-production-ca-certificate
 CORS_ORIGINS=https://atv-3-app-build-v-0.vercel.app
 MODEL_REGISTRY_PATH=/app/manifests/model-registry.json
 ARTIFACT_CHECKSUM_MANIFEST=/app/manifests/artifact-checksums.json
@@ -72,6 +76,10 @@ uvicorn main:app --host 0.0.0.0 --port 8080
 ```
 
 ## Deploy
+
+Production is deployed from repository root to the Railway ML service using `railway.json` and `ml-service/Dockerfile`. Railway must inject the server-only shared secret, verified database connection/CA, and `ACNETREX_ML_PERSISTENCE_OWNER=railway`.
+
+The older Cloud Run service is not the canonical production target. If retained as a rollback or research surface, deploy it only after bringing its contract and persistence behavior to parity:
 
 From repository root:
 

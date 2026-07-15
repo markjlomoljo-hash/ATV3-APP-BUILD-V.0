@@ -160,10 +160,74 @@ class PostgresAnalysisRepository:
             )
             return False
 
+    def terminalize(self, job_id: str, *, code: str) -> dict[str, Any]:
+        """Own the terminal job transition for an exhausted dispatch.
+
+        The row lock makes the transition and audit insertion exactly once. A
+        replay observes the already-terminal state without writing again.
+        """
+        terminal_states = {
+            "completed",
+            "failed",
+            "insufficient_data",
+            "not_configured",
+        }
+        with self._connect() as connection, connection.cursor() as cursor:
+            cursor.execute(
+                """
+                select j.id::text as id, j.status
+                  from public.ml_analysis_jobs j
+                 where j.id=%s::uuid
+                 for update
+                """,
+                (job_id,),
+            )
+            job = cursor.fetchone()
+            if not job:
+                raise PersistenceRejected("stored_job_not_found")
+            status = str(job["status"])
+            if status in terminal_states:
+                return {
+                    "job_id": job_id,
+                    "status": status,
+                    "terminalized": False,
+                }
+            if status not in {"queued", "processing"}:
+                raise PersistenceRejected("stored_job_state_invalid")
+            cursor.execute(
+                """
+                update public.ml_analysis_jobs
+                   set status='failed', failure_reason=%s,
+                       error_class='railway_dispatch_exhausted',
+                       lease_owner=null, lease_expires_at=null,
+                       dead_lettered_at=coalesce(dead_lettered_at, now()),
+                       updated_at=now()
+                 where id=%s::uuid and status in ('queued','processing')
+                 returning id
+                """,
+                (code, job_id),
+            )
+            if cursor.fetchone() is None:
+                raise PersistenceRejected("railway_terminalization_conflict")
+            cursor.execute(
+                """
+                insert into public.audit_logs
+                  (user_id, actor_type, action, target_table, target_id, metadata)
+                select user_id, 'service', 'ml_analysis_terminalized',
+                       'ml_analysis_jobs', id,
+                       jsonb_build_object('job_id', id, 'reason', %s::text)
+                  from public.ml_analysis_jobs
+                 where id=%s::uuid
+                """,
+                (code, job_id),
+            )
+        return {"job_id": job_id, "status": "failed", "terminalized": True}
+
     def _load_job(self, cursor: Any, job_id: str) -> dict[str, Any]:
         cursor.execute(
             """
-            select j.id::text as id, j.user_id::text as user_id, j.engine,
+            select j.id::text as id, j.request_id::text as request_id,
+                   j.idempotency_key, j.user_id::text as user_id, j.engine,
                    j.operation, j.module, j.task, j.status,
                    j.feature_schema_version, j.input_record_refs, j.features,
                    j.consent_snapshot, j.attempt_count, j.max_attempts
@@ -179,6 +243,13 @@ class PostgresAnalysisRepository:
         return dict(row)
 
     def _validate_job(self, job: dict[str, Any], payload: InferenceRequest) -> None:
+        canonical_id = str(payload.request_id)
+        if str(job.get("id")) != canonical_id:
+            raise PersistenceRejected("stored_job_id_mismatch")
+        if str(job.get("request_id")) != canonical_id:
+            raise PersistenceRejected("stored_job_request_id_mismatch")
+        if str(job.get("idempotency_key")) != str(payload.idempotency_key):
+            raise PersistenceRejected("stored_job_idempotency_key_mismatch")
         if not job.get("user_id"):
             raise PersistenceRejected("stored_job_owner_missing")
         if job.get("engine") != payload.module or job.get("module") != payload.module:
@@ -425,6 +496,7 @@ class PostgresAnalysisRepository:
         elif payload.module == "faceatlas":
             ids = reference_ids.get("face_scans", [])
             images: list[dict[str, Any]] = []
+            annotations: list[dict[str, Any]] = []
             if ids:
                 with self._connect() as connection, connection.cursor() as cursor:
                     cursor.execute(
@@ -437,17 +509,42 @@ class PostgresAnalysisRepository:
                         (owner_id, ids),
                     )
                     rows = cursor.fetchall()
-                metadata_by_id = {
-                    str(item.get("record_id")): item
-                    for item in inputs.get("images", [])
-                    if isinstance(item, dict) and item.get("record_id")
-                }
+                    cursor.execute(
+                        """
+                        select id::text as id, scan_id::text as scan_id,
+                               lesion_type, zone, x, y, w, h, confidence,
+                               source, created_at
+                          from public.annotations
+                         where user_id=%s::uuid and scan_id=any(%s::uuid[])
+                         order by created_at asc, id asc
+                        """,
+                        (owner_id, ids),
+                    )
+                    annotation_rows = cursor.fetchall()
                 for row in rows:
-                    image = dict(metadata_by_id.get(str(row["id"]), {}))
+                    stored_quality = _json_value(row.get("image_quality"), {})
+                    image = dict(stored_quality) if isinstance(stored_quality, dict) else {}
                     image.update({"record_id": str(row["id"]), "angle": row["angle"]})
                     images.append(image)
                     canonical_refs.append(f"face_scans:{row['id']}")
+                for row in annotation_rows:
+                    annotations.append(
+                        {
+                            "annotation_id": str(row["id"]),
+                            "record_id": str(row["scan_id"]),
+                            "lesion_type": row.get("lesion_type"),
+                            "zone": row.get("zone"),
+                            "x": row.get("x"),
+                            "y": row.get("y"),
+                            "w": row.get("w"),
+                            "h": row.get("h"),
+                            "confidence": row.get("confidence"),
+                            "source": row.get("source"),
+                            "created_at": _iso(row.get("created_at")),
+                        }
+                    )
             inputs["images"] = images
+            inputs["annotations"] = annotations
         elif payload.module == "cutisai":
             fact_ids = reference_ids.get("user_memory_facts", [])
             facts: list[dict[str, Any]] = []
