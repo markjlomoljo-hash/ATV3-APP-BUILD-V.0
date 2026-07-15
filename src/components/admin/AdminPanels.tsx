@@ -2,6 +2,14 @@
 
 import Link from "next/link";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+
+async function adminFetch(input: RequestInfo | URL, init: RequestInit = {}) {
+  const { data } = await supabase.auth.getSession();
+  const headers = new Headers(init.headers);
+  if (data.session?.access_token) headers.set("authorization", `Bearer ${data.session.access_token}`);
+  return fetch(input, { ...init, headers, credentials: "same-origin" });
+}
 
 type ApiPayload = {
   ok: boolean;
@@ -76,7 +84,7 @@ function useAdminData(endpoint: string) {
 
   useEffect(() => {
     let cancelled = false;
-    void fetch(endpoint, { credentials: "same-origin", cache: "no-store" })
+    void adminFetch(endpoint, { cache: "no-store" })
       .then(async (response) => response.json().catch(() => ({ ok: false, error: "unexpected_response" })))
       .then((payload: ApiPayload) => { if (!cancelled) setState({ requestKey, payload }); })
       .catch(() => { if (!cancelled) setState({ requestKey, payload: { ok: false, error: "network_unavailable" } }); });
@@ -96,7 +104,7 @@ export function AdminOverviewPanel() {
     if (!reason) return;
     setBootstrapping(true);
     try {
-      const response = await fetch("/api/admin/roles/bootstrap-owner", {
+      const response = await adminFetch("/api/admin/roles/bootstrap-owner", {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },
@@ -205,7 +213,7 @@ export function AdminRolesPanel() {
     event.preventDefault();
     setSubmitting(true);
     try {
-      const response = await fetch("/api/admin/roles/assign", {
+      const response = await adminFetch("/api/admin/roles/assign", {
         method: "POST",
         credentials: "same-origin",
         headers: { "content-type": "application/json" },

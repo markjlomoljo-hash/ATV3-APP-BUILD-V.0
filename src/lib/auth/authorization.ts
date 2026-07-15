@@ -1,26 +1,23 @@
 import "server-only";
 
-import { auth, clerkClient } from "@clerk/nextjs/server";
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import { AuthorizationError } from "./errors";
 import { hasPermission as roleHasPermission, permissionsForRole, type AppPermission } from "./permissions";
 import { normalizeRole, type AppRole } from "./roles";
 
 export type AuthorizationContext = {
+  userId?: string;
   clerkUserId: string;
   sessionId: string;
   role: AppRole;
   roleVersion: number;
-  roleSource: "owner_allowlist" | "clerk_public_metadata" | "default_user";
+  roleSource: "owner_allowlist" | "supabase_user_role" | "default_user" | "clerk_public_metadata";
   accountStatus: "active" | "suspended" | "restricted";
   factorVerificationAge: [number, number] | null;
 };
 
-export function isClerkConfigured(): boolean {
-  return Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY && process.env.CLERK_SECRET_KEY);
-}
-
 function configuredOwnerIds(): string[] {
-  return (process.env.ACNETREX_OWNER_CLERK_USER_ID ?? "")
+  return (process.env.SUPABASE_OWNER_USER_ID ?? "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
@@ -30,51 +27,33 @@ function validRoleVersion(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 
-export function authorizationFromMetadata(input: {
-  clerkUserId: string;
-  sessionId: string;
-  publicMetadata: UserPublicMetadata;
-  privateMetadata: UserPrivateMetadata;
-  factorVerificationAge: [number, number] | null;
-  ownerIds?: readonly string[];
-}): AuthorizationContext {
-  const owner = (input.ownerIds ?? configuredOwnerIds()).includes(input.clerkUserId);
-  const requestedRole = normalizeRole(input.publicMetadata.role);
-  const role = owner
-    ? "owner"
-    : requestedRole !== "user" && !validRoleVersion(input.publicMetadata.roleVersion)
-      ? "user"
-      : requestedRole;
-  const accountStatus = input.privateMetadata.accountStatus === "suspended" || input.privateMetadata.accountStatus === "restricted"
-    ? input.privateMetadata.accountStatus
-    : "active";
-
+export function authorizationFromRole(input: { userId: string; sessionId: string; dbRole?: string; roleVersion?: number; accountStatus?: string; factorVerificationAge: [number, number] | null; ownerIds?: readonly string[] }): AuthorizationContext {
+  const owner = (input.ownerIds ?? configuredOwnerIds()).includes(input.userId);
+  const role = owner ? "owner" : normalizeRole(input.dbRole);
   return {
-    clerkUserId: input.clerkUserId,
+    userId: input.userId,
+    clerkUserId: input.userId,
     sessionId: input.sessionId,
     role,
-    roleVersion: validRoleVersion(input.publicMetadata.roleVersion) ? input.publicMetadata.roleVersion : 1,
-    roleSource: owner ? "owner_allowlist" : role === "user" && requestedRole !== "user" ? "default_user" : "clerk_public_metadata",
-    accountStatus,
+    roleVersion: validRoleVersion(input.roleVersion) ? input.roleVersion : 1,
+    roleSource: owner ? "owner_allowlist" : input.dbRole ? "supabase_user_role" : "default_user",
+    accountStatus: input.accountStatus === "suspended" || input.accountStatus === "restricted" ? input.accountStatus : "active",
     factorVerificationAge: input.factorVerificationAge,
   };
 }
 
-export async function getAuthorizationContext(): Promise<AuthorizationContext> {
-  if (!isClerkConfigured()) throw new AuthorizationError("auth_not_configured");
-  const session = await auth();
-  if (!session.userId || !session.sessionId) throw new AuthorizationError("auth_required");
+export function isClerkConfigured(): boolean { return false; }
+export function authorizationFromMetadata(input: { clerkUserId: string; sessionId: string; publicMetadata: UserPublicMetadata; privateMetadata: UserPrivateMetadata; factorVerificationAge: [number, number] | null; ownerIds?: readonly string[] }): AuthorizationContext {
+  const privileged = normalizeRole(input.publicMetadata.role) !== "user";
+  const context = authorizationFromRole({ userId: input.clerkUserId, sessionId: input.sessionId, dbRole: privileged && !validRoleVersion(input.publicMetadata.roleVersion) ? "user" : input.publicMetadata.role, roleVersion: input.publicMetadata.roleVersion, accountStatus: input.privateMetadata.accountStatus, factorVerificationAge: input.factorVerificationAge, ownerIds: input.ownerIds });
+  return { ...context, roleSource: context.role === "owner" ? "owner_allowlist" : "clerk_public_metadata" };
+}
 
+export async function getAuthorizationContext(userId: string, sessionId = "supabase"): Promise<AuthorizationContext> {
   try {
-    const client = await clerkClient();
-    const user = await client.users.getUser(session.userId);
-    const context = authorizationFromMetadata({
-      clerkUserId: session.userId,
-      sessionId: session.sessionId,
-      publicMetadata: user.publicMetadata,
-      privateMetadata: user.privateMetadata,
-      factorVerificationAge: session.factorVerificationAge,
-    });
+    const { data, error } = await (supabaseAdmin.from("user_roles") as any).select("role, role_version, account_status").eq("user_id", userId).maybeSingle();
+    if (error) throw error;
+    const context = authorizationFromRole({ userId, sessionId, dbRole: data?.role, roleVersion: data?.role_version, accountStatus: data?.account_status, factorVerificationAge: null });
     if (context.accountStatus === "suspended") throw new AuthorizationError("account_suspended");
     return context;
   } catch (error) {
@@ -119,7 +98,7 @@ export function requireRecentAuthentication(context: AuthorizationContext, maxAg
 
 export function viewerSnapshot(context: AuthorizationContext) {
   return {
-    clerkUserId: context.clerkUserId,
+    userId: context.userId,
     role: context.role,
     roleVersion: context.roleVersion,
     roleSource: context.roleSource,

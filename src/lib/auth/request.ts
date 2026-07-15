@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { asAuthorizationError, AuthorizationError } from "./errors";
 import { getAuthorizationContext, requirePermission, type AuthorizationContext } from "./authorization";
+import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
 import type { AppPermission } from "./permissions";
 
 export type AdminRouteContext = { params?: unknown };
@@ -21,7 +22,9 @@ export function withAdminPermission<T extends AdminRouteContext = AdminRouteCont
 ) {
   return async (request: NextRequest, routeContext: T): Promise<NextResponse> => {
     try {
-      const context = await getAuthorizationContext();
+      const identity = await authenticateSupabaseRequest(request);
+      if (!identity.ok) return NextResponse.json({ ok: false, error: identity.error }, { status: identity.status });
+      const context = await getAuthorizationContext(identity.userId);
       requirePermission(context, permission);
       return await handler(request, context, routeContext);
     } catch (error) {
