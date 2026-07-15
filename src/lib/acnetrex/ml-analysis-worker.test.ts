@@ -54,8 +54,8 @@ function upstream(payload: unknown, status = 200) {
 function canonicalResponse(overrides: Record<string, unknown> = {}) {
   return {
     ok: true,
-    request_id: job.requestId,
-    job_id: null,
+    request_id: job.jobId,
+    job_id: job.jobId,
     module: "sleepderm",
     task: "sleep_pattern_analysis",
     result_type: "deterministic_analysis",
@@ -131,13 +131,17 @@ describe("ML analysis worker", () => {
     expect(fetcher).toHaveBeenCalledWith(
       "https://ml.example.test/predict",
       expect.objectContaining({
-        headers: expect.objectContaining({ authorization: "Bearer worker-upstream-secret" }),
+        headers: expect.objectContaining({
+          authorization: "Bearer worker-upstream-secret",
+          "idempotency-key": job.jobId,
+          "x-request-id": job.jobId,
+        }),
       }),
     );
     const request = fetcher.mock.calls[0]?.[1];
     expect(JSON.parse(String(request?.body))).toMatchObject({
       contract_version: "1.0.0",
-      request_id: job.requestId,
+      request_id: job.jobId,
       idempotency_key: job.jobId,
       module: "sleepderm",
       task: "sleep_pattern_analysis",
@@ -157,7 +161,7 @@ describe("ML analysis worker", () => {
       },
     });
     expect((request?.headers as Record<string, string>)["idempotency-key"]).toBe(job.jobId);
-    expect((request?.headers as Record<string, string>)["x-request-id"]).toBe(job.requestId);
+    expect((request?.headers as Record<string, string>)["x-request-id"]).toBe(job.jobId);
     expect(commitSeenBeforeFetch).toBe(true);
     const sourceRead = fakeClient.query.mock.calls.find(([sql]) => String(sql).includes("from public.sleep_logs"));
     expect(String(sourceRead?.[0])).toContain("user_id=$1::uuid");

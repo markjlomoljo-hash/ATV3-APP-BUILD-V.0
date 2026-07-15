@@ -36,7 +36,7 @@ def test_root_returns_canonical_service_metadata() -> None:
         "service": "acnetrex-ml",
         "contractVersion": "1.0.0",
         "health": "/health/ready",
-        "predict": "/v1/predict",
+        "predict": "/predict",
     }
 
 

@@ -96,6 +96,12 @@ export async function executeIdempotent(options: {
     await client.query("commit");
     return { ...result, replayed: false };
   } catch (error) {
+    const databaseError = error as { code?: unknown; constraint?: unknown; table?: unknown };
+    console.error("idempotency_operation_failed", {
+      code: typeof databaseError.code === "string" ? databaseError.code : "unknown",
+      constraint: typeof databaseError.constraint === "string" ? databaseError.constraint : undefined,
+      table: typeof databaseError.table === "string" ? databaseError.table : undefined,
+    });
     await client.query("rollback").catch(() => undefined);
     throw error;
   } finally {

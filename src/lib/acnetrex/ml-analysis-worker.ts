@@ -316,7 +316,7 @@ async function canonicalRequest(client: PoolClient, job: ClaimedJob) {
   const canonical = await canonicalInputs(client, job);
   return inferenceRequestSchema.parse({
     contract_version: "1.0.0",
-    request_id: job.requestId ?? job.jobId,
+    request_id: job.jobId,
     idempotency_key: job.jobId,
     module: job.engine,
     task: canonicalTask(job.engine, job.operation),
@@ -651,7 +651,8 @@ async function processClaimedJob(
     const parsed = inferenceResponseSchema.safeParse(payload);
     const contractStatusAccepted = response.ok || response.status === 422;
     if (parsed.success && contractStatusAccepted) {
-      const lineageMatches = parsed.data.request_id === canonical.request_id
+      const lineageMatches = parsed.data.request_id === job.jobId
+        && parsed.data.job_id === job.jobId
         && parsed.data.module === canonical.module
         && parsed.data.task === canonical.task
         && parsed.data.feature_schema_version === canonical.feature_schema_version;

@@ -66,6 +66,7 @@ def test_canonical_service_surface_is_complete() -> None:
         "/v1/metrics",
         "/v1/predict",
         "/predict",
+        "/api/v1/inference",
         "/v1/batch",
         "/v1/explain",
         "/v1/feedback",
@@ -90,6 +91,8 @@ def test_deterministic_prediction_uses_full_honest_contract(monkeypatch) -> None
 
     assert response.status_code == 200
     result = response.json()
+    assert result["request_id"] == body["request_id"]
+    assert result["job_id"] == body["request_id"]
     required = {
         "ok",
         "request_id",
@@ -123,6 +126,18 @@ def test_deterministic_prediction_uses_full_honest_contract(monkeypatch) -> None
         "created_at",
     }
     assert required <= result.keys()
+
+    compatibility = client.post(
+        "/api/v1/inference",
+        json=body,
+        headers={
+            "authorization": "Bearer server-secret",
+            "idempotency-key": body["idempotency_key"],
+        },
+    )
+    assert compatibility.status_code == response.status_code
+    assert compatibility.headers["idempotency-replayed"] == "true"
+    assert compatibility.json() == result
     assert result["runtime_mode"] == "local_deterministic"
     assert result["confidence"] is None
     assert result["readiness_state"] == "ready"

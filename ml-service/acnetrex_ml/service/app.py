@@ -299,7 +299,7 @@ def create_app(
             "service": "acnetrex-ml",
             "contractVersion": CONTRACT_VERSION,
             "health": "/health/ready",
-            "predict": "/v1/predict",
+            "predict": "/predict",
         }
 
     @application.get("/health/live")
@@ -410,7 +410,9 @@ def create_app(
                 asyncio.to_thread(_predict_core, payload),
                 timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
             )
-            body = result.model_dump(mode="json")
+            body = result.model_copy(
+                update={"job_id": str(payload.request_id)}
+            ).model_dump(mode="json")
             status = (
                 200
                 if result.ok
@@ -445,16 +447,24 @@ def create_app(
                 status_code=422, detail={"code": "invalid_input", "message": str(exc)}
             ) from exc
 
-    @application.post("/v1/predict", dependencies=[Depends(_authenticate)])
-    async def predict_v1(
+    @application.post("/predict", dependencies=[Depends(_authenticate)])
+    async def predict(
         payload: InferenceRequest,
         request: Request,
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> JSONResponse:
         return await execute_prediction(payload, request, idempotency_key)
 
-    @application.post("/predict", dependencies=[Depends(_authenticate)])
-    async def predict_alias(
+    @application.post("/api/v1/inference", dependencies=[Depends(_authenticate)])
+    async def inference_compatibility_alias(
+        payload: InferenceRequest,
+        request: Request,
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    ) -> JSONResponse:
+        return await execute_prediction(payload, request, idempotency_key)
+
+    @application.post("/v1/predict", dependencies=[Depends(_authenticate)])
+    async def predict_legacy_alias(
         payload: InferenceRequest,
         request: Request,
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),

@@ -16,12 +16,12 @@ function jsonError(error: string, status: number) {
 
 export async function POST(
   request: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   const auth = await authenticateSupabaseRequest(request);
   if (!auth.ok) return jsonError(auth.error, auth.status);
 
-  const { id } = params;
+  const { id } = await params;
   if (!id || typeof id !== "string") return jsonError("invalid_notification_id", 400);
 
   // Basic UUID format check

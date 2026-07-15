@@ -18,7 +18,8 @@ This service is intentionally fail-closed:
 - `GET /health/live` - liveness
 - `GET /health/ready` - persistence, registry, artifact, and Vertex configuration status
 - `GET /v1/models` - model registry entries
-- `POST /predict` and `POST /v1/predict` - canonical inference
+- `POST /predict` - canonical inference
+- `POST /api/v1/inference` and `POST /v1/predict` - compatibility aliases to the same handler
 - `POST /v1/batch` - bounded batch inference
 - `POST /v1/jobs` and `GET /v1/jobs/{job_id}` - durable service-local job contract
 
