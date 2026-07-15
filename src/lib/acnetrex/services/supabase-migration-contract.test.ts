@@ -44,6 +44,12 @@ const mlDeliveryReconciliationMigrationPath = join(
   "migrations",
   "20260714143000_ml_delivery_state_reconciliation.sql",
 );
+const auditRetentionDeletionMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260715053000_preserve_audit_on_user_deletion.sql",
+);
 
 describe("Supabase migration contract", () => {
   it("defines persistent memory and ML lineage tables with RLS enabled", () => {
@@ -269,5 +275,18 @@ describe("ML delivery state reconciliation", () => {
     expect(sql).toContain('create policy "owner read" on public.ml_analysis_jobs for select to authenticated');
     expect(sql).toContain('create policy "owner read" on public.ml_analysis_results for select to authenticated');
     expect(sql).not.toContain("for all to authenticated");
+  });
+});
+
+describe("audit retention during account deletion", () => {
+  it("retains append-only audit rows while removing their auth-user foreign key", () => {
+    const sql = readFileSync(auditRetentionDeletionMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("on delete set null");
+    expect(sql).toContain("to_jsonb(new) - 'user_id'");
+    expect(sql).toContain("to_jsonb(old) - 'user_id'");
+    expect(sql).toContain("new.user_id is null");
+    expect(sql).toContain("raise exception 'audit_logs_are_append_only'");
+    expect(sql).not.toContain("disable trigger");
   });
 });
