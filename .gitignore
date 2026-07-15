@@ -16,3 +16,8 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+
+# Expo
+.expo/
+dist/
+apps/mobile/dist/

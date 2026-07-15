@@ -1,4 +1,4 @@
-import type { OfflineOperation, OfflineOperationStore } from "./offline-queue-contract.js";
+import type { OfflineOperation, OfflineOperationStore } from "./offline-queue-contract";
 
 type BindValue = string | number | null;
 

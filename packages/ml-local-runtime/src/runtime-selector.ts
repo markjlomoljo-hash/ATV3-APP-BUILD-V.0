@@ -1,4 +1,4 @@
-import type { ConsentContext, RuntimeMode } from "./contracts.js";
+import type { ConsentContext, RuntimeMode } from "./contracts";
 
 export interface RuntimeSelectionInput {
   task: string;

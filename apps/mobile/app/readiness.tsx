@@ -1,46 +1,109 @@
+/**
+ * Developer Readiness Console
+ * Internal tool for checking backend connectivity and ML runtime status.
+ * Not part of the user-facing app flow.
+ */
 import { useEffect, useState } from "react";
-import * as Crypto from "expo-crypto";
 import { ScrollView, StyleSheet, Text, Pressable } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { evaluateReadiness } from "../../../packages/ml-local-runtime/src/deterministic/readiness";
-import { mobileMlCoordinator } from "../src/lib/ml";
+import { supabase } from "../src/lib/supabase";
 
 type State = { label: string; value: string };
 
 export default function ReadinessScreen() {
-  const [states, setStates] = useState<State[]>([{ label: "Backend", value: "checking" }]);
-  const [networkAvailable, setNetworkAvailable] = useState(false);
-  const [jobState, setJobState] = useState("not_requested");
+  const [states, setStates] = useState<State[]>([
+    { label: "Supabase", value: "checking" },
+    { label: "Auth", value: "checking" },
+  ]);
+
   useEffect(() => {
-    const base = process.env.EXPO_PUBLIC_API_BASE_URL?.replace(/\/+$/, "");
-    if (!base) { setStates([{ label: "Backend", value: "not_configured" }]); return; }
-    fetch(`${base}/api/health`).then(async (response) => {
-      const body = await response.json();
-      setNetworkAvailable(response.ok);
-      setStates([
-        { label: "Backend", value: response.ok ? "ready" : "degraded" },
-        { label: "Database", value: body.database?.status ?? "unavailable" },
-        { label: "Cloud ML", value: body.cloudRun?.status ?? "unavailable" }
-      ]);
-    }).catch(() => { setNetworkAvailable(false); setStates([{ label: "Backend", value: "unavailable" }]); });
+    const run = async () => {
+      const results: State[] = [];
+
+      // Check Supabase connectivity
+      try {
+        const { error } = await supabase.from("profiles").select("id").limit(1);
+        if (error && error.code !== "42501") {
+          results.push({ label: "Supabase DB", value: `error: ${error.code}` });
+        } else {
+          results.push({ label: "Supabase DB", value: "connected" });
+        }
+      } catch (e) {
+        results.push({ label: "Supabase DB", value: "unreachable" });
+      }
+
+      // Check auth session
+      const { data: { session } } = await supabase.auth.getSession();
+      results.push({
+        label: "Auth Session",
+        value: session ? `active (${session.user.email})` : "none",
+      });
+
+      // Check env vars
+      results.push({
+        label: "SUPABASE_URL",
+        value: process.env.EXPO_PUBLIC_SUPABASE_URL ? "set" : "MISSING",
+      });
+      results.push({
+        label: "SUPABASE_KEY",
+        value: process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY ? "set" : "MISSING",
+      });
+      results.push({
+        label: "API_BASE",
+        value: process.env.EXPO_PUBLIC_API_BASE_URL ?? "not set",
+      });
+
+      setStates(results);
+    };
+    run();
   }, []);
-  const local = evaluateReadiness({ required: { consent: null, timezone: "Asia/Manila" }, optional: { history: null }, sampleCount: 0, minimumSamples: 7 });
-  const requestAnalysis = async () => {
-    setJobState("submitting");
-    try {
-      const result = await mobileMlCoordinator.execute({
-        engine: "sleepderm",
-        operation: "sleep_pattern_analysis",
-        inputRecordRefs: [],
-        features: { sampleCount: local.sampleCount, coverage: local.coverage },
-        metadata: { featureSchemaVersion: "1.0.0", appVersion: "0.1.0", clientRequestId: Crypto.randomUUID() },
-      }, { networkAvailable });
-      setJobState(result.mode);
-    } catch (error) {
-      setJobState(error instanceof Error ? error.message : "error_retryable");
-    }
-  };
-  return <SafeAreaView style={styles.safe}><ScrollView contentContainerStyle={styles.content}><Text style={styles.title}>Readiness</Text>{states.map((state) => <Text key={state.label} style={styles.row}>{state.label}: {state.value}</Text>)}<Text style={styles.row}>Local deterministic readiness: {local.state} ({Math.round(local.coverage * 100)}% coverage)</Text><Pressable accessibilityRole="button" onPress={requestAnalysis} style={styles.button}><Text style={styles.buttonText}>Request SleepDerm cloud analysis</Text></Pressable><Text style={styles.row}>ML job: {jobState}</Text></ScrollView></SafeAreaView>;
+
+  return (
+    <SafeAreaView style={styles.safe}>
+      <ScrollView contentContainerStyle={styles.content}>
+        <Text style={styles.title}>🔬 Readiness Console</Text>
+        <Text style={styles.subtitle}>AcneTrex v3 — Phase 1 Debug</Text>
+        {states.map((s) => (
+          <View key={s.label} style={styles.row}>
+            <Text style={styles.label}>{s.label}</Text>
+            <Text
+              style={[
+                styles.value,
+                s.value === "connected" || s.value === "set" || s.value.startsWith("active")
+                  ? styles.ok
+                  : s.value === "checking"
+                  ? styles.pending
+                  : styles.error,
+              ]}
+            >
+              {s.value}
+            </Text>
+          </View>
+        ))}
+      </ScrollView>
+    </SafeAreaView>
+  );
 }
 
-const styles = StyleSheet.create({ safe: { flex: 1, backgroundColor: "#f8fafc" }, content: { padding: 20, gap: 12 }, title: { fontSize: 28, fontWeight: "800", color: "#17211d" }, row: { backgroundColor: "white", borderRadius: 12, padding: 16, color: "#334155" }, button: { backgroundColor: "#047857", borderRadius: 12, padding: 16 }, buttonText: { color: "white", fontWeight: "700", textAlign: "center" } });
+import { View } from "react-native";
+
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "#f5faf8" },
+  content: { padding: 20, gap: 12 },
+  title: { fontSize: 22, fontWeight: "800", color: "#17211d" },
+  subtitle: { fontSize: 14, color: "#475569", marginBottom: 16 },
+  row: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    backgroundColor: "#fff",
+    padding: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#dbe7e2",
+  },
+  label: { fontSize: 14, fontWeight: "600", color: "#17211d" },
+  value: { fontSize: 14, color: "#475569" },
+  ok: { color: "#047857", fontWeight: "700" },
+  pending: { color: "#d97706" },
+  error: { color: "#dc2626", fontWeight: "700" },
+});
