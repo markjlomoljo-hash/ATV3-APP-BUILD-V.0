@@ -200,6 +200,11 @@ def test_finalize_commits_lineage_job_state_and_replay_record_before_readback() 
     assert result_index < job_index < replay_index < readback_index
     assert any("insert into public.ml_feature_snapshots" in sql for sql in statements)
     assert any("insert into public.intelligence_events" in sql for sql in statements)
+    assert any(
+        "on conflict (source_job_id) where source_job_id is not null do nothing"
+        in sql
+        for sql in statements
+    )
     assert database.commits >= 3
 
 

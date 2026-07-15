@@ -516,7 +516,7 @@ class PostgresAnalysisRepository:
               (user_id, module, feature_schema_version, source_record_refs,
                features, missing_features, confidence, source_job_id)
             values (%s::uuid,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s::uuid)
-            on conflict (source_job_id) do nothing
+            on conflict (source_job_id) where source_job_id is not null do nothing
             """,
             (
                 reservation.user_id,
@@ -558,7 +558,7 @@ class PostgresAnalysisRepository:
                   (user_id, trigger_name, evidence, confidence, status,
                    observed_window, source_job_id)
                 values (%s::uuid,%s,%s::jsonb,%s,%s,%s::jsonb,%s::uuid)
-                on conflict (source_job_id) do nothing
+                on conflict (source_job_id) where source_job_id is not null do nothing
                 """,
                 (
                     reservation.user_id,
@@ -578,7 +578,7 @@ class PostgresAnalysisRepository:
                   (user_id, horizon_days, forecast, model_version, confidence,
                    source_job_id)
                 values (%s::uuid,%s,%s::jsonb,%s,%s,%s::uuid)
-                on conflict (source_job_id) do nothing
+                on conflict (source_job_id) where source_job_id is not null do nothing
                 """,
                 (
                     reservation.user_id,
@@ -595,7 +595,7 @@ class PostgresAnalysisRepository:
                 insert into public.forecast_summaries
                   (user_id, window, status, summary, confidence, source_job_id)
                 values (%s,%s,%s,%s,%s,%s::uuid)
-                on conflict (source_job_id) do nothing
+                on conflict (source_job_id) where source_job_id is not null do nothing
                 """,
                 (
                     reservation.user_id,
