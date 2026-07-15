@@ -1,6 +1,6 @@
-# AcneTrex v3 ML integration and Railway deployment contract
+# AcneTrex v3 mobile ML integration and Railway deployment contract
 
-Status: Design A is authoritative. This document replaces the earlier handoff that assigned database writes to FastAPI.
+Status: Design B is authoritative. The Expo mobile app is the product client; the Next.js deployment remains a private backend-for-frontend and outbox dispatcher required by that app.
 
 ## Ownership boundary
 
@@ -8,41 +8,39 @@ AcneTrex uses a transactional outbox and one versioned inference contract.
 
 1. Expo submits an authenticated, idempotent request to Next.js `POST /api/ml/jobs`.
 2. Next.js validates Supabase Auth and consent, creates `ml_analysis_jobs` plus `outbox_events` in one transaction, and returns the durable job UUID.
-3. Exactly one scheduler runs the TypeScript outbox processor. It claims a job with a lease, loads only owner-scoped source rows, and constructs the canonical inference request.
-4. The processor calls the stateless FastAPI service on Railway at `POST /predict`. `POST /api/v1/inference` is a compatibility alias to the same handler; `/v1/predict` remains a legacy alias.
-5. Next.js validates lineage, persists `ml_analysis_results` and any domain projection, completes the job and inbox record, then closes the outbox event in a transaction.
-6. Expo polls the owner-scoped job endpoint and durably caches the result.
+3. Exactly one TypeScript scheduler claims the outbox event with a lease and sends only the job identity and contract metadata to Railway FastAPI at `POST /api/v1/inference`.
+4. FastAPI validates the bearer secret and correlated identity, loads the stored job and owner-scoped consented records from Supabase PostgreSQL, and executes inference outside a long database transaction.
+5. FastAPI atomically persists the domain projection, `ml_analysis_results`, audit/lineage record, and terminal `ml_analysis_jobs` state. A repeated identity returns the committed result without another inference.
+6. Next.js reads back the committed owner/job/lineage result before completing its inbox and outbox records. A missing or mismatched commit is retried rather than acknowledged.
+7. Expo polls the owner-scoped job endpoint and durably caches the result for refresh, reconnect, and re-login.
 
-FastAPI must not connect to Supabase, claim outbox rows, load user records, or write job, result, forecast, hypothesis, snapshot, or conversation tables. It receives only the minimum owner-derived feature payload and consent snapshot supplied by Next.js.
+The previous stateless FastAPI/Next.js-persistence topology is rollback-only. `ACNETREX_ML_PERSISTENCE_OWNER=railway` selects Design B; `nextjs` temporarily restores the old owner during rollback. Only one owner may be active.
 
 ## Identity and idempotency
 
-The `ml_analysis_jobs.id` UUID is the single inference identity. The outbox processor sends that value as:
+The `ml_analysis_jobs.id` UUID is also the request UUID. The dispatcher sends it as JSON `request_id`, JSON `job_id`, JSON `idempotency_key`, `Idempotency-Key`, and `X-Request-ID`. FastAPI rejects disagreement among any of those identities or the stored row.
 
-- JSON `request_id`
-- JSON `idempotency_key`
-- `Idempotency-Key` header
-- `X-Request-ID` header
-
-FastAPI returns that same UUID as both `request_id` and `job_id`. Next.js rejects and does not persist a response when either identity or its module/task/schema lineage differs.
+FastAPI returns the same UUID as `request_id` and `job_id`. A terminal result is acknowledged only after committed readback. The inference call, domain write, result write, terminal job transition, lineage/audit write, inbox close, and outbox close are therefore replay-safe across concurrency, restart, retry, and lost responses.
 
 ## FastAPI contract
 
-The canonical route is `POST /predict`, protected by a server-only bearer secret in `ACNETREX_ML_SHARED_SECRET`. Required request fields are defined by `packages/ml-local-runtime/src/contracts.ts` and the matching Pydantic models. Responses disclose readiness, runtime, model and data lineage, coverage, calibration, uncertainty, limitations, safety, and latency. Missing or unapproved learned artifacts fail closed; deterministic engines never masquerade as learned predictions.
+The canonical route is `POST /api/v1/inference`, protected by server-only `ACNETREX_ML_SHARED_SECRET`. `POST /predict` remains a compatibility alias during migration; `/v1/predict` is legacy only. Health routes are `/health/live` and `/health/ready`, with `/live`, `/ready`, and `/health` compatibility aliases.
 
-The inference service is stateless with respect to application data. Its local idempotency store only prevents duplicate execution for the shared request identity; it is not the system of record.
+Responses disclose readiness, runtime, model and data lineage, coverage, calibration, uncertainty, limitations, safety, and latency. Learned inference is permitted only when the approved registry entry, immutable checksum-verified artifact, compatible preprocessing schema, and runtime approval gates all agree. Incomplete or unapproved learned artifacts fail closed. Honest deterministic/bootstrap engines may abstain but never masquerade as a trained prediction. No local predictive fallback is enabled.
 
 ## Deployment topology
 
-- Railway web service: complete Next.js web application and API.
-- Railway ML service: Python FastAPI inference runtime from `ml-service/`.
-- Railway scheduler service: the sole TypeScript outbox processor, unless the web service is explicitly configured as the sole scheduler instead.
+- Expo mobile app: sole user-facing client for this delivery.
+- Railway web service: authenticated Next.js API, durable enqueue/poll endpoints, and backend-for-frontend; its browser UI is out of scope.
+- Railway ML service: private-contract FastAPI inference and persistence owner.
+- Railway worker service: sole outbox dispatcher, independently pausable with `ACNETREX_ML_WORKER_ENABLED=false` for cutover and recovery.
 - Supabase: canonical Auth, PostgreSQL, RLS, and private Storage.
-- Vercel: retained as a tested rollback target during Railway cutover; it must not run a second scheduler.
-- Cloud Run: retained only as a rollback inference target until Railway ML verification is complete.
+- Cloud Run: default cloud-hosted learned-inference provider when an approved artifact exists; it fails closed otherwise.
+- Vertex AI: unavailable unless a model is deliberately deployed and assigned traffic; an empty endpoint must never be reported as active.
+- Vercel: tested rollback target only and never a second scheduler.
 
-Server secrets must never use `NEXT_PUBLIC_*`, `EXPO_PUBLIC_*`, or `VITE_*` names. Mobile receives only the public Railway web/API base URL and Supabase publishable configuration.
+FastAPI and the worker use server-only database credentials. Secrets must never use `NEXT_PUBLIC_*`, `EXPO_PUBLIC_*`, or `VITE_*` names. Mobile receives only the public Railway API base URL and Supabase publishable configuration. FastAPI does not expose browser CORS.
 
 ## Completion gate
 
-Deployment is complete only when one trace shows authenticated creation, consent snapshot, job/outbox commit, a single lease claimant, owner-scoped feature loading, Railway FastAPI inference, matching request/job identity, result/domain persistence, terminal job/outbox state, replay without duplicate inference, cross-user denial, and the same result after refresh or re-login. Restart and expired-lease recovery, mobile offline replay/cache, security checks, and both Railway-to-Vercel and Railway-ML-to-Cloud-Run rollback procedures must also be exercised or recorded as explicit blockers.
+Deployment is complete only when a single correlated trace proves authenticated mobile creation, consent snapshot, job/outbox commit, one lease claimant, owner-scoped feature loading, Railway FastAPI execution, checksum-gated Cloud Run routing, atomic result/domain persistence, terminal job/outbox state, replay without duplicate inference, cross-user denial, and the same result after reconnect or re-login. Restart, expired-lease, lost-response, provider-failure, concurrency, rollback, and EAS device-build evidence are also required. An unavailable learned artifact is reported as a blocker, not replaced with a local model or an unsupported predictive claim.
