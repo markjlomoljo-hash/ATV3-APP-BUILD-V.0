@@ -90,6 +90,12 @@ async function getJob(accessToken, jobId) {
   });
 }
 
+async function getJobThroughRls(accessToken, jobId) {
+  return jsonRequest(`${supabaseUrl}/rest/v1/ml_analysis_jobs?id=eq.${encodeURIComponent(jobId)}&select=id,user_id`, {
+    headers: { apikey: anonKey, authorization: `Bearer ${accessToken}` },
+  });
+}
+
 async function waitForTerminal(accessToken, jobId) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
@@ -141,6 +147,10 @@ try {
   evidence.finalStatus = terminal.body?.job?.status ?? terminal.body?.status ?? terminal.body?.data?.status ?? null;
   evidence.resultReadiness = terminal.body?.job?.analysis?.readinessState ?? terminal.body?.analysis?.readinessState ?? null;
   evidence.checks.persistedResult = ["completed", "insufficient_data", "not_configured", "failed"].includes(evidence.finalStatus);
+  const ownerRls = await getJobThroughRls(owner.accessToken, jobId);
+  const otherRls = await getJobThroughRls(other.accessToken, jobId);
+  evidence.checks.rlsOwnerVisible = ownerRls.status === 200 && Array.isArray(ownerRls.body) && ownerRls.body.length === 1;
+  evidence.checks.rlsCrossUserHidden = otherRls.status === 200 && Array.isArray(otherRls.body) && otherRls.body.length === 0;
 
   const afterCommit = await submit(owner.accessToken, idempotencyKey, payload);
   evidence.checks.lostResponseReplay = afterCommit.status === 200 && afterCommit.body?.replayed === true && afterCommit.body?.jobId === jobId;
