@@ -29,7 +29,9 @@ def _fixture_rows() -> list[dict]:
             rows.append(
                 {
                     "participant_id": f"p-{participant:02d}",
-                    "observed_at": (start + timedelta(days=participant * 4 + offset)).isoformat(),
+                    "observed_at": (
+                        start + timedelta(days=participant * 4 + offset)
+                    ).isoformat(),
                     "sleep_hours": sleep,
                     "stress_score": stress,
                     "label": 1 if stress >= 5 else 0,
@@ -74,7 +76,9 @@ def test_training_fits_real_residual_mlp_structured_baseline_and_calibration() -
     assert outcome.automatic_promotion is False
 
 
-def test_governed_training_verifies_snapshot_checksum_and_never_promotes(tmp_path: Path) -> None:
+def test_governed_training_verifies_snapshot_checksum_and_never_promotes(
+    tmp_path: Path,
+) -> None:
     snapshot = tmp_path / "snapshot.jsonl"
     snapshot.write_text(
         "\n".join(json.dumps(row) for row in _fixture_rows()) + "\n",
@@ -132,7 +136,9 @@ def test_governed_training_verifies_snapshot_checksum_and_never_promotes(tmp_pat
         )
 
 
-def test_exported_bundle_is_candidate_only_and_checksum_addressed(tmp_path: Path) -> None:
+def test_exported_bundle_is_candidate_only_and_checksum_addressed(
+    tmp_path: Path,
+) -> None:
     outcome = train_predictive_ensemble(
         _fixture_rows(),
         feature_names=FEATURES,
@@ -149,7 +155,9 @@ def test_exported_bundle_is_candidate_only_and_checksum_addressed(tmp_path: Path
     assert bundle["registry_entry"]["approval_state"] == "pending_manual_review"
     assert bundle["automatic_promotion"] is False
     artifact = Path(bundle["artifact_path"])
-    assert hashlib.sha256(artifact.read_bytes()).hexdigest() == bundle["artifact_sha256"]
+    assert (
+        hashlib.sha256(artifact.read_bytes()).hexdigest() == bundle["artifact_sha256"]
+    )
     report = json.loads(Path(bundle["evaluation_path"]).read_text(encoding="utf-8"))
     assert report["holdout_kind"] == "participant_grouped_temporal"
     assert report["metrics"] == outcome.metrics

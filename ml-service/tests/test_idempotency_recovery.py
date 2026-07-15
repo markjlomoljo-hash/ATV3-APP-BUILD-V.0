@@ -9,7 +9,9 @@ from acnetrex_ml.service.idempotency import (
 
 def test_memory_store_reclaims_an_abandoned_processing_reservation() -> None:
     current = datetime(2026, 7, 14, tzinfo=UTC)
-    store = MemoryIdempotencyStore(clock=lambda: current, processing_timeout_seconds=120)
+    store = MemoryIdempotencyStore(
+        clock=lambda: current, processing_timeout_seconds=120
+    )
 
     assert store.reserve("key", "hash", "predict").state == "reserved"
     assert store.reserve("key", "hash", "predict").state == "processing"

@@ -4,7 +4,10 @@ import argparse
 import json
 from pathlib import Path
 
-from acnetrex_ml.training.predictive import export_candidate_bundle, run_governed_training
+from acnetrex_ml.training.predictive import (
+    export_candidate_bundle,
+    run_governed_training,
+)
 
 
 def main() -> int:

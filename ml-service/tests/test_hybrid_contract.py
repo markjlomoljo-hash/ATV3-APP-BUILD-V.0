@@ -184,7 +184,9 @@ def test_skin_twin_validates_owner_derived_product_scenarios_without_predicting(
         {
             "module": "skin_twin",
             "task": "scenario_validation",
-            "input_record_refs": ["skin_twin_snapshots:11111111-1111-4111-8111-111111111114"],
+            "input_record_refs": [
+                "skin_twin_snapshots:11111111-1111-4111-8111-111111111114"
+            ],
             "inputs": {
                 "baseline": {"face_scans": 2, "sleep_logs": 8, "food_logs": 8},
                 "changes": {"better_sleep": True, "lower_stress": True},

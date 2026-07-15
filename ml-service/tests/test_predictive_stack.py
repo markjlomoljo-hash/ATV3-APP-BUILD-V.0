@@ -111,7 +111,9 @@ def test_prediction_rejects_missing_non_numeric_or_non_finite_features(inputs) -
         artifact.predict(inputs)
 
 
-def test_loader_requires_active_or_approved_checksum_verified_artifact(tmp_path) -> None:
+def test_loader_requires_active_or_approved_checksum_verified_artifact(
+    tmp_path,
+) -> None:
     registry_path, _ = _write_registry(tmp_path)
 
     loaded = load_approved_artifact(registry_path, task="flare_direction")
@@ -136,7 +138,9 @@ def test_loader_rejects_artifact_path_outside_registry_root(tmp_path) -> None:
     outside.write_text(json.dumps(_artifact_payload()), encoding="utf-8")
     payload = json.loads(registry_path.read_text(encoding="utf-8"))
     payload["models"][0]["artifact_uri"] = "../outside-artifact.json"
-    payload["models"][0]["artifact_hash"] = hashlib.sha256(outside.read_bytes()).hexdigest()
+    payload["models"][0]["artifact_hash"] = hashlib.sha256(
+        outside.read_bytes()
+    ).hexdigest()
     registry_path.write_text(json.dumps(payload), encoding="utf-8")
 
     with pytest.raises(ArtifactRejected, match="artifact_path_outside_registry_root"):

@@ -120,7 +120,9 @@ def _predict_core(payload: InferenceRequest) -> InferenceResponse:
                 feature_schema_version=artifact.feature_schema_version,
                 input_record_refs=payload.input_record_refs,
                 features_used=[
-                    name for name in artifact.feature_names if name not in invalid_features
+                    name
+                    for name in artifact.feature_names
+                    if name not in invalid_features
                 ],
                 features_missing=invalid_features,
                 sample_count=len(payload.input_record_refs),

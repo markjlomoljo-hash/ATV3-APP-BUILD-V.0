@@ -205,7 +205,10 @@ def _linear_probabilities(
     inputs: list[list[float]], weights: list[float], bias: float
 ) -> list[float]:
     return [
-        _sigmoid(sum(value * weight for value, weight in zip(row, weights, strict=True)) + bias)
+        _sigmoid(
+            sum(value * weight for value, weight in zip(row, weights, strict=True))
+            + bias
+        )
         for row in inputs
     ]
 
@@ -217,13 +220,19 @@ def _fit_logistic(
     bias = 0.0
     for _ in range(epochs):
         probabilities = _linear_probabilities(inputs, weights, bias)
-        errors = [probability - label for probability, label in zip(probabilities, labels, strict=True)]
+        errors = [
+            probability - label
+            for probability, label in zip(probabilities, labels, strict=True)
+        ]
         divisor = float(len(inputs))
         weights = [
             weight
             - rate
             * (
-                sum(error * row[index] for error, row in zip(errors, inputs, strict=True))
+                sum(
+                    error * row[index]
+                    for error, row in zip(errors, inputs, strict=True)
+                )
                 / divisor
                 + 0.001 * weight
             )
@@ -243,13 +252,20 @@ def _ann_probabilities(
     probabilities: list[float] = []
     for row in inputs:
         hidden = [
-            max(0.0, sum(weight * value for weight, value in zip(weights, row, strict=True)) + bias)
+            max(
+                0.0,
+                sum(weight * value for weight, value in zip(weights, row, strict=True))
+                + bias,
+            )
             + residual
             for weights, bias, residual in zip(matrix, hidden_bias, row, strict=True)
         ]
         probabilities.append(
             _sigmoid(
-                sum(value * weight for value, weight in zip(hidden, output_weights, strict=True))
+                sum(
+                    value * weight
+                    for value, weight in zip(hidden, output_weights, strict=True)
+                )
                 + output_bias
             )
         )
@@ -274,12 +290,19 @@ def _fit_residual_mlp(
         output_bias_gradient = 0.0
         for row, label in zip(inputs, labels, strict=True):
             preactivation = [
-                sum(weight * value for weight, value in zip(weights, row, strict=True)) + bias
+                sum(weight * value for weight, value in zip(weights, row, strict=True))
+                + bias
                 for weights, bias in zip(matrix, hidden_bias, strict=True)
             ]
-            hidden = [max(0.0, value) + residual for value, residual in zip(preactivation, row, strict=True)]
+            hidden = [
+                max(0.0, value) + residual
+                for value, residual in zip(preactivation, row, strict=True)
+            ]
             probability = _sigmoid(
-                sum(value * weight for value, weight in zip(hidden, output_weights, strict=True))
+                sum(
+                    value * weight
+                    for value, weight in zip(hidden, output_weights, strict=True)
+                )
                 + output_bias
             )
             error = probability - label
@@ -289,13 +312,18 @@ def _fit_residual_mlp(
                     upstream = error * output_weights[hidden_index]
                     hidden_bias_gradient[hidden_index] += upstream
                     for feature_index in range(size):
-                        matrix_gradient[hidden_index][feature_index] += upstream * row[feature_index]
+                        matrix_gradient[hidden_index][feature_index] += (
+                            upstream * row[feature_index]
+                        )
             output_bias_gradient += error
         for hidden_index in range(size):
             output_weights[hidden_index] -= rate * (
-                output_gradient[hidden_index] / divisor + 0.001 * output_weights[hidden_index]
+                output_gradient[hidden_index] / divisor
+                + 0.001 * output_weights[hidden_index]
             )
-            hidden_bias[hidden_index] -= rate * hidden_bias_gradient[hidden_index] / divisor
+            hidden_bias[hidden_index] -= (
+                rate * hidden_bias_gradient[hidden_index] / divisor
+            )
             for feature_index in range(size):
                 matrix[hidden_index][feature_index] -= rate * (
                     matrix_gradient[hidden_index][feature_index] / divisor
@@ -305,15 +333,26 @@ def _fit_residual_mlp(
     return matrix, hidden_bias, output_weights, output_bias
 
 
-def _fit_calibration(probabilities: list[float], labels: list[int]) -> tuple[float, float]:
-    logits = [math.log(max(1e-8, value) / max(1e-8, 1.0 - value)) for value in probabilities]
+def _fit_calibration(
+    probabilities: list[float], labels: list[int]
+) -> tuple[float, float]:
+    logits = [
+        math.log(max(1e-8, value) / max(1e-8, 1.0 - value)) for value in probabilities
+    ]
     slope = 1.0
     intercept = 0.0
     for _ in range(200):
         predictions = [_sigmoid(slope * value + intercept) for value in logits]
-        errors = [prediction - label for prediction, label in zip(predictions, labels, strict=True)]
+        errors = [
+            prediction - label
+            for prediction, label in zip(predictions, labels, strict=True)
+        ]
         divisor = float(len(labels))
-        slope -= 0.03 * sum(error * value for error, value in zip(errors, logits, strict=True)) / divisor
+        slope -= (
+            0.03
+            * sum(error * value for error, value in zip(errors, logits, strict=True))
+            / divisor
+        )
         intercept -= 0.03 * sum(errors) / divisor
     return slope, intercept
 
@@ -333,13 +372,17 @@ def _average_precision(probabilities: list[float], labels: list[int]) -> float:
 
 
 def _metrics(probabilities: list[float], labels: list[int]) -> dict[str, float]:
-    brier = sum((probability - label) ** 2 for probability, label in zip(probabilities, labels, strict=True)) / len(labels)
+    brier = sum(
+        (probability - label) ** 2
+        for probability, label in zip(probabilities, labels, strict=True)
+    ) / len(labels)
     calibration_error = 0.0
     for lower in (0.0, 0.2, 0.4, 0.6, 0.8):
         bucket = [
             (probability, label)
             for probability, label in zip(probabilities, labels, strict=True)
-            if lower <= probability < lower + 0.2 or (lower == 0.8 and probability == 1.0)
+            if lower <= probability < lower + 0.2
+            or (lower == 0.8 and probability == 1.0)
         ]
         if bucket:
             confidence = sum(item[0] for item in bucket) / len(bucket)
@@ -382,7 +425,9 @@ def train_predictive_ensemble(
     matrix, hidden_bias, output_weights, output_bias = _fit_residual_mlp(
         normalized_train, train_labels, epochs=epochs, seed=seed
     )
-    calibration_linear = _linear_probabilities(normalized_calibration, linear_weights, linear_bias)
+    calibration_linear = _linear_probabilities(
+        normalized_calibration, linear_weights, linear_bias
+    )
     calibration_ann = _ann_probabilities(
         normalized_calibration, matrix, hidden_bias, output_weights, output_bias
     )
@@ -438,7 +483,9 @@ def train_predictive_ensemble(
             ],
         }
     )
-    holdout_linear = _linear_probabilities(normalized_holdout, linear_weights, linear_bias)
+    holdout_linear = _linear_probabilities(
+        normalized_holdout, linear_weights, linear_bias
+    )
     holdout_ann = _ann_probabilities(
         normalized_holdout, matrix, hidden_bias, output_weights, output_bias
     )
@@ -448,8 +495,7 @@ def train_predictive_ensemble(
     ]
     holdout_calibrated = [
         _sigmoid(
-            calibration_slope
-            * math.log(max(1e-8, value) / max(1e-8, 1.0 - value))
+            calibration_slope * math.log(max(1e-8, value) / max(1e-8, 1.0 - value))
             + calibration_intercept
         )
         for value in holdout_blended
@@ -483,7 +529,11 @@ def run_governed_training(
     if digest != str(plan["snapshot_sha256"]).lower():
         raise TrainingDataRejected("snapshot_checksum_mismatch")
     try:
-        rows = [json.loads(line) for line in snapshot.read_text(encoding="utf-8").splitlines() if line.strip()]
+        rows = [
+            json.loads(line)
+            for line in snapshot.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
     except (OSError, json.JSONDecodeError) as exc:
         raise TrainingDataRejected("snapshot_jsonl_invalid") from exc
     if not all(isinstance(row, dict) for row in rows):

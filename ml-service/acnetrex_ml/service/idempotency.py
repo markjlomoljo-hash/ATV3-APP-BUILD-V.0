@@ -283,9 +283,7 @@ class PostgresIdempotencyStore:
         self, connection_string: str, *, processing_timeout_seconds: int = 120
     ) -> None:
         self.connection_string = connection_string
-        self.processing_timeout_seconds = max(
-            1, min(processing_timeout_seconds, 3_600)
-        )
+        self.processing_timeout_seconds = max(1, min(processing_timeout_seconds, 3_600))
 
     def _connect(self) -> Any:
         try:

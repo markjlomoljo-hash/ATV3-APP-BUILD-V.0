@@ -46,7 +46,9 @@ class EnsembleConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_weights(self) -> "EnsembleConfig":
-        if not math.isclose(self.structured_weight + self.ann_weight, 1.0, abs_tol=1e-8):
+        if not math.isclose(
+            self.structured_weight + self.ann_weight, 1.0, abs_tol=1e-8
+        ):
             raise ValueError("ensemble weights must sum to one")
         return self
 
@@ -110,7 +112,9 @@ class PredictiveArtifact(BaseModel):
             raise ValueError("artifact dimensions do not match feature schema")
         if any(len(row) != size for row in self.residual_mlp.input_weights):
             raise ValueError("residual MLP weight matrix must be square")
-        if any(value <= 0 or not math.isfinite(value) for value in self.normalization.scale):
+        if any(
+            value <= 0 or not math.isfinite(value) for value in self.normalization.scale
+        ):
             raise ValueError("normalization scale must be finite and positive")
         return self
 
@@ -135,8 +139,7 @@ class PredictiveArtifact(BaseModel):
             )
         ]
         structured_logit = (
-            _dot(normalized, self.structured_model.weights)
-            + self.structured_model.bias
+            _dot(normalized, self.structured_model.weights) + self.structured_model.bias
         )
         hidden = [
             max(0.0, _dot(row, normalized) + bias) + residual
@@ -158,9 +161,8 @@ class PredictiveArtifact(BaseModel):
             + self.ensemble.ann_weight * ann_probability
         )
         calibrated = _sigmoid(
-            self.ensemble.calibration_slope * math.log(
-                max(1e-12, blended) / max(1e-12, 1.0 - blended)
-            )
+            self.ensemble.calibration_slope
+            * math.log(max(1e-12, blended) / max(1e-12, 1.0 - blended))
             + self.ensemble.calibration_intercept
         )
         contributions = {
@@ -174,7 +176,9 @@ class PredictiveArtifact(BaseModel):
         }
         return PredictiveResult(
             probability=calibrated,
-            label="higher" if calibrated >= self.ensemble.threshold else "lower_or_stable",
+            label="higher"
+            if calibrated >= self.ensemble.threshold
+            else "lower_or_stable",
             component_probabilities={
                 "structured": structured_probability,
                 "residual_mlp": ann_probability,
