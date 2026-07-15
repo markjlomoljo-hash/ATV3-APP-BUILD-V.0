@@ -1,0 +1,3 @@
+ml-service/manifests/*.json text eol=lf
+ml-service/schemas/*.json text eol=lf
+ml-service/reports/**/*.md text eol=lf
