@@ -13,8 +13,6 @@ import {
   loadLatestCachedMlResult,
   loadSleepDermInputs,
   mobileMlCoordinator,
-  replayPendingMlOperations,
-  resumePendingMlJobs,
 } from "../src/lib/ml";
 import {
   getCanonicalConsent,
@@ -99,21 +97,6 @@ export default function ReadinessScreen() {
     });
     void loadLatestCachedMlResult().then(setLatestResult).catch(() => undefined);
   }, []);
-
-  useEffect(() => {
-    if (!networkAvailable) return;
-    const syncPending = async () => {
-      await replayPendingMlOperations();
-      const completed = await resumePendingMlJobs();
-      const latest = completed.at(-1) ?? await loadLatestCachedMlResult();
-      if (latest) setLatestResult(latest);
-    };
-    void syncPending().catch(() => undefined);
-    const subscription = AppState.addEventListener("change", (state) => {
-      if (state === "active") void syncPending().catch(() => undefined);
-    });
-    return () => subscription.remove();
-  }, [networkAvailable]);
 
   const local = evaluateReadiness({
     required: { consent: null, timezone: "Asia/Manila" },

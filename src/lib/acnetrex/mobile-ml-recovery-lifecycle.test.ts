@@ -12,6 +12,7 @@ describe("mobile ML recovery lifecycle", () => {
     const foreground = lifecycle.onForeground();
     const reconnect = lifecycle.onNetworkAvailable();
 
+    await Promise.resolve();
     expect(recover).toHaveBeenCalledTimes(1);
     resolveRecovery();
     await Promise.all([initial, foreground, reconnect]);

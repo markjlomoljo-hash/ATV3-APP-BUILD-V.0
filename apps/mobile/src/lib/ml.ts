@@ -96,6 +96,11 @@ export async function resumePendingMlJobs() {
   return completed;
 }
 
+export async function recoverPendingMlWork() {
+  await replayPendingMlOperations();
+  return resumePendingMlJobs();
+}
+
 export async function loadLatestCachedMlResult() {
   return getLatestCachedMlJobResult(await authenticatedUserId());
 }
