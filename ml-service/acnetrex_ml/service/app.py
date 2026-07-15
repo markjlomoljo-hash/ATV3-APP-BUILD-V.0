@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import secrets
@@ -319,6 +320,13 @@ def create_app(
             and registry_state == "ready"
             and persistence_ready
         )
+        if not ready:
+            logging.getLogger("uvicorn.error").warning(
+                "readiness_failed artifact_state=%s registry_state=%s persistence_state=%s",
+                artifact_integrity["state"],
+                registry_state,
+                "ready" if persistence_ready else "error",
+            )
         return JSONResponse(
             status_code=200 if ready else 503,
             content={
