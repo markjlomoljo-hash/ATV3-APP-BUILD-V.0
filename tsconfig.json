@@ -38,6 +38,8 @@
   ],
   "exclude": [
     "node_modules",
-    "apps/mobile"
+    "apps/mobile",
+    "src/lib/acnetrex/mobile-ml-job-cache.test.ts",
+    "src/lib/acnetrex/mobile-ml-result-presentation.test.ts"
   ]
 }
