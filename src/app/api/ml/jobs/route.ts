@@ -10,6 +10,7 @@ import { enqueueMlAnalysisJob, mlAnalysisRequestSchema } from "@/lib/acnetrex/ml
 export const dynamic = "force-dynamic";
 
 const operationKeySchema = z.string().min(16).max(200).regex(/^[A-Za-z0-9._:-]+$/);
+const requestIdSchema = z.string().uuid();
 
 function jsonError(error: string, status: number, details?: unknown) {
   return NextResponse.json({ ok: false, error, ...(details ? { details } : {}) }, { status });
@@ -17,7 +18,7 @@ function jsonError(error: string, status: number, details?: unknown) {
 
 function requestId(request: Request): string {
   const value = request.headers.get("x-request-id");
-  return operationKeySchema.safeParse(value).success ? value! : randomUUID();
+  return requestIdSchema.safeParse(value).success ? value! : randomUUID();
 }
 
 export async function POST(request: Request) {

@@ -21,6 +21,7 @@ type MlWorkerOutcome = { status: string };
 type ProcessBatch = (options: {
   maxJobs: number;
   workerId: string;
+  signal: AbortSignal;
 }) => Promise<readonly MlWorkerOutcome[]>;
 
 type RuntimeEvent =
@@ -151,6 +152,7 @@ export async function runMlWorkerLoop(options: WorkerLoopOptions): Promise<void>
         const outcomes = await options.processBatch({
           maxJobs: options.config.maxJobs,
           workerId: options.config.workerId,
+          signal,
         });
         const outcome = outcomes.at(-1)?.status ?? "idle";
         options.state.ready = true;

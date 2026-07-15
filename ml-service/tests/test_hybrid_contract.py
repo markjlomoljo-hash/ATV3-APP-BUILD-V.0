@@ -128,6 +128,87 @@ def test_deterministic_prediction_uses_full_honest_contract(monkeypatch) -> None
     assert result["readiness_state"] == "ready"
 
 
+def test_unavailable_deterministic_response_never_substitutes_diagnostic_output(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ML_SERVICE_API_KEY", "server-secret")
+    body = inference_payload()
+    body["inputs"] = {"records": []}
+
+    response = client.post(
+        "/v1/predict",
+        json=body,
+        headers={
+            "authorization": "Bearer server-secret",
+            "idempotency-key": body["idempotency_key"],
+        },
+    )
+
+    assert response.status_code == 422
+    result = response.json()
+    assert result["readiness_state"] == "insufficient_data"
+    assert result["result"] is None
+    assert result["confidence"] is None
+    assert "bedtime" in result["features_missing"]
+
+
+def test_consent_restricted_response_has_null_result(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ML_SERVICE_API_KEY", "server-secret")
+    body = inference_payload()
+    body["consent"]["personal_processing"] = False
+
+    response = client.post(
+        "/v1/predict",
+        json=body,
+        headers={
+            "authorization": "Bearer server-secret",
+            "idempotency-key": body["idempotency_key"],
+        },
+    )
+
+    assert response.status_code == 422
+    result = response.json()
+    assert result["readiness_state"] == "consent_restricted"
+    assert result["result"] is None
+
+
+def test_skin_twin_validates_owner_derived_product_scenarios_without_predicting(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ML_SERVICE_API_KEY", "server-secret")
+    body = inference_payload()
+    body.update(
+        {
+            "module": "skin_twin",
+            "task": "scenario_validation",
+            "input_record_refs": ["skin_twin_snapshots:11111111-1111-4111-8111-111111111114"],
+            "inputs": {
+                "baseline": {"face_scans": 2, "sleep_logs": 8, "food_logs": 8},
+                "changes": {"better_sleep": True, "lower_stress": True},
+                "horizon_days": 7,
+            },
+        }
+    )
+
+    response = client.post(
+        "/v1/predict",
+        json=body,
+        headers={
+            "authorization": "Bearer server-secret",
+            "idempotency-key": body["idempotency_key"],
+        },
+    )
+
+    assert response.status_code == 200
+    result = response.json()
+    assert result["readiness_state"] == "ready"
+    assert result["result"]["scenario_result"] is None
+    assert result["result"]["validated_changes"] == ["better_sleep", "lower_stress"]
+
+
 def test_contract_forbids_client_identity(monkeypatch) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("ML_SERVICE_API_KEY", "server-secret")

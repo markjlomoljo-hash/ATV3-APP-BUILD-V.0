@@ -72,6 +72,7 @@ describe("persistent ML worker runtime", () => {
     });
 
     expect(processBatch).toHaveBeenCalledTimes(2);
+    expect(processBatch).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }));
     expect(sleep).toHaveBeenNthCalledWith(1, 5_000, expect.any(AbortSignal));
     expect(state).toMatchObject({
       ready: true,

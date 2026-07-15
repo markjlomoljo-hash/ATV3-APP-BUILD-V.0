@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   cancelOperation,
@@ -6,6 +6,7 @@ import {
   prepareReplay,
   scheduleRetry,
 } from "../src/index";
+import { replayMobileMlOperations } from "../src/mobile-job-coordinator";
 
 const createId = (() => {
   const ids = [
@@ -77,5 +78,82 @@ describe("offline replay reliability", () => {
       last_error_code: "logout_cancelled",
       idempotency_key: operation.idempotency_key,
     });
+  });
+
+  it("replays a ready mobile ML operation with its original identities", async () => {
+    const operation = createOfflineOperation({
+      method: "POST",
+      route: "/api/ml/jobs",
+      validatedPayload: {
+        engine: "sleepderm",
+        operation: "sleep_pattern_analysis",
+        inputRecordRefs: [],
+        features: { records: [] },
+        metadata: {},
+      },
+      payloadSchemaVersion: "1",
+      now: "2026-07-14T00:00:00.000Z",
+    }, () => "66666666-6666-4666-8666-666666666666");
+    const put = vi.fn().mockResolvedValue(undefined);
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const submit = vi.fn().mockResolvedValue({ jobId: "job-replayed" });
+    const rememberJob = vi.fn().mockResolvedValue(undefined);
+
+    const outcomes = await replayMobileMlOperations({
+      store: {
+        put,
+        get: vi.fn(),
+        listReady: vi.fn().mockResolvedValue([operation]),
+        remove,
+      },
+      submit,
+      rememberJob,
+      now: () => new Date("2026-07-14T00:00:01.000Z"),
+    });
+
+    expect(submit).toHaveBeenCalledWith(operation.validated_payload, {
+      localOperationId: operation.local_operation_id,
+      idempotencyKey: operation.idempotency_key,
+      requestId: operation.request_id,
+    });
+    expect(remove).toHaveBeenCalledWith(operation.local_operation_id);
+    expect(rememberJob).toHaveBeenCalledWith("job-replayed", operation.request_id);
+    expect(rememberJob.mock.invocationCallOrder[0]).toBeLessThan(remove.mock.invocationCallOrder[0]);
+    expect(outcomes).toEqual([{ localOperationId: operation.local_operation_id, status: "completed", jobId: "job-replayed" }]);
+  });
+
+  it("terminalizes an offline operation with an unsupported engine before submission", async () => {
+    const operation = createOfflineOperation({
+      method: "POST",
+      route: "/api/ml/jobs",
+      validatedPayload: {
+        engine: "untrusted_engine",
+        operation: "readiness",
+        inputRecordRefs: [],
+        features: {},
+        metadata: {},
+      },
+      payloadSchemaVersion: "1",
+      now: "2026-07-14T00:00:00.000Z",
+    }, () => "77777777-7777-4777-8777-777777777777");
+    const put = vi.fn().mockResolvedValue(undefined);
+    const submit = vi.fn();
+
+    const outcomes = await replayMobileMlOperations({
+      store: {
+        put,
+        get: vi.fn(),
+        listReady: vi.fn().mockResolvedValue([operation]),
+        remove: vi.fn(),
+      },
+      submit,
+    });
+
+    expect(submit).not.toHaveBeenCalled();
+    expect(outcomes).toEqual([{
+      localOperationId: operation.local_operation_id,
+      status: "failed_terminal",
+      errorCode: "invalid_offline_ml_operation",
+    }]);
   });
 });

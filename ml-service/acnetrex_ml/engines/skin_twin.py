@@ -3,13 +3,27 @@ from __future__ import annotations
 from typing import Any
 
 ALLOWED_SCENARIOS = {
-    "sleep_consistency",
-    "stress_reduction",
-    "hydration_consistency",
+    "better_sleep",
+    "reduced_sleep_debt",
+    "circadian_improvement",
+    "lower_stress",
+    "reduced_dairy",
+    "reduced_high_glycemic",
+    "reduced_sugary_processed_snacks",
+    "hydration_improvement",
+    "meal_timing_consistency",
     "routine_consistency",
-    "treatment_adherence",
-    "contact_reduction",
+    "product_removal",
+    "product_replacement",
+    "active_ingredient_pause",
+    "active_ingredient_introduction_provider_review",
     "sunscreen_consistency",
+    "treatment_adherence",
+    "missed_dose_reduction",
+    "weather_exposure_change",
+    "reduced_contact_occlusion",
+    "reduced_picking_touching",
+    "cycle_context_confounder",
 }
 
 

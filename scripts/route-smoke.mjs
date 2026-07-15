@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const routes = [
   "/",
@@ -70,7 +71,23 @@ const routes = [
   "/admin/clinical",
 ];
 
-const baseUrl = process.env.ROUTE_SMOKE_BASE_URL ?? "http://127.0.0.1:3100";
+export function normalizeSmokeBaseUrl(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("invalid_route_smoke_base_url");
+  }
+  const validProtocol = url.protocol === "http:" || url.protocol === "https:";
+  const validPort = url.port === "" || (/^\d{1,5}$/.test(url.port) && Number(url.port) >= 1 && Number(url.port) <= 65_535);
+  if (!validProtocol || !validPort || url.username || url.password || url.search || url.hash || url.pathname !== "/") {
+    throw new Error("invalid_route_smoke_base_url");
+  }
+  return url;
+}
+
+const configuredBaseUrl = normalizeSmokeBaseUrl(process.env.ROUTE_SMOKE_BASE_URL ?? "http://127.0.0.1:3100");
+const baseUrl = configuredBaseUrl.origin;
 let server;
 
 async function fetchWithTimeout(url, timeoutMs = 15_000) {
@@ -105,16 +122,14 @@ async function ensureServer() {
       return;
     }
   } catch {
-    const url = new URL(baseUrl);
-    const port = url.port || "3100";
-    const command = process.platform === "win32" ? "cmd.exe" : process.execPath;
+    if (!new Set(["127.0.0.1", "localhost", "::1"]).has(configuredBaseUrl.hostname)) {
+      throw new Error(`Route smoke target is unavailable at ${baseUrl}`);
+    }
+    const port = configuredBaseUrl.port || "3100";
     const nextCli = path.join(process.cwd(), "node_modules", "next", "dist", "bin", "next");
-    const args =
-      process.platform === "win32"
-        ? ["/c", "npm.cmd", "start", "--", "--hostname", "127.0.0.1", "--port", port]
-        : [nextCli, "start", "--hostname", "127.0.0.1", "--port", port];
+    const args = [nextCli, "start", "--hostname", "127.0.0.1", "--port", port];
 
-    server = spawn(command, args, {
+    server = spawn(process.execPath, args, {
       // Inheriting output avoids a pipe backpressure deadlock and preserves the
       // server error that explains startup failures in CI.
       stdio: "inherit",
@@ -124,8 +139,78 @@ async function ensureServer() {
   }
 }
 
+function hasOpeningTag(html, tagName) {
+  const lower = html.toLowerCase();
+  const needle = `<${tagName}`;
+  let index = lower.indexOf(needle);
+  while (index !== -1) {
+    const boundary = lower[index + needle.length];
+    if (boundary === ">" || boundary === "/" || boundary === " " || boundary === "\t" || boundary === "\r" || boundary === "\n") {
+      return true;
+    }
+    index = lower.indexOf(needle, index + needle.length);
+  }
+  return false;
+}
+
+function tagEnd(html, start) {
+  let quote = null;
+  for (let index = start; index < html.length; index += 1) {
+    const character = html[index];
+    if (quote) {
+      if (character === quote) quote = null;
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === ">") return index;
+  }
+  return html.length - 1;
+}
+
+function startsTag(tagSource, tagName) {
+  if (!tagSource.startsWith(tagName)) return false;
+  const boundary = tagSource[tagName.length];
+  return boundary === undefined || boundary === ">" || boundary === "/" || boundary === " " || boundary === "\t" || boundary === "\r" || boundary === "\n";
+}
+
+export function visibleTextFromHtml(html) {
+  const lower = html.toLowerCase();
+  const visible = [];
+  let index = 0;
+  while (index < html.length) {
+    if (html[index] !== "<") {
+      visible.push(html[index]);
+      index += 1;
+      continue;
+    }
+    if (lower.startsWith("<!--", index)) {
+      const commentEnd = lower.indexOf("-->", index + 4);
+      index = commentEnd === -1 ? html.length : commentEnd + 3;
+      continue;
+    }
+    const end = tagEnd(html, index + 1);
+    const source = lower.slice(index + 1, end).trimStart();
+    const hiddenTag = startsTag(source, "script") ? "script" : startsTag(source, "style") ? "style" : null;
+    if (!hiddenTag) {
+      visible.push(" ");
+      index = end + 1;
+      continue;
+    }
+    const closing = lower.indexOf(`</${hiddenTag}`, end + 1);
+    if (closing === -1) {
+      index = html.length;
+      continue;
+    }
+    index = tagEnd(html, closing + 2 + hiddenTag.length) + 1;
+  }
+  return visible.join("");
+}
+
 function bodyHasTitle(html) {
-  return /<h1[\s>]/i.test(html) || /<title[\s>]/i.test(html);
+  return hasOpeningTag(html, "h1") || hasOpeningTag(html, "title");
 }
 
 async function run() {
@@ -141,7 +226,7 @@ async function run() {
       continue;
     }
     const html = await response.text();
-    const text = html.replace(/<script[\s\S]*?<\/script>/gi, "").replace(/<style[\s\S]*?<\/style>/gi, "");
+    const text = visibleTextFromHtml(html);
 
     if (!response.ok) {
       failures.push(`${route}: HTTP ${response.status}`);
@@ -165,18 +250,23 @@ async function run() {
   }
 }
 
-try {
-  await run();
-} finally {
-  if (server) {
-    if (process.platform === "win32" && server.pid) {
-      spawnSync("taskkill", ["/pid", String(server.pid), "/T", "/F"], { stdio: "ignore" });
-    } else {
-      server.kill();
-      await Promise.race([
-        new Promise((resolve) => server.once("exit", resolve)),
-        new Promise((resolve) => setTimeout(resolve, 5_000)),
-      ]);
+async function main() {
+  try {
+    await run();
+  } finally {
+    if (server) {
+      if (process.platform === "win32" && server.pid) {
+        spawnSync("taskkill", ["/pid", String(server.pid), "/T", "/F"], { stdio: "ignore" });
+      } else {
+        server.kill();
+        await Promise.race([
+          new Promise((resolve) => server.once("exit", resolve)),
+          new Promise((resolve) => setTimeout(resolve, 5_000)),
+        ]);
+      }
     }
   }
 }
+
+const entrypoint = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : null;
+if (entrypoint === import.meta.url) await main();
