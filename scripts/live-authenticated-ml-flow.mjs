@@ -14,10 +14,20 @@ function password() {
 }
 
 async function jsonRequest(url, init = {}) {
-  const response = await fetch(url, {
-    ...init,
-    headers: { accept: "application/json", ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) },
-  });
+  let response;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      response = await fetch(url, {
+        ...init,
+        headers: { accept: "application/json", ...(init.body ? { "content-type": "application/json" } : {}), ...(init.headers ?? {}) },
+      });
+      break;
+    } catch (error) {
+      if (attempt === 4) throw error;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1_000));
+    }
+  }
+  if (!response) throw new Error("request_failed_without_response");
   const text = await response.text();
   let body = null;
   try {

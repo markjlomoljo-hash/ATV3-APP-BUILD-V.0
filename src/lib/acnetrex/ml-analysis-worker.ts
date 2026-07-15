@@ -595,7 +595,8 @@ async function persistSuccess(client: PoolClient, job: ClaimedJob, payload: Infe
   if (updatedJob.rowCount !== 1) throw new MlWorkerLeaseLostError();
   await client.query(
     `insert into public.consumer_inbox (consumer_name, event_id, result_reference)
-     values ('railway-ml-worker',$1::uuid,jsonb_build_object('jobId',$2,'status',$3))
+     values ('railway-ml-worker',$1::uuid,
+             jsonb_build_object('jobId',$2::uuid,'status',$3::text))
      on conflict (consumer_name, event_id) do nothing`,
     [job.outboxId, job.jobId, durableStatus],
   );

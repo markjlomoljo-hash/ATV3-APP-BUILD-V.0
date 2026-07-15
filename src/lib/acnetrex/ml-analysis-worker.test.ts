@@ -173,6 +173,11 @@ describe("ML analysis worker", () => {
     expect(resultInsert).toContain("readiness_state");
     expect(resultInsert).toContain("idempotency_key");
     expect(resultInsert).toContain("on conflict (job_id) do update set");
+    const inboxInsert = fakeClient.query.mock.calls
+      .map(([sql]) => String(sql))
+      .find((sql) => sql.includes("insert into public.consumer_inbox"));
+    expect(inboxInsert).toContain("$2::uuid");
+    expect(inboxInsert).toContain("$3::text");
     expect(queries.some((sql) => sql.includes("insert into public.consumer_inbox"))).toBe(true);
     expect(queries.some((sql) => sql.includes("status='processed'"))).toBe(true);
   });
