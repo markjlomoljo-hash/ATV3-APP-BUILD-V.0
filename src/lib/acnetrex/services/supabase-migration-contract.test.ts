@@ -38,6 +38,12 @@ const legacyGrantHardeningMigrationPath = join(
   "migrations",
   "20260714070000_revoke_legacy_anon_and_client_writes.sql",
 );
+const mlDeliveryReconciliationMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260714143000_ml_delivery_state_reconciliation.sql",
+);
 
 describe("Supabase migration contract", () => {
   it("defines persistent memory and ML lineage tables with RLS enabled", () => {
@@ -241,5 +247,27 @@ describe("legacy public grant hardening", () => {
     );
     expect(sql).toContain('drop policy if exists "owner read" on public.ml_analysis_jobs');
     expect(sql).toContain('drop policy if exists "owner read" on public.ml_analysis_results');
+  });
+});
+
+describe("ML delivery state reconciliation", () => {
+  it("separates processing permissions from learning and raw-image retention with default deny", () => {
+    const sql = readFileSync(mlDeliveryReconciliationMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("personal_processing boolean not null default false");
+    expect(sql).toContain("raw_image_processing boolean not null default false");
+    expect(sql).not.toContain("update public.consents set personal_processing = personal_learning");
+    expect(sql).not.toContain("update public.consents set raw_image_processing = raw_image_retention");
+  });
+
+  it("pins the worker outbox lifecycle and restores explicit owner-only result reads", () => {
+    const sql = readFileSync(mlDeliveryReconciliationMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("'pending', 'leased', 'processed', 'failed_retryable', 'dead_letter'");
+    expect(sql).toContain('drop policy if exists "users own ml_analysis_jobs rows"');
+    expect(sql).toContain('drop policy if exists "users own ml_analysis_results rows"');
+    expect(sql).toContain('create policy "owner read" on public.ml_analysis_jobs for select to authenticated');
+    expect(sql).toContain('create policy "owner read" on public.ml_analysis_results for select to authenticated');
+    expect(sql).not.toContain("for all to authenticated");
   });
 });
