@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import stat
+from pathlib import Path
 from typing import Any
 
 from acnetrex_ml.contracts.requests import InferenceRequest
@@ -216,3 +219,25 @@ def test_prepare_replays_the_committed_canonical_response() -> None:
     assert not any(
         "from public.sleep_logs" in sql for sql, _params in database.executed
     )
+
+
+def test_verified_database_ca_is_written_privately_and_used_by_psycopg() -> None:
+    certificate = (
+        "-----BEGIN CERTIFICATE-----\ntrusted-test-ca\n-----END CERTIFICATE-----"
+    )
+    repository = PostgresAnalysisRepository(
+        "postgresql://example.invalid/db?sslmode=verify-full&sslrootcert=missing",
+        ca_certificate=certificate.replace("\n", "\\n"),
+    )
+
+    parameters = repository._connection_parameters()
+    certificate_path = Path(parameters["sslrootcert"])
+
+    try:
+        assert parameters["sslmode"] == "verify-full"
+        assert certificate_path.read_text(encoding="utf-8") == certificate
+        if os.name == "posix":
+            assert stat.S_IMODE(certificate_path.stat().st_mode) & 0o077 == 0
+    finally:
+        repository.close()
+    assert not certificate_path.exists()

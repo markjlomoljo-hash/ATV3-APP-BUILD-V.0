@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Callable, Literal
@@ -76,10 +79,55 @@ class PostgresAnalysisRepository:
         *,
         connect_factory: Callable[[], Any] | None = None,
         lease_seconds: int = 120,
+        ca_certificate: str | None = None,
     ) -> None:
         self.connection_string = connection_string
         self.connect_factory = connect_factory
         self.lease_seconds = max(30, min(int(lease_seconds), 900))
+        self.ca_certificate = ca_certificate
+        self._ca_certificate_path: str | None = None
+        self._ca_lock = threading.Lock()
+
+    def _connection_parameters(self) -> dict[str, str]:
+        if not self.ca_certificate:
+            return {}
+        certificate = self.ca_certificate.strip().replace("\\n", "\n")
+        if (
+            "-----BEGIN CERTIFICATE-----" not in certificate
+            or "-----END CERTIFICATE-----" not in certificate
+        ):
+            raise PersistenceRejected("database_tls_ca_invalid")
+        with self._ca_lock:
+            if self._ca_certificate_path is None:
+                descriptor, path = tempfile.mkstemp(
+                    prefix="acnetrex-supabase-ca-", suffix=".pem"
+                )
+                os.close(descriptor)
+                try:
+                    os.chmod(path, 0o600)
+                    with open(path, "w", encoding="utf-8") as handle:
+                        handle.write(certificate)
+                except BaseException:
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+                    raise
+                self._ca_certificate_path = path
+        return {
+            "sslmode": "verify-full",
+            "sslrootcert": self._ca_certificate_path,
+        }
+
+    def close(self) -> None:
+        with self._ca_lock:
+            path = self._ca_certificate_path
+            self._ca_certificate_path = None
+        if path:
+            try:
+                os.unlink(path)
+            except FileNotFoundError:
+                pass
 
     def _connect(self) -> Any:
         if self.connect_factory is not None:
@@ -93,6 +141,7 @@ class PostgresAnalysisRepository:
             self.connection_string,
             row_factory=dict_row,
             prepare_threshold=None,
+            **self._connection_parameters(),
         )
 
     def healthcheck(self) -> bool:

@@ -195,8 +195,13 @@ def test_railway_repository_builder_fails_closed_without_database_url(
     assert build_analysis_repository() is None
 
     monkeypatch.setenv("DATABASE_URL", "postgresql://railway-worker@example.test/db")
+    monkeypatch.setenv(
+        "SUPABASE_DB_CA_CERT",
+        "-----BEGIN CERTIFICATE-----\\nca\\n-----END CERTIFICATE-----",
+    )
     repository = build_analysis_repository()
     assert isinstance(repository, PostgresAnalysisRepository)
+    assert repository.ca_certificate is not None
 
 
 def test_canonical_health_and_inference_routes_match_mobile_backend_contract(

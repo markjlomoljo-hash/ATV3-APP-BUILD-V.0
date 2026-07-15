@@ -25,4 +25,7 @@ def build_analysis_repository() -> PostgresAnalysisRepository | None:
         ("postgres://", "postgresql://")
     ):
         return None
-    return PostgresAnalysisRepository(database_url)
+    return PostgresAnalysisRepository(
+        database_url,
+        ca_certificate=os.getenv("SUPABASE_DB_CA_CERT"),
+    )
