@@ -5,7 +5,10 @@ from fastapi.testclient import TestClient
 
 from acnetrex_ml.service.app import create_app
 from acnetrex_ml.service.dependencies import build_analysis_repository
-from acnetrex_ml.service.persistence import PostgresAnalysisRepository
+from acnetrex_ml.service.persistence import (
+    PersistenceRejected,
+    PostgresAnalysisRepository,
+)
 
 
 def inference_payload() -> dict:
@@ -43,6 +46,8 @@ class FakeRailwayPersistence:
 
     def prepare(self, payload, request_hash: str):
         self.prepared_payload = payload
+        if self.prepare_state == "rejected":
+            raise PersistenceRejected("stored_job_owner_mismatch")
         if self.prepare_state == "replay":
             return SimpleNamespace(
                 state="replay",
@@ -115,6 +120,9 @@ def test_railway_mode_uses_owner_derived_inputs_and_finalizes_before_200(
     result = response.json()
     assert result["job_id"] == body["request_id"]
     assert result["readiness_state"] == "ready"
+    assert result["runtime_mode"] == "cloud_run"
+    assert result["runtime_provider"] == "acnetrex-railway-ml"
+    assert result["sync_status"] == "synced"
     assert result["input_record_refs"] == [
         "sleep_logs:11111111-1111-4111-8111-111111111115"
     ]
@@ -189,3 +197,36 @@ def test_railway_repository_builder_fails_closed_without_database_url(
     monkeypatch.setenv("DATABASE_URL", "postgresql://railway-worker@example.test/db")
     repository = build_analysis_repository()
     assert isinstance(repository, PostgresAnalysisRepository)
+
+
+def test_canonical_health_and_inference_routes_match_mobile_backend_contract(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ACNETREX_ML_SHARED_SECRET", "server-secret")
+    monkeypatch.setenv("ACNETREX_ML_PERSISTENCE_OWNER", "railway")
+    client = TestClient(create_app(analysis_repository=FakeRailwayPersistence()))
+
+    assert client.get("/live").status_code == 200
+    assert client.get("/ready").status_code == 200
+    assert client.get("/health").status_code == 200
+    root = client.get("/").json()
+    assert root["inference"] == "/api/v1/inference"
+    assert root["compatibility"] == "/predict"
+
+
+def test_stored_job_rejection_is_a_safe_terminal_contract_error(monkeypatch) -> None:
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("ACNETREX_ML_SHARED_SECRET", "server-secret")
+    monkeypatch.setenv("ACNETREX_ML_PERSISTENCE_OWNER", "railway")
+    persistence = FakeRailwayPersistence()
+    persistence.prepare_state = "rejected"
+    client = TestClient(create_app(analysis_repository=persistence))
+    body = inference_payload()
+
+    response = client.post(
+        "/api/v1/inference", json=body, headers=authenticated_headers(body)
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": {"code": "stored_job_owner_mismatch"}}
