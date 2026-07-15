@@ -233,6 +233,18 @@ def test_contract_forbids_client_identity(monkeypatch) -> None:
 
     assert response.status_code == 422
 
+    body = inference_payload()
+    body["job_id"] = body["request_id"]
+    response = client.post(
+        "/v1/predict",
+        json=body,
+        headers={
+            "authorization": "Bearer server-secret",
+            "idempotency-key": body["idempotency_key"],
+        },
+    )
+    assert response.status_code == 422
+
 
 def test_service_does_not_own_application_job_routes() -> None:
     routes = {route.path for route in app.routes}

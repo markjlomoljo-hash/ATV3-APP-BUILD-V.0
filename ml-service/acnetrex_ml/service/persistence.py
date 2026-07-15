@@ -291,16 +291,31 @@ class PostgresAnalysisRepository:
         if not isinstance(references, list):
             references = []
         owner_id = str(job["user_id"])
-        inputs: dict[str, Any] = {}
+        stored_features = _json_value(job.get("features"), {})
+        inputs: dict[str, Any] = (
+            dict(stored_features) if isinstance(stored_features, dict) else {}
+        )
         canonical_refs: list[str] = []
+        reference_ids: dict[str, list[str]] = {}
+        allowed_tables = {
+            "sleep_logs",
+            "food_logs",
+            "skin_state_logs",
+            "face_scans",
+            "skin_twin_snapshots",
+            "user_memory_facts",
+            "user_memory_summaries",
+        }
+        for item in references:
+            if not isinstance(item, dict):
+                continue
+            table = item.get("table")
+            record_id = item.get("id")
+            if table in allowed_tables and isinstance(record_id, str):
+                reference_ids.setdefault(str(table), []).append(record_id)
+
         if payload.module == "sleepderm":
-            ids = [
-                str(item["id"])
-                for item in references
-                if isinstance(item, dict)
-                and item.get("table") == "sleep_logs"
-                and isinstance(item.get("id"), str)
-            ]
+            ids = reference_ids.get("sleep_logs", [])
             records: list[dict[str, str]] = []
             if ids:
                 with self._connect() as connection, connection.cursor() as cursor:
@@ -329,7 +344,137 @@ class PostgresAnalysisRepository:
                     if row_id not in seen:
                         canonical_refs.append(f"sleep_logs:{row_id}")
                         seen.add(row_id)
-            inputs = {"records": records}
+            inputs["records"] = records
+        elif payload.module == "dermdiet":
+            ids = reference_ids.get("food_logs", [])
+            meals: list[dict[str, Any]] = []
+            snacks: list[dict[str, Any]] = []
+            rows: list[Any] = []
+            if ids:
+                with self._connect() as connection, connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        select id::text as id, log_date::text as log_date,
+                               meal_type, categories, completed
+                          from public.food_logs
+                         where user_id=%s::uuid and id=any(%s::uuid[])
+                         order by log_date asc, id asc
+                        """,
+                        (owner_id, ids),
+                    )
+                    rows = cursor.fetchall()
+                for row in rows:
+                    record = {
+                        "event_id": str(row["id"]),
+                        "date": _iso(row.get("log_date")),
+                        "categories": _json_value(row.get("categories"), []),
+                    }
+                    target = snacks if str(row.get("meal_type")) == "snack" else meals
+                    target.append(record)
+                    canonical_refs.append(f"food_logs:{row['id']}")
+            inputs.update(
+                {
+                    "meals": meals,
+                    "snacks": snacks,
+                    "marked_complete": bool(rows)
+                    and all(bool(row.get("completed")) for row in rows),
+                }
+            )
+        elif payload.module in {"triggergraph", "forecast"}:
+            ids = reference_ids.get("skin_state_logs", [])
+            outcomes: list[float] = []
+            if ids:
+                with self._connect() as connection, connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        select id::text as id, new_lesions, inflammation_level
+                          from public.skin_state_logs
+                         where user_id=%s::uuid and id=any(%s::uuid[])
+                         order by log_date asc, id asc
+                        """,
+                        (owner_id, ids),
+                    )
+                    rows = cursor.fetchall()
+                for row in rows:
+                    value = row.get("new_lesions")
+                    if value is None:
+                        value = row.get("inflammation_level")
+                    if value is not None:
+                        outcomes.append(float(value))
+                    canonical_refs.append(f"skin_state_logs:{row['id']}")
+            inputs["outcomes"] = outcomes
+        elif payload.module == "skin_twin":
+            ids = reference_ids.get("skin_twin_snapshots", [])
+            if ids:
+                with self._connect() as connection, connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        select id::text as id, scenario_payload, source_record_refs
+                          from public.skin_twin_snapshots
+                         where user_id=%s::uuid and id=any(%s::uuid[])
+                         order by snapshot_at desc, id asc limit 1
+                        """,
+                        (owner_id, ids),
+                    )
+                    row = cursor.fetchone()
+                if row:
+                    scenario = _json_value(row.get("scenario_payload"), {})
+                    if isinstance(scenario, dict):
+                        inputs.update(scenario)
+                    canonical_refs.append(f"skin_twin_snapshots:{row['id']}")
+        elif payload.module == "faceatlas":
+            ids = reference_ids.get("face_scans", [])
+            images: list[dict[str, Any]] = []
+            if ids:
+                with self._connect() as connection, connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        select id::text as id, angle, image_quality
+                          from public.face_scans
+                         where user_id=%s::uuid and id=any(%s::uuid[])
+                         order by captured_at asc, id asc
+                        """,
+                        (owner_id, ids),
+                    )
+                    rows = cursor.fetchall()
+                metadata_by_id = {
+                    str(item.get("record_id")): item
+                    for item in inputs.get("images", [])
+                    if isinstance(item, dict) and item.get("record_id")
+                }
+                for row in rows:
+                    image = dict(metadata_by_id.get(str(row["id"]), {}))
+                    image.update({"record_id": str(row["id"]), "angle": row["angle"]})
+                    images.append(image)
+                    canonical_refs.append(f"face_scans:{row['id']}")
+            inputs["images"] = images
+        elif payload.module == "cutisai":
+            fact_ids = reference_ids.get("user_memory_facts", [])
+            facts: list[dict[str, Any]] = []
+            if fact_ids:
+                with self._connect() as connection, connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        select id::text as id, fact_key, fact_value, confidence
+                          from public.user_memory_facts
+                         where user_id=%s::uuid and id=any(%s::uuid[])
+                           and deleted_at is null
+                         order by updated_at desc, id asc
+                         limit 20
+                        """,
+                        (owner_id, fact_ids),
+                    )
+                    rows = cursor.fetchall()
+                for row in rows:
+                    facts.append(
+                        {
+                            "fact_key": row.get("fact_key"),
+                            "fact_value": _json_value(row.get("fact_value"), None),
+                            "confidence": row.get("confidence"),
+                        }
+                    )
+                    canonical_refs.append(f"user_memory_facts:{row['id']}")
+            inputs["retrieved_facts"] = facts
         consent_data = _json_value(job.get("consent_snapshot"), {})
         if not isinstance(consent_data, dict):
             consent_data = {}
@@ -353,6 +498,144 @@ class PostgresAnalysisRepository:
                 "consent": consent,
             }
         )
+
+    def _persist_domain_projection(
+        self,
+        cursor: Any,
+        reservation: AnalysisReservation,
+        response: InferenceResponse,
+        status: str,
+    ) -> None:
+        if not reservation.request or not reservation.user_id or not reservation.job_id:
+            raise PersistenceRejected("reservation_incomplete")
+        request = reservation.request
+        result = response.result
+        cursor.execute(
+            """
+            insert into public.ml_feature_snapshots
+              (user_id, module, feature_schema_version, source_record_refs,
+               features, missing_features, confidence, source_job_id)
+            values (%s::uuid,%s,%s,%s::jsonb,%s::jsonb,%s::jsonb,%s,%s::uuid)
+            on conflict (source_job_id) do nothing
+            """,
+            (
+                reservation.user_id,
+                request.module,
+                request.feature_schema_version,
+                json.dumps(request.input_record_refs),
+                json.dumps(request.inputs, default=str),
+                json.dumps(response.features_missing),
+                response.confidence,
+                reservation.job_id,
+            ),
+        )
+        cursor.execute(
+            """
+            insert into public.intelligence_events
+              (user_id, module, event_type, runtime_mode, input_record_refs,
+               payload, source_job_id)
+            values (%s::uuid,%s,'ml_analysis_finalized',%s,%s::jsonb,%s::jsonb,%s::uuid)
+            """,
+            (
+                reservation.user_id,
+                request.module,
+                response.runtime_mode.value,
+                json.dumps(response.input_record_refs),
+                json.dumps(
+                    {
+                        "readiness_state": response.readiness_state.value,
+                        "result_type": response.result_type,
+                        "safety_state": response.safety_state.value,
+                    }
+                ),
+                reservation.job_id,
+            ),
+        )
+        if request.module == "triggergraph" and result is not None:
+            cursor.execute(
+                """
+                insert into public.trigger_hypotheses
+                  (user_id, trigger_name, evidence, confidence, status,
+                   observed_window, source_job_id)
+                values (%s::uuid,%s,%s::jsonb,%s,%s,%s::jsonb,%s::uuid)
+                on conflict (source_job_id) do nothing
+                """,
+                (
+                    reservation.user_id,
+                    str(request.inputs.get("exposure_name", "exploratory_pattern"))[:160],
+                    json.dumps(result),
+                    response.confidence,
+                    response.readiness_state.value,
+                    json.dumps({"lag_days": result.get("lag_days")}),
+                    reservation.job_id,
+                ),
+            )
+        elif request.module == "forecast" and result is not None:
+            horizon = int(result.get("horizon_days", request.inputs.get("horizon_days", 3)))
+            cursor.execute(
+                """
+                insert into public.forecasts
+                  (user_id, horizon_days, forecast, model_version, confidence,
+                   source_job_id)
+                values (%s::uuid,%s,%s::jsonb,%s,%s,%s::uuid)
+                on conflict (source_job_id) do nothing
+                """,
+                (
+                    reservation.user_id,
+                    horizon,
+                    json.dumps(result),
+                    response.model_version,
+                    response.confidence,
+                    reservation.job_id,
+                ),
+            )
+            summary = result.get("deterministic_recent_direction")
+            cursor.execute(
+                """
+                insert into public.forecast_summaries
+                  (user_id, window, status, summary, confidence, source_job_id)
+                values (%s,%s,%s,%s,%s,%s::uuid)
+                on conflict (source_job_id) do nothing
+                """,
+                (
+                    reservation.user_id,
+                    f"{horizon}d",
+                    response.readiness_state.value,
+                    str(summary) if summary is not None else None,
+                    response.confidence_label,
+                    reservation.job_id,
+                ),
+            )
+        elif request.module == "skin_twin":
+            snapshot_ids = [
+                value.split(":", 1)[1]
+                for value in response.input_record_refs
+                if value.startswith("skin_twin_snapshots:")
+            ]
+            if not snapshot_ids:
+                raise PersistenceRejected("skin_twin_snapshot_reference_missing")
+            cursor.execute(
+                """
+                update public.skin_twin_snapshots
+                   set status=%s, simulation=%s::jsonb, model_version=%s,
+                       confidence=%s, uncertainty=%s::jsonb, source_job_id=%s::uuid
+                 where id=%s::uuid and user_id=%s::uuid
+                   and (source_job_id is null or source_job_id=%s::uuid)
+                """,
+                (
+                    status,
+                    None if result is None else json.dumps(result),
+                    response.model_version,
+                    response.confidence_label,
+                    json.dumps(response.uncertainty),
+                    reservation.job_id,
+                    snapshot_ids[0],
+                    reservation.user_id,
+                    reservation.job_id,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise PersistenceRejected("skin_twin_snapshot_update_missing")
 
     def finalize(
         self,
@@ -447,6 +730,7 @@ class PostgresAnalysisRepository:
             if result_row is None:
                 raise PersistenceRejected("analysis_result_already_exists")
             result_id = str(result_row["id"])
+            self._persist_domain_projection(cursor, reservation, response, status)
             cursor.execute(
                 """
                 update public.ml_analysis_jobs

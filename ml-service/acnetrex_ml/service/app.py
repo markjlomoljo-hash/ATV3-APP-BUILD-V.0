@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from acnetrex_ml import CONTRACT_VERSION
@@ -30,7 +29,10 @@ from acnetrex_ml.runtime.vertex import VertexAdapter
 from acnetrex_ml.safety.consent import validate_consent
 from acnetrex_ml.safety.output_validation import validate_safe_output
 
-from .dependencies import build_analysis_repository, build_idempotency_store
+from .dependencies import (
+    build_analysis_repository,
+    build_idempotency_store,
+)
 from .idempotency import IdempotencyStore, canonical_hash
 from .middleware import RequestContextMiddleware
 from .persistence import PersistenceRejected
@@ -271,25 +273,6 @@ def create_app(
 
     application = FastAPI(title="AcneTrex ML", version="1.0.0", lifespan=lifespan)
     application.add_middleware(RequestContextMiddleware)
-    origins = [
-        item.strip()
-        for item in os.getenv("CORS_ORIGINS", "").split(",")
-        if item.strip()
-    ]
-    if origins:
-        application.add_middleware(
-            CORSMiddleware,
-            allow_origins=origins,
-            allow_methods=["GET", "POST", "OPTIONS"],
-            allow_headers=[
-                "Authorization",
-                "Content-Type",
-                "Idempotency-Key",
-                "X-Request-ID",
-                "traceparent",
-            ],
-            expose_headers=["Idempotency-Replayed", "X-Request-ID", "traceparent"],
-        )
 
     @application.get("/")
     async def root() -> dict[str, Any]:
@@ -347,6 +330,7 @@ def create_app(
                 "modelRegistryState": registry_state,
                 "artifactIntegrity": artifact_integrity,
                 "persistence": {"state": "ready" if persistence_ready else "error"},
+                "cloudProvider": {"state": "not_configured", "selectedTasks": []},
                 "vertex": {
                     "configured": bool(vertex.get("configured")),
                     "state": str(vertex.get("state", "not_configured")),
@@ -441,13 +425,14 @@ def create_app(
                     asyncio.to_thread(_predict_core, reservation.request),
                     timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
                 )
-                result = result.model_copy(
-                    update={
-                        "runtime_mode": RuntimeMode.CLOUD_RUN,
-                        "runtime_provider": "acnetrex-railway-ml",
-                        "sync_status": "synced",
-                    }
-                )
+                if result.runtime_mode == RuntimeMode.LOCAL_DETERMINISTIC:
+                    result = result.model_copy(
+                        update={
+                            "runtime_mode": RuntimeMode.CLOUD_RUN,
+                            "runtime_provider": "acnetrex-railway-ml",
+                            "sync_status": "synced",
+                        }
+                    )
                 body = await asyncio.to_thread(
                     repository.finalize,
                     reservation,

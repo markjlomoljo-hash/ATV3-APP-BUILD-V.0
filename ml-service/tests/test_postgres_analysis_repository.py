@@ -198,6 +198,8 @@ def test_finalize_commits_lineage_job_state_and_replay_record_before_readback() 
         if "select j.status, r.id as result_id" in sql
     )
     assert result_index < job_index < replay_index < readback_index
+    assert any("insert into public.ml_feature_snapshots" in sql for sql in statements)
+    assert any("insert into public.intelligence_events" in sql for sql in statements)
     assert database.commits >= 3
 
 

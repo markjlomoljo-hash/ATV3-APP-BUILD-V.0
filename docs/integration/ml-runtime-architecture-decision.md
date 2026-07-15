@@ -16,7 +16,7 @@ Keeping inference and its durable finalization under one owner prevents acknowle
 
 ## Model provider decision
 
-Cloud Run is the default cloud-hosted learned-model provider. Local predictive fallback is prohibited. Registry approval, dataset eligibility, immutable artifact checksum, schema compatibility, evaluation, and explicit activation are runtime gates. If those inputs do not exist, learned inference stays unavailable while deterministic modules may return transparent, non-learned output or abstain. Vertex AI is not active until a deployed model receives traffic.
+Cloud Run is the default cloud-hosted learned-model provider. Local predictive fallback is prohibited. Registry approval, dataset eligibility, immutable artifact checksum, schema compatibility, evaluation, and explicit activation are runtime gates. If those inputs do not exist, learned inference stays unavailable while deterministic modules execute inside Railway and may return transparent, non-learned output or abstain. Cloud Run selection uses a closed task allowlist and its availability does not gate deterministic Railway readiness. Vertex AI is not active until a deployed model receives traffic.
 
 ## Consequences
 

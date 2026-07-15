@@ -17,6 +17,9 @@ __pycache__/
 .pytest_cache/
 .venv/
 
+# Downloaded research snapshots are provenance-sensitive and must not be committed.
+research/acquisition/
+
 # Expo
 .expo/
 dist/

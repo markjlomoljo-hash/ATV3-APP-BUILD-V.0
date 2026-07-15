@@ -32,6 +32,9 @@ describe("ML local runtime integration contract", () => {
     expect(
       inferenceRequestSchema.safeParse({ ...validRequest, user_id: "client-supplied-owner" }).success,
     ).toBe(false);
+    expect(
+      inferenceRequestSchema.safeParse({ ...validRequest, job_id: validRequest.request_id }).success,
+    ).toBe(false);
     expect(inferenceRequestSchema.safeParse({ ...validRequest, consent: undefined }).success).toBe(false);
   });
 

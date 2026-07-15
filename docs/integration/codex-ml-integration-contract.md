@@ -18,7 +18,7 @@ The previous stateless FastAPI/Next.js-persistence topology is rollback-only. `A
 
 ## Identity and idempotency
 
-The `ml_analysis_jobs.id` UUID is also the request UUID. The dispatcher sends it as JSON `request_id`, JSON `job_id`, JSON `idempotency_key`, `Idempotency-Key`, and `X-Request-ID`. FastAPI rejects disagreement among any of those identities or the stored row.
+The `ml_analysis_jobs.id` UUID is also the request UUID. Contract v1 sends it as JSON `request_id`, JSON `idempotency_key`, `Idempotency-Key`, and `X-Request-ID`; the strict v1 request intentionally has no JSON `job_id`. FastAPI interprets `request_id` as the stored job UUID and rejects disagreement among those identities or the stored row. A distinct request/body `job_id` requires a versioned contract change.
 
 FastAPI returns the same UUID as `request_id` and `job_id`. A terminal result is acknowledged only after committed readback. The inference call, domain write, result write, terminal job transition, lineage/audit write, inbox close, and outbox close are therefore replay-safe across concurrency, restart, retry, and lost responses.
 

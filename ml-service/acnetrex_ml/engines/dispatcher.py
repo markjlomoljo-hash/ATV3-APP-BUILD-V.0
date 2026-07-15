@@ -38,6 +38,30 @@ def _readiness(inputs: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _cutisai_retrieval(inputs: dict[str, Any]) -> dict[str, Any]:
+    facts = inputs.get("retrieved_facts", [])
+    if not isinstance(facts, list) or not facts:
+        return {
+            "state": "evidence_unavailable",
+            "features_missing": ["owner_scoped_evidence"],
+            "limitations": [
+                "No owner-scoped evidence was available, so no assistant answer was generated."
+            ],
+        }
+    return {
+        "state": "ready",
+        "retrieval_only": True,
+        "retrieved_facts": facts,
+        "answer": None,
+        "sample_count": len(facts),
+        "evidence_state": "available",
+        "limitations": [
+            "This bootstrap path returns validated owner-scoped evidence only.",
+            "No language model answer is generated unless an approved managed provider is configured.",
+        ],
+    }
+
+
 ENGINES: dict[tuple[str, str], Engine] = {
     ("readiness", "module_readiness"): _readiness,
     ("sleepderm", "sleep_pattern_analysis"): _sleep,
@@ -53,6 +77,7 @@ ENGINES: dict[tuple[str, str], Engine] = {
     ("cycle_sync", "context_summary"): analyze_cycle,
     ("contact_guard", "context_summary"): analyze_contact,
     ("treatment_adherence", "consistency_summary"): analyze_adherence,
+    ("cutisai", "evidence_assistance"): _cutisai_retrieval,
 }
 
 
