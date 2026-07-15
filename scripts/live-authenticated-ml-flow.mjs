@@ -141,6 +141,25 @@ try {
   evidence.finalStatus = terminal.body?.job?.status ?? terminal.body?.status ?? terminal.body?.data?.status ?? null;
   evidence.resultReadiness = terminal.body?.job?.analysis?.readinessState ?? terminal.body?.analysis?.readinessState ?? null;
   evidence.checks.persistedResult = ["completed", "insufficient_data", "not_configured", "failed"].includes(evidence.finalStatus);
+
+  const afterCommit = await submit(owner.accessToken, idempotencyKey, payload);
+  evidence.checks.lostResponseReplay = afterCommit.status === 200 && afterCommit.body?.replayed === true && afterCommit.body?.jobId === jobId;
+
+  const concurrentKey = `e2e-concurrent-${randomUUID()}`;
+  const concurrent = await Promise.all([
+    submit(owner.accessToken, concurrentKey, payload),
+    submit(owner.accessToken, concurrentKey, payload),
+  ]);
+  const accepted = concurrent.filter((result) => result.status === 202);
+  const duplicate = concurrent.filter((result) => result.status === 200 || result.status === 409);
+  const concurrentJobId = accepted[0]?.body?.jobId ?? concurrent.find((result) => typeof result.body?.jobId === "string")?.body?.jobId;
+  evidence.concurrentJobId = concurrentJobId ?? null;
+  evidence.checks.concurrentDuplicate = accepted.length === 1 && duplicate.length === 1 && typeof concurrentJobId === "string";
+  if (typeof concurrentJobId !== "string") throw new Error("concurrent_job_missing");
+  const concurrentTerminal = await waitForTerminal(owner.accessToken, concurrentJobId);
+  evidence.checks.concurrentPersisted = ["completed", "insufficient_data", "not_configured", "failed"].includes(
+    concurrentTerminal.body?.job?.status ?? concurrentTerminal.body?.status ?? concurrentTerminal.body?.data?.status,
+  );
   evidence.allChecks = Object.values(evidence.checks).every(Boolean);
   console.log(JSON.stringify(evidence));
 } finally {
