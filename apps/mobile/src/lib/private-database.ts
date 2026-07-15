@@ -2,7 +2,7 @@ import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
 import * as SQLite from "expo-sqlite";
 
-import { openEncryptedDatabase } from "../../../../packages/ml-local-runtime/src/encrypted-sqlite";
+import { openEncryptedDatabase } from "../../packages/ml-local-runtime/src/encrypted-sqlite";
 
 const secureStoreOptions: SecureStore.SecureStoreOptions = {
   keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,

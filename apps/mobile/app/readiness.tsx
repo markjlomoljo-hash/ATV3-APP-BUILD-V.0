@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import * as Crypto from "expo-crypto";
 import { AppState, Pressable, ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { evaluateReadiness } from "../../../packages/ml-local-runtime/src/deterministic/readiness";
-import type { MobileMlJobStatusResponse } from "../../../packages/ml-local-runtime/src/mobile-job-coordinator";
+import { evaluateReadiness } from "../packages/ml-local-runtime/src/deterministic/readiness";
+import type { MobileMlJobStatusResponse } from "../packages/ml-local-runtime/src/mobile-job-coordinator";
 import {
   loadLatestCachedMlResult,
   loadSleepDermInputs,
