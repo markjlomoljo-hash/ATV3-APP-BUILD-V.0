@@ -149,7 +149,9 @@ describe("durable ML analysis job contracts", () => {
     expect(jobInsert).toContain("personal_processing");
     expect(jobInsert).toContain("raw_image_processing");
     expect(jobInsert).toContain("personal_learning");
-    expect(queries.some((sql) => sql.includes("insert into public.outbox_events"))).toBe(true);
+    const outboxInsert = queries.find((sql) => sql.includes("insert into public.outbox_events"));
+    expect(outboxInsert).toContain("on conflict (user_id, event_type, deduplication_key)");
+    expect(outboxInsert).toContain("where user_id is not null");
     expect(queries.some((sql) => sql.includes("update public.api_idempotency_keys"))).toBe(true);
     expect(queries.at(-1)).toBe("commit");
     expect(fakeClient.release).toHaveBeenCalledOnce();

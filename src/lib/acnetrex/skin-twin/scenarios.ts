@@ -173,7 +173,8 @@ export async function createSkinTwinScenario(
       `insert into public.outbox_events
          (event_type, aggregate_type, aggregate_id, user_id, payload, deduplication_key)
        values ('ml.analysis.requested', 'ml_analysis_job', $1::uuid, $2::uuid, $3::jsonb, $4)
-       on conflict (deduplication_key) do nothing
+       on conflict (user_id, event_type, deduplication_key)
+         where user_id is not null do nothing
        returning id`,
       [job.rows[0].id, parsedUserId, JSON.stringify({ jobId: job.rows[0].id, snapshotId: row.id, engine: "skin_twin" }), idempotencyKey],
     );
