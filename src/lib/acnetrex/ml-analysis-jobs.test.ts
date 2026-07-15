@@ -111,7 +111,7 @@ describe("durable ML analysis job contracts", () => {
       features: { sleepDebtMinutes: 120 },
       metadata: { featureSchemaVersion: "sleepderm.v1", appVersion: "web.test" },
     };
-    const jobId = "11111111-1111-4111-8111-111111111111";
+    const jobId = "22222222-2222-4222-8222-222222222222";
     fakeClient.query.mockImplementation(async (sql: string) => {
       if (sql === "begin" || sql === "commit") return { rows: [], rowCount: 0 };
       if (sql.includes("insert into public.api_idempotency_keys")) return { rows: [], rowCount: 1 };
@@ -142,6 +142,7 @@ describe("durable ML analysis job contracts", () => {
     expect(queries[0]).toBe("begin");
     expect(queries.some((sql) => sql.includes("insert into public.ml_analysis_jobs"))).toBe(true);
     const jobInsert = queries.find((sql) => sql.includes("insert into public.ml_analysis_jobs"));
+    expect(jobInsert).toContain("(id, user_id");
     expect(jobInsert).toContain("request_id");
     expect(jobInsert).toContain("idempotency_key");
     expect(jobInsert).toContain("payload_hash");
@@ -149,6 +150,9 @@ describe("durable ML analysis job contracts", () => {
     expect(jobInsert).toContain("personal_processing");
     expect(jobInsert).toContain("raw_image_processing");
     expect(jobInsert).toContain("personal_learning");
+    const jobInsertCall = fakeClient.query.mock.calls.find(([sql]) => String(sql).includes("insert into public.ml_analysis_jobs"));
+    expect(jobInsertCall?.[1]?.[0]).toBe(jobId);
+    expect(jobInsertCall?.[1]?.filter((value: unknown) => value === jobId)).toHaveLength(2);
     const outboxInsert = queries.find((sql) => sql.includes("insert into public.outbox_events"));
     expect(outboxInsert).toContain("on conflict (user_id, event_type, deduplication_key)");
     expect(outboxInsert).toContain("where user_id is not null");
