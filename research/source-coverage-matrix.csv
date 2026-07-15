@@ -1,0 +1,11 @@
+source_family,sources_checked,coverage,material_finding,gap_or_limit
+Repository and supplied packs,"handoff; manifests; model cards; governance docs; two ZIP inventories",complete for current local state,No approved dataset or active model; packs contain no images or weights,Does not supply external legal rights
+Acne-specific author sources,"ACNE04; AcneSCU; ACNE-ECKH",multiple canonical candidates,All are restricted unverified or unavailable,No production-ready acne image corpus
+Broad dermatology data,"SCIN; DermNet; DDI/AIMI",multiple candidates,DermNet procurement and SCIN review are actionable,Exact acne volume labels consent scope and commercial contract remain unresolved
+Controlled clinical data,"CSDR; YODA; Acne-ID; Vivli",multiple platforms and concrete leads,Structured longitudinal/repeated-outcome opportunities exist,Access and commercial derivative rights require proposal/DUA
+Model registries,"Hugging Face prior screen; DINOv2; MedSigLIP; Derm Foundation; TorchVision; OpenCLIP",multiple generic and medical candidates,DINOv2 standard weights have clear Apache-2.0 grant; MedSigLIP is terms-gated,No approved acne classifier weights
+Architecture evidence,"NeurIPS tabular benchmarks; calibration; deep ensembles",primary papers checked,Supports GBDT plus residual-MLP calibrated ensemble,AcneTrex-specific performance requires future cohort
+Longitudinal methods,"Acne-ID protocol; local governance; tabular benchmarks",decision-sufficient for first route,Start lagged-feature models before sequence transformers,No available AcneTrex training cohort
+Rights evidence,"official licences terms and data-use pages",primary rights documents for serious candidates,Every candidate has explicit disposition,Custom contracts cannot be assessed before receipt
+Multilingual and mirror search,"author repositories; Baidu-linked AcneSCU; registry mirrors",limited but meaningful,Mirrors do not cure original rights,No claim of exhaustive global discovery
+Saturation status,Convergence across repeated source families,planning saturation only,No new production-ready source appeared; actionable leads stabilized,Must refresh before contracting acquisition or deployment
