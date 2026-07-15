@@ -673,12 +673,14 @@ describe("ML analysis worker", () => {
       return { rows: [], rowCount: 1 };
     });
 
+    const fetcher = vi.fn().mockResolvedValue(upstream(canonicalResponse()));
     const result = await processNextMlAnalysisJob({
       workerId: "railway-dispatcher",
-      fetcher: vi.fn().mockResolvedValue(upstream(canonicalResponse())),
+      fetcher,
     });
 
     expect(result).toEqual({ status: "completed", jobId: job.jobId, outboxId: job.outboxId });
+    expect(fetcher.mock.calls[0]?.[0]).toBe("https://ml.example.test/api/v1/inference");
     const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
     expect(queries.some((sql) => sql.includes("insert into public.ml_analysis_results"))).toBe(false);
     expect(queries.some((sql) => sql.includes("update public.skin_twin_snapshots"))).toBe(false);

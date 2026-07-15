@@ -257,6 +257,7 @@ def _predict_core(payload: InferenceRequest) -> InferenceResponse:
 def create_app(
     *,
     idempotency_store: IdempotencyStore | None = None,
+    analysis_repository: Any | None = None,
 ) -> FastAPI:
     store = idempotency_store or build_idempotency_store()
     batch_limit = asyncio.Semaphore(int(os.getenv("MAX_BATCH_CONCURRENCY", "4")))
@@ -319,7 +320,11 @@ def create_app(
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             registry = {"count": 0, "active": [], "approved": []}
             registry_state = "error"
-        persistence_ready = await asyncio.to_thread(store.healthcheck)
+        persistence_owner = os.getenv("ACNETREX_ML_PERSISTENCE_OWNER", "nextjs")
+        persistence = analysis_repository if persistence_owner == "railway" else store
+        persistence_ready = persistence is not None and await asyncio.to_thread(
+            persistence.healthcheck
+        )
         ready = (
             artifact_integrity["state"] == "ready"
             and registry_state == "ready"
@@ -368,6 +373,7 @@ def create_app(
         payload: InferenceRequest,
         request: Request,
         idempotency_key: str | None,
+        request_id: str | None,
     ) -> JSONResponse:
         if not idempotency_key:
             raise HTTPException(
@@ -377,6 +383,82 @@ def create_app(
             raise HTTPException(
                 status_code=409, detail={"code": "idempotency_key_mismatch"}
             )
+        persistence_owner = os.getenv("ACNETREX_ML_PERSISTENCE_OWNER", "nextjs")
+        if persistence_owner not in {"nextjs", "railway"}:
+            raise HTTPException(
+                status_code=503, detail={"code": "invalid_persistence_owner"}
+            )
+        if persistence_owner == "railway":
+            if not request_id:
+                raise HTTPException(
+                    status_code=400, detail={"code": "request_id_required"}
+                )
+            if request_id != str(payload.request_id):
+                raise HTTPException(
+                    status_code=409, detail={"code": "request_id_mismatch"}
+                )
+            if payload.request_id != payload.idempotency_key:
+                raise HTTPException(
+                    status_code=409, detail={"code": "job_identity_mismatch"}
+                )
+            if analysis_repository is None:
+                raise HTTPException(
+                    status_code=503,
+                    detail={"code": "railway_persistence_not_configured"},
+                )
+            request_hash = canonical_hash(payload.model_dump(mode="json"))
+            reservation = await asyncio.to_thread(
+                analysis_repository.prepare, payload, request_hash
+            )
+            if reservation.state == "conflict":
+                raise HTTPException(
+                    status_code=409,
+                    detail={"code": "idempotency_key_reused_with_different_payload"},
+                )
+            if reservation.state == "processing":
+                return JSONResponse(
+                    status_code=409,
+                    headers={"Retry-After": "2"},
+                    content={"ok": False, "error": {"code": "operation_in_progress"}},
+                )
+            if reservation.state == "replay":
+                return JSONResponse(
+                    status_code=reservation.response_status or 200,
+                    headers={"Idempotency-Replayed": "true"},
+                    content=reservation.response or {},
+                )
+            try:
+                result = await asyncio.wait_for(
+                    asyncio.to_thread(_predict_core, reservation.request),
+                    timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
+                )
+                body = await asyncio.to_thread(
+                    analysis_repository.finalize,
+                    reservation,
+                    result,
+                    request_hash,
+                )
+                return JSONResponse(status_code=200, content=body)
+            except TimeoutError as exc:
+                await asyncio.to_thread(
+                    analysis_repository.fail,
+                    reservation,
+                    retryable=True,
+                    code="inference_timeout",
+                )
+                raise HTTPException(
+                    status_code=504, detail={"code": "inference_timeout"}
+                ) from exc
+            except (TypeError, ValueError) as exc:
+                await asyncio.to_thread(
+                    analysis_repository.fail,
+                    reservation,
+                    retryable=False,
+                    code="invalid_input",
+                )
+                raise HTTPException(
+                    status_code=422, detail={"code": "invalid_input"}
+                ) from exc
         scope = f"predict:{payload.module}:{payload.task}"
         request_hash = canonical_hash(
             payload.model_dump(mode="json", exclude={"request_id"})
@@ -446,24 +528,27 @@ def create_app(
         payload: InferenceRequest,
         request: Request,
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        request_id: str | None = Header(default=None, alias="X-Request-ID"),
     ) -> JSONResponse:
-        return await execute_prediction(payload, request, idempotency_key)
+        return await execute_prediction(payload, request, idempotency_key, request_id)
 
     @application.post("/api/v1/inference", dependencies=[Depends(_authenticate)])
     async def inference_compatibility_alias(
         payload: InferenceRequest,
         request: Request,
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        request_id: str | None = Header(default=None, alias="X-Request-ID"),
     ) -> JSONResponse:
-        return await execute_prediction(payload, request, idempotency_key)
+        return await execute_prediction(payload, request, idempotency_key, request_id)
 
     @application.post("/v1/predict", dependencies=[Depends(_authenticate)])
     async def predict_legacy_alias(
         payload: InferenceRequest,
         request: Request,
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        request_id: str | None = Header(default=None, alias="X-Request-ID"),
     ) -> JSONResponse:
-        return await execute_prediction(payload, request, idempotency_key)
+        return await execute_prediction(payload, request, idempotency_key, request_id)
 
     @application.post("/v1/batch", dependencies=[Depends(_authenticate)])
     async def batch(payload: BatchInferenceRequest) -> dict[str, Any]:

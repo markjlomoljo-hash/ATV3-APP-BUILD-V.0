@@ -12,6 +12,7 @@ import {
 } from "../../../packages/ml-local-runtime/src/contracts";
 
 type WorkerFetcher = typeof fetch;
+type MlPersistenceOwner = "nextjs" | "railway";
 
 type ClaimedJob = {
   outboxId: string;
@@ -52,6 +53,18 @@ class MlResultPersistenceError extends Error {
   constructor(cause: unknown) {
     super("ml_result_persistence_failed", { cause });
   }
+}
+
+class MlCommitVerificationError extends Error {
+  constructor() {
+    super("ml_commit_verification_failed");
+  }
+}
+
+function configuredPersistenceOwner(): MlPersistenceOwner {
+  const value = process.env.ACNETREX_ML_PERSISTENCE_OWNER?.trim() || "nextjs";
+  if (value === "nextjs" || value === "railway") return value;
+  throw new Error("invalid_acnetrex_ml_persistence_owner");
 }
 
 function configuredCloudRun(): { baseUrl: string; secret: string } | null {
@@ -312,8 +325,10 @@ async function canonicalInputs(client: PoolClient, job: ClaimedJob): Promise<{
   };
 }
 
-async function canonicalRequest(client: PoolClient, job: ClaimedJob) {
-  const canonical = await canonicalInputs(client, job);
+async function canonicalRequest(client: PoolClient, job: ClaimedJob, owner: MlPersistenceOwner) {
+  const canonical = owner === "railway"
+    ? { inputs: {}, inputRecordRefs: [] }
+    : await canonicalInputs(client, job);
   return inferenceRequestSchema.parse({
     contract_version: "1.0.0",
     request_id: job.jobId,
@@ -369,7 +384,7 @@ function jobStatusFor(response: InferenceResponse): "completed" | "failed" | "in
   return "completed";
 }
 
-async function deadLetterExhaustedLeases(client: PoolClient) {
+async function deadLetterExhaustedLeases(client: PoolClient, owner: MlPersistenceOwner) {
   const exhausted = await client.query<{ jobId: string }>(
     `with exhausted as (
        select o.id, o.aggregate_id as "jobId"
@@ -388,7 +403,7 @@ async function deadLetterExhaustedLeases(client: PoolClient) {
      returning e."jobId"`,
   );
   const jobIds = exhausted.rows.map((row) => row.jobId);
-  if (jobIds.length === 0) return;
+  if (jobIds.length === 0 || owner === "railway") return;
   await client.query(
     `update public.ml_analysis_jobs
      set status='failed', failure_reason='ml_worker_lease_expired',
@@ -399,8 +414,22 @@ async function deadLetterExhaustedLeases(client: PoolClient) {
   );
 }
 
-async function claimNext(client: PoolClient, workerId: string): Promise<ClaimedJob | null> {
-  await deadLetterExhaustedLeases(client);
+async function claimNext(
+  client: PoolClient,
+  workerId: string,
+  owner: MlPersistenceOwner,
+): Promise<ClaimedJob | null> {
+  await deadLetterExhaustedLeases(client, owner);
+  const eligibleState = owner === "railway"
+    ? `(
+          (o.status in ('pending', 'failed_retryable') and j.status in ('queued', 'processing'))
+          or (o.status = 'leased' and o.lease_expires_at < now()
+              and j.status in ('queued', 'processing', 'completed', 'failed', 'insufficient_data', 'not_configured'))
+        )`
+    : `(
+          (o.status in ('pending', 'failed_retryable') and j.status = 'queued')
+          or (o.status = 'leased' and o.lease_expires_at < now() and j.status = 'processing')
+        )`;
   const result = await client.query<ClaimedJob>(
     `with candidate as (
        select o.id as "outboxId", o.aggregate_id as "jobId", o.attempt_count as "attemptCount",
@@ -415,10 +444,7 @@ async function claimNext(client: PoolClient, workerId: string): Promise<ClaimedJ
        join public.ml_analysis_jobs j on j.id::text = o.aggregate_id
        left join public.consents c on c.user_id = j.user_id
        where o.event_type = 'ml.analysis.requested'
-         and (
-            (o.status in ('pending', 'failed_retryable') and j.status = 'queued')
-            or (o.status = 'leased' and o.lease_expires_at < now() and j.status = 'processing')
-          )
+         and ${eligibleState}
           and o.attempt_count < o.max_attempts
           and o.next_attempt_at <= now()
           and (j.deadline_at is null or j.deadline_at > now())
@@ -441,6 +467,7 @@ async function claimNext(client: PoolClient, workerId: string): Promise<ClaimedJ
   const job = result.rows[0];
   if (!job) return null;
   const claimed = { ...job, leaseOwner: workerId };
+  if (owner === "railway") return claimed;
   const updated = await client.query(
     `update public.ml_analysis_jobs
      set status='processing', attempt_count=$2, lease_owner=$3,
@@ -452,7 +479,13 @@ async function claimNext(client: PoolClient, workerId: string): Promise<ClaimedJ
   return claimed;
 }
 
-async function updateRetry(client: PoolClient, job: ClaimedJob, reason: string, terminal: boolean) {
+async function updateRetry(
+  client: PoolClient,
+  job: ClaimedJob,
+  reason: string,
+  terminal: boolean,
+  owner: MlPersistenceOwner,
+) {
   if (terminal) {
     const outbox = await client.query(
       `update public.outbox_events set status='dead_letter', last_error_code=$3, lease_owner=null,
@@ -461,6 +494,7 @@ async function updateRetry(client: PoolClient, job: ClaimedJob, reason: string, 
       [job.outboxId, job.leaseOwner, reason],
     );
     if (outbox.rowCount !== 1) throw new MlWorkerLeaseLostError();
+    if (owner === "railway") return;
     const failedJob = await client.query(
       `update public.ml_analysis_jobs
        set status='failed', failure_reason=$2, error_class='ml_upstream_terminal',
@@ -479,6 +513,7 @@ async function updateRetry(client: PoolClient, job: ClaimedJob, reason: string, 
     [job.outboxId, job.leaseOwner, boundedRetryDelaySeconds(job.attemptCount), reason],
   );
   if (outbox.rowCount !== 1) throw new MlWorkerLeaseLostError();
+  if (owner === "railway") return;
   const requeuedJob = await client.query(
     `update public.ml_analysis_jobs
      set status='queued', failure_reason=$2, error_class='ml_upstream_retryable',
@@ -609,16 +644,62 @@ async function persistSuccess(client: PoolClient, job: ClaimedJob, payload: Infe
   if (updatedOutbox.rowCount !== 1) throw new MlWorkerLeaseLostError();
 }
 
+async function verifyRailwayCommitAndCloseOutbox(
+  client: PoolClient,
+  job: ClaimedJob,
+  payload: InferenceResponse,
+) {
+  const expectedStatus = jobStatusFor(payload);
+  const committed = await client.query<{
+    status: string;
+    resultId: string | null;
+    requestId: string | null;
+    engine: string;
+    operation: string;
+  }>(
+    `select j.status, j.engine, j.operation, r.id as "resultId", r.request_id::text as "requestId"
+       from public.ml_analysis_jobs j
+       left join public.ml_analysis_results r on r.job_id=j.id and r.user_id=j.user_id
+      where j.id=$1::uuid and j.user_id=$2::uuid
+      for update of j`,
+    [job.jobId, job.userId],
+  );
+  const row = committed.rows[0];
+  if (!row
+    || row.status !== expectedStatus
+    || !row.resultId
+    || row.requestId !== job.jobId
+    || row.engine !== job.engine
+    || row.operation !== job.operation) {
+    throw new MlCommitVerificationError();
+  }
+  await client.query(
+    `insert into public.consumer_inbox (consumer_name, event_id, result_reference)
+     values ('railway-ml-dispatcher',$1::uuid,
+             jsonb_build_object('jobId',$2::uuid,'status',$3::text,'resultId',$4::uuid))
+     on conflict (consumer_name, event_id) do nothing`,
+    [job.outboxId, job.jobId, row.status, row.resultId],
+  );
+  const updatedOutbox = await client.query(
+    `update public.outbox_events set status='processed', processed_at=now(), lease_owner=null,
+     lease_expires_at=null, updated_at=now()
+     where id=$1::uuid and lease_owner=$2 and status='leased'`,
+    [job.outboxId, job.leaseOwner],
+  );
+  if (updatedOutbox.rowCount !== 1) throw new MlWorkerLeaseLostError();
+}
+
 async function processClaimedJob(
   client: PoolClient,
   job: ClaimedJob,
   fetcher: WorkerFetcher,
+  owner: MlPersistenceOwner,
   shutdownSignal?: AbortSignal,
 ): Promise<MlWorkerOutcome> {
   const cloud = configuredCloudRun();
   if (!cloud) {
     try {
-      await withFinalizeTransaction(client, () => updateRetry(client, job, "ml_cloud_not_configured", true));
+      await withFinalizeTransaction(client, () => updateRetry(client, job, "ml_cloud_not_configured", true, owner));
       return { status: "not_configured", reason: "ml_cloud_not_configured" };
     } catch (error) {
       if (error instanceof MlWorkerLeaseLostError) {
@@ -634,8 +715,9 @@ async function processClaimedJob(
   else shutdownSignal?.addEventListener("abort", abortForShutdown, { once: true });
   const timeout = setTimeout(() => controller.abort(), boundedTimeoutMs());
   try {
-    const canonical = await canonicalRequest(client, job);
-    const response = await fetcher(`${cloud.baseUrl}/predict`, {
+    const canonical = await canonicalRequest(client, job, owner);
+    const endpoint = owner === "railway" ? "/api/v1/inference" : "/predict";
+    const response = await fetcher(`${cloud.baseUrl}${endpoint}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -650,7 +732,7 @@ async function processClaimedJob(
     const contentType = response.headers.get("content-type") ?? "";
     const payload = contentType.includes("application/json") ? await response.json().catch(() => null) : null;
     const parsed = inferenceResponseSchema.safeParse(payload);
-    const contractStatusAccepted = response.ok || response.status === 422;
+    const contractStatusAccepted = response.ok || (owner === "nextjs" && response.status === 422);
     if (parsed.success && contractStatusAccepted) {
       const lineageMatches = parsed.data.request_id === job.jobId
         && parsed.data.job_id === job.jobId
@@ -658,7 +740,7 @@ async function processClaimedJob(
         && parsed.data.task === canonical.task
         && parsed.data.feature_schema_version === canonical.feature_schema_version;
       if (!lineageMatches) {
-        await withFinalizeTransaction(client, () => updateRetry(client, job, "ml_api_lineage_mismatch", true));
+        await withFinalizeTransaction(client, () => updateRetry(client, job, "ml_api_lineage_mismatch", true, owner));
         return {
           status: "failed",
           jobId: job.jobId,
@@ -667,9 +749,15 @@ async function processClaimedJob(
         };
       }
       try {
-        await withFinalizeTransaction(client, () => persistSuccess(client, job, parsed.data));
+        await withFinalizeTransaction(
+          client,
+          () => owner === "railway"
+            ? verifyRailwayCommitAndCloseOutbox(client, job, parsed.data)
+            : persistSuccess(client, job, parsed.data),
+        );
       } catch (error) {
         if (error instanceof MlWorkerLeaseLostError) throw error;
+        if (error instanceof MlCommitVerificationError) throw error;
         const databaseError = error as {
           code?: unknown;
           constraint?: unknown;
@@ -689,7 +777,7 @@ async function processClaimedJob(
 
     const reason = payload && !response.ok ? failureReason(response.status, payload) : "ml_api_unexpected_response";
     const terminal = !shouldRetry(response.status, reason, job.attemptCount, job.maxAttempts);
-    await withFinalizeTransaction(client, () => updateRetry(client, job, reason, terminal));
+    await withFinalizeTransaction(client, () => updateRetry(client, job, reason, terminal, owner));
     return terminal
       ? { status: "failed", jobId: job.jobId, reason, attemptCount: job.attemptCount }
       : { status: "retry_scheduled", jobId: job.jobId, reason, attemptCount: job.attemptCount };
@@ -703,10 +791,12 @@ async function processClaimedJob(
         ? "ml_api_timeout"
       : error instanceof MlResultPersistenceError
         ? "ml_result_persistence_failed"
+      : error instanceof MlCommitVerificationError
+        ? "ml_commit_verification_failed"
         : "ml_api_unreachable";
     const terminal = job.attemptCount >= job.maxAttempts;
     try {
-      await withFinalizeTransaction(client, () => updateRetry(client, job, reason, terminal));
+      await withFinalizeTransaction(client, () => updateRetry(client, job, reason, terminal, owner));
     } catch (finalizeError) {
       if (finalizeError instanceof MlWorkerLeaseLostError) {
         return { status: "lease_lost", jobId: job.jobId, outboxId: job.outboxId };
@@ -727,17 +817,18 @@ export async function processNextMlAnalysisJob(options: {
   fetcher?: WorkerFetcher;
   signal?: AbortSignal;
 } = {}): Promise<MlWorkerOutcome> {
+  const owner = configuredPersistenceOwner();
   const client = await getPool().connect();
   const workerId = options.workerId ?? `ml-worker-${randomUUID()}`;
   try {
     await client.query("begin");
-    const job = await claimNext(client, workerId);
+    const job = await claimNext(client, workerId, owner);
     if (!job) {
       await client.query("commit");
       return { status: "idle" };
     }
     await client.query("commit");
-    return await processClaimedJob(client, job, options.fetcher ?? fetch, options.signal);
+    return await processClaimedJob(client, job, options.fetcher ?? fetch, owner, options.signal);
   } catch (error) {
     await client.query("rollback").catch(() => undefined);
     throw error;
