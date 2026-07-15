@@ -33,6 +33,7 @@ from acnetrex_ml.safety.output_validation import validate_safe_output
 from .dependencies import build_analysis_repository, build_idempotency_store
 from .idempotency import IdempotencyStore, canonical_hash
 from .middleware import RequestContextMiddleware
+from .persistence import PersistenceRejected
 
 
 SERVICE_ROOT = Path(__file__).resolve().parents[2]
@@ -296,14 +297,18 @@ def create_app(
             "ok": True,
             "service": "acnetrex-ml",
             "contractVersion": CONTRACT_VERSION,
-            "health": "/health/ready",
-            "predict": "/predict",
+            "health": "/ready",
+            "inference": "/api/v1/inference",
+            "compatibility": "/predict",
         }
 
+    @application.get("/live")
     @application.get("/health/live")
     async def health_live() -> dict[str, Any]:
         return {"ok": True, "service": "acnetrex-ml", "state": "live"}
 
+    @application.get("/health")
+    @application.get("/ready")
     @application.get("/health/ready")
     async def health_ready() -> JSONResponse:
         vertex = VertexAdapter().status()
@@ -408,9 +413,12 @@ def create_app(
                     detail={"code": "railway_persistence_not_configured"},
                 )
             request_hash = canonical_hash(payload.model_dump(mode="json"))
-            reservation = await asyncio.to_thread(
-                repository.prepare, payload, request_hash
-            )
+            try:
+                reservation = await asyncio.to_thread(
+                    repository.prepare, payload, request_hash
+                )
+            except PersistenceRejected as exc:
+                raise HTTPException(status_code=422, detail={"code": exc.code}) from exc
             if reservation.state == "conflict":
                 raise HTTPException(
                     status_code=409,
@@ -432,6 +440,13 @@ def create_app(
                 result = await asyncio.wait_for(
                     asyncio.to_thread(_predict_core, reservation.request),
                     timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
+                )
+                result = result.model_copy(
+                    update={
+                        "runtime_mode": RuntimeMode.CLOUD_RUN,
+                        "runtime_provider": "acnetrex-railway-ml",
+                        "sync_status": "synced",
+                    }
                 )
                 body = await asyncio.to_thread(
                     repository.finalize,
