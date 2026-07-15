@@ -12,6 +12,7 @@ export const Colors = {
 
   // Text
   textPrimary: "#17211d",
+  text: "#17211d",          // alias for textPrimary
   textSecondary: "#475569",
   textMuted: "#94a3b8",
   textOnPrimary: "#ffffff",

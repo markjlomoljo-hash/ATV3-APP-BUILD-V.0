@@ -37,12 +37,20 @@ interface LogModule {
 function getModules(summary: TodaySummary | undefined): LogModule[] {
   return [
     {
+      key: "skin",
+      icon: "🔬",
+      title: "SkinState",
+      subtitle: "Log today's acne activity",
+      logged: false,
+      route: "/modules/skin-state",
+    },
+    {
       key: "sleep",
       icon: "😴",
       title: "SleepDerm",
       subtitle: summary?.sleepLogged ? "Sleep logged" : "Log last night's sleep",
       logged: summary?.sleepLogged ?? false,
-      route: "/(tabs)/logs",
+      route: "/modules/sleep",
     },
     {
       key: "food",
@@ -50,15 +58,15 @@ function getModules(summary: TodaySummary | undefined): LogModule[] {
       title: "DermDiet",
       subtitle: summary?.foodLogged ? "Meals logged" : "Log today's meals",
       logged: summary?.foodLogged ?? false,
-      route: "/(tabs)/logs",
+      route: "/modules/food",
     },
     {
       key: "stress",
       icon: "😤",
-      title: "Stress Level",
-      subtitle: summary?.stressLogged ? "Stress logged" : "Log today's stress",
+      title: "Context",
+      subtitle: summary?.stressLogged ? "Context logged" : "Log stress, activity & more",
       logged: summary?.stressLogged ?? false,
-      route: "/(tabs)/logs",
+      route: "/modules/context",
     },
     {
       key: "treatment",
@@ -68,7 +76,15 @@ function getModules(summary: TodaySummary | undefined): LogModule[] {
         ? "Checked in"
         : "Check in on your treatment",
       logged: summary?.treatmentCheckedIn ?? false,
-      route: "/(tabs)/logs",
+      route: "/modules/treatment",
+    },
+    {
+      key: "taskboard",
+      icon: "🏆",
+      title: "Task Board",
+      subtitle: "Streaks, XP & badges",
+      logged: false,
+      route: "/modules/taskboard",
     },
     {
       key: "faceatlas",
