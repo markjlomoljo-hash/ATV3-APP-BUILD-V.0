@@ -150,9 +150,11 @@ describe("durable ML analysis job contracts", () => {
     expect(jobInsert).toContain("personal_processing");
     expect(jobInsert).toContain("raw_image_processing");
     expect(jobInsert).toContain("personal_learning");
+    expect(jobInsert).toContain("$9::uuid,$9::text");
     const jobInsertCall = fakeClient.query.mock.calls.find(([sql]) => String(sql).includes("insert into public.ml_analysis_jobs"));
     expect(jobInsertCall?.[1]?.[0]).toBe(jobId);
-    expect(jobInsertCall?.[1]?.filter((value: unknown) => value === jobId)).toHaveLength(2);
+    expect(jobInsertCall?.[1]?.filter((value: unknown) => value === jobId)).toHaveLength(1);
+    expect(jobInsertCall?.[1]).not.toContain("ml-job-key-000001");
     const outboxInsert = queries.find((sql) => sql.includes("insert into public.outbox_events"));
     expect(outboxInsert).toContain("on conflict (user_id, event_type, deduplication_key)");
     expect(outboxInsert).toContain("where user_id is not null");
