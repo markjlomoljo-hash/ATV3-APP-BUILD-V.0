@@ -117,7 +117,7 @@ export async function enqueueMlAnalysisJob(options: {
           feature_schema_version, features, features_missing, app_version, schema_version,
           request_id, idempotency_key, module, task, payload_hash, consent_snapshot)
          values ($1::uuid,$2::uuid,$3,$4,'queued_for_cloud','queued',$5::jsonb,$6,$7::jsonb,
-                 '[]'::jsonb,$8,'1',$9::uuid,$10,$3,$11,$12,
+                 '[]'::jsonb,$8,'1',$1::uuid,$1::text,$3,$9,$10,
                  coalesce((
                    select jsonb_build_object(
                      'personal_processing', c.personal_processing,
@@ -148,8 +148,6 @@ export async function enqueueMlAnalysisJob(options: {
           mlFeatureSchemaVersion(request),
           JSON.stringify(request.features),
           mlAppVersion(request),
-          requestId,
-          idempotencyKey,
           mlTask(request),
           requestHash(request),
         ],
