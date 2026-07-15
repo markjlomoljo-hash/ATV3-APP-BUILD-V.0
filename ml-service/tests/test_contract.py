@@ -34,8 +34,9 @@ def test_root_returns_canonical_service_metadata() -> None:
         "ok": True,
         "service": "acnetrex-ml",
         "contractVersion": "1.0.0",
-        "health": "/health/ready",
-        "predict": "/predict",
+        "health": "/ready",
+        "inference": "/api/v1/inference",
+        "compatibility": "/predict",
     }
 
 
