@@ -6,7 +6,8 @@ import logging
 import sqlite3
 import threading
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -71,20 +72,31 @@ class IdempotencyStore(Protocol):
 class MemoryIdempotencyStore:
     """Unit-test-only store. Production must use SQLite or PostgreSQL."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], datetime] | None = None,
+        processing_timeout_seconds: int = 120,
+    ) -> None:
         self._items: dict[tuple[str, str], dict[str, Any]] = {}
         self._lock = threading.Lock()
+        self._clock = clock or (lambda: datetime.now(UTC))
+        self._processing_timeout = timedelta(
+            seconds=max(1, min(processing_timeout_seconds, 3_600))
+        )
 
     def healthcheck(self) -> bool:
         return True
 
     def reserve(self, key: str, request_hash: str, scope: str) -> Reservation:
         with self._lock:
+            now = self._clock()
             item = self._items.get((scope, key))
             if item is None:
                 self._items[(scope, key)] = {
                     "hash": request_hash,
                     "state": "processing",
+                    "updated_at": now,
                 }
                 return Reservation("reserved")
             if item["hash"] != request_hash:
@@ -95,6 +107,13 @@ class MemoryIdempotencyStore:
                 return Reservation("replay", item["status"], item["response"])
             if item["state"] == "failed_retryable":
                 item["state"] = "processing"
+                item["updated_at"] = now
+                return Reservation("reserved")
+            if (
+                item["state"] == "processing"
+                and now - item["updated_at"] > self._processing_timeout
+            ):
+                item["updated_at"] = now
                 return Reservation("reserved")
             return Reservation("processing")
 
@@ -103,7 +122,10 @@ class MemoryIdempotencyStore:
     ) -> None:
         with self._lock:
             self._items[(scope, key)].update(
-                state="completed", status=status, response=response
+                state="completed",
+                status=status,
+                response=response,
+                updated_at=self._clock(),
             )
 
     def fail(
@@ -120,13 +142,19 @@ class MemoryIdempotencyStore:
                 state="failed_terminal" if terminal else "failed_retryable",
                 status=status,
                 response=response,
+                updated_at=self._clock(),
             )
 
 
 class SQLiteIdempotencyStore:
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self, path: str | Path, *, processing_timeout_seconds: int = 120
+    ) -> None:
         self.path = str(path)
         self._lock = threading.Lock()
+        self._processing_timeout = timedelta(
+            seconds=max(1, min(processing_timeout_seconds, 3_600))
+        )
         self._initialize()
 
     def _connect(self) -> sqlite3.Connection:
@@ -161,7 +189,8 @@ class SQLiteIdempotencyStore:
             )
 
     def reserve(self, key: str, request_hash: str, scope: str) -> Reservation:
-        now = datetime.now(UTC).isoformat()
+        now_datetime = datetime.now(UTC)
+        now = now_datetime.isoformat()
         with self._lock, self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
             row = connection.execute(
@@ -195,7 +224,18 @@ class SQLiteIdempotencyStore:
                     WHERE scope=? AND idempotency_key=?""",
                     (now, scope, key),
                 )
+                connection.commit()
                 return Reservation("reserved")
+            if row["state"] == "processing":
+                updated_at = datetime.fromisoformat(row["updated_at"])
+                if now_datetime - updated_at > self._processing_timeout:
+                    connection.execute(
+                        """UPDATE prediction_idempotency SET updated_at=?
+                        WHERE scope=? AND idempotency_key=? AND state='processing'""",
+                        (now, scope, key),
+                    )
+                    connection.commit()
+                    return Reservation("reserved")
             return Reservation("processing")
 
     def complete(
@@ -239,8 +279,11 @@ class SQLiteIdempotencyStore:
 class PostgresIdempotencyStore:
     """Production adapter for the server-only ml_service_idempotency table."""
 
-    def __init__(self, connection_string: str) -> None:
+    def __init__(
+        self, connection_string: str, *, processing_timeout_seconds: int = 120
+    ) -> None:
         self.connection_string = connection_string
+        self.processing_timeout_seconds = max(1, min(processing_timeout_seconds, 3_600))
 
     def _connect(self) -> Any:
         try:
@@ -280,10 +323,12 @@ class PostgresIdempotencyStore:
             if cursor.fetchone() is not None:
                 return Reservation("reserved")
             cursor.execute(
-                """SELECT request_hash, status, response_status, response_reference
+                """SELECT request_hash, status, response_status, response_reference,
+                  (status='processing' and updated_at < now() - (%s * interval '1 second'))
+                    as processing_expired
                 FROM ml_service_idempotency
                 WHERE scope=%s AND idempotency_key=%s FOR UPDATE""",
-                (scope, key),
+                (self.processing_timeout_seconds, scope, key),
             )
             row = cursor.fetchone()
             if row[0] != request_hash:
@@ -292,9 +337,11 @@ class PostgresIdempotencyStore:
                 return Reservation("replay", row[2], row[3])
             if row[1] == "failed_terminal":
                 return Reservation("replay", row[2], row[3])
-            if row[1] == "failed_retryable":
+            if row[1] == "failed_retryable" or (row[1] == "processing" and row[4]):
                 cursor.execute(
-                    """UPDATE ml_service_idempotency SET status='processing', updated_at=now()
+                    """UPDATE ml_service_idempotency SET status='processing',
+                    response_status=null, response_reference='{}'::jsonb,
+                    expires_at=now() + interval '24 hours', updated_at=now()
                     WHERE scope=%s AND idempotency_key=%s""",
                     (scope, key),
                 )

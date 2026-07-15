@@ -15,7 +15,7 @@ import {
 } from "./scenarios";
 
 const pool = vi.mocked(getPool);
-const userId = "00000000-0000-0000-0000-000000000001";
+const userId = "00000000-0000-4000-8000-000000000001";
 const snapshotId = "11111111-1111-4111-8111-111111111111";
 
 const input: SkinTwinScenarioRequest = {
@@ -60,6 +60,17 @@ describe("Skin Twin scenario service", () => {
     expect(result.success).toBe(false);
   });
 
+  it("validates a scenario again at the persistence boundary", async () => {
+    const { client, query } = clientWithResponses([]);
+
+    await expect(createSkinTwinScenario(client, userId, {
+      ...input,
+      variables: ["unsupported_client_variable"],
+    } as never)).rejects.toThrow();
+
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("persists insufficient-data scenarios without fabricating simulation output", async () => {
     const { client, query } = clientWithResponses([
       { rows: [{ personalLearning: true }] },
@@ -79,13 +90,31 @@ describe("Skin Twin scenario service", () => {
       { rows: [{ faceScans: 2, sleepLogs: 8, foodLogs: 8 }] },
       { rows: [snapshot("queued_for_cloud")] },
       { rows: [{ id: "99999999-9999-4999-8999-999999999999" }] },
-      { rows: [] },
+      { rows: [{ id: "88888888-8888-4888-8888-888888888888" }] },
       { rows: [] },
     ]);
     const result = await createSkinTwinScenario(client, userId, input);
     expect(result.status).toBe("queued_for_cloud");
     expect(result.snapshot.simulation).toBeNull();
     expect(JSON.stringify(query.mock.calls)).toContain(snapshotId);
+    const jobInsert = query.mock.calls.find(([sql]) => String(sql).includes("insert into public.ml_analysis_jobs"));
+    expect(String(jobInsert?.[0])).toContain("request_id");
+    expect(String(jobInsert?.[0])).toContain("idempotency_key");
+    expect(String(jobInsert?.[0])).toContain("payload_hash");
+    expect(String(jobInsert?.[0])).toContain("consent_snapshot");
+    expect(String(jobInsert?.[0])).toContain("personal_processing");
+  });
+
+  it("fails the scenario transaction when its durable outbox event is missing", async () => {
+    const { client } = clientWithResponses([
+      { rows: [{ personalLearning: true }] },
+      { rows: [{ faceScans: 2, sleepLogs: 8, foodLogs: 8 }] },
+      { rows: [snapshot("queued_for_cloud")] },
+      { rows: [{ id: "99999999-9999-4999-8999-999999999999" }] },
+      { rows: [] },
+    ]);
+
+    await expect(createSkinTwinScenario(client, userId, input)).rejects.toThrow("skin_twin_outbox_insert_missing");
   });
 
   it("loads only owner-scoped scenario history", async () => {

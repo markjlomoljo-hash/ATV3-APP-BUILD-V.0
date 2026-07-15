@@ -1,0 +1,16 @@
+.git
+.github
+.next
+.vercel
+apps
+coverage
+docs
+ml-service
+node_modules
+playwright-report
+supabase
+test-results
+*.log
+.env
+.env.*
+!packages/ml-local-runtime

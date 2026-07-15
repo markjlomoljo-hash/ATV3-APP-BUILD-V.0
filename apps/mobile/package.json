@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@acnetrex/ml-local-runtime": "file:../../packages/ml-local-runtime",
+    "@acnetrex/ml-local-runtime": "file:packages/ml-local-runtime",
     "@expo/metro-runtime": "^57.0.3",
     "@hookform/resolvers": "^5.4.0",
     "@react-native-community/datetimepicker": "^9.1.0",

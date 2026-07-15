@@ -1,0 +1,21 @@
+query_id,checked_at,channel,query_or_path,meaningful_result,decision
+Q001,2026-07-13,Hugging Face Datasets,acne,11 results screened in prior repository audit,No candidate passed original rights and consent provenance gates
+Q002,2026-07-13,Hugging Face Models,acne,61 results screened in prior repository audit,No checkpoint passed weight-license plus source-data provenance gates
+Q003,2026-07-14,GitHub author repository,ACNE04 licence and usage statement,Academic use only; contact author for other purposes,rights_unverified for production
+Q004,2026-07-14,GitHub author repository,AcneSCU dataset licence,Non-commercial; commercial use needs author permission,rejected for production absent new permission
+Q005,2026-07-14,DermNet official,website image licence AI training,Website images expressly unavailable for AI training,website images rejected
+Q006,2026-07-14,DermNet official,licensed dermatology AI dataset,Paid custom dataset; 60000+ cases and 600+ conditions claimed,commercial rights require signed custom agreement
+Q007,2026-07-14,Google Research,SCIN dataset licence consent acne,Custom licence grants copyright reuse but not personality rights,rights_unverified for product use
+Q008,2026-07-14,Google HAI-DEF,MedSigLIP model card FAQ terms commercial,Commercial applications allowed subject to HAI-DEF terms,owner/legal approval required
+Q009,2026-07-14,PubMed Central,ACNE-ECKH data availability,8242-image dataset cannot be shared for ethical legal privacy reasons,not available
+Q010,2026-07-15,Meta GitHub,DINOv2 model weights Apache 2.0,Standard DINOv2 code and weights explicitly Apache-2.0,evaluation candidate after approved data
+Q011,2026-07-15,Stanford DDI,DDI research use and commercial AIMI licensing,Free terms non-commercial; separate commercial programme exists,rights_unverified until signed commercial agreement
+Q012,2026-07-15,CSDR,GSK acne vulgaris raw dataset,STF114546 raw data marked ready to share via reviewed request,controlled access; derivative production rights unverified
+Q013,2026-07-15,YODA,acne vulgaris trials,Search exposes one acne trial,controlled access; exact rights and endpoint require request
+Q014,2026-07-15,ISRCTN,Acne-ID IPD longitudinal acne,Recruiting n=800 with repeated CASS; future IPD after publication and DUA,not currently available
+Q015,2026-07-15,Vivli,acne clinical trial IPD access,Platform supports approved research requests; no specific additional acne study verified,coverage source only
+Q016,2026-07-15,NeurIPS,tree models versus deep learning tabular,Tree models remain strong around 10k samples,requires GBDT baseline
+Q017,2026-07-15,NeurIPS,FT-Transformer residual MLP tabular,Residual MLP and FT-Transformer are strong neural baselines,no universally superior model
+Q018,2026-07-15,PMLR,neural network calibration temperature scaling,Temperature scaling is a strong simple post-hoc baseline,include held-out calibration
+Q019,2026-07-15,NeurIPS,deep ensembles predictive uncertainty,Independent ensembles provide uncertainty and OOD signal,adopt only if compute and holdout gains justify
+Q020,2026-07-15,local archives,V4 and Foundation ZIP inventory,V4 64 entries and Foundation 204 entries; zero image and weight artifacts,not training data or trained models

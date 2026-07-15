@@ -1,7 +1,7 @@
 import {
   createSqliteOfflineOperationStore,
   type QueueDatabase,
-} from "../../../../packages/ml-local-runtime/src/sqlite-operation-store";
+} from "../../packages/ml-local-runtime/src/sqlite-operation-store";
 
 import { openPrivateDatabase } from "./private-database";
 

@@ -77,3 +77,40 @@ def test_postgres_reservation_returns_composite_key_column(monkeypatch) -> None:
     assert store.reserve("key", "hash", "predict").state == "reserved"
     assert "RETURNING scope" in executed[0]
     assert "RETURNING id" not in executed[0]
+
+
+def test_postgres_reservation_query_can_reclaim_expired_processing(monkeypatch) -> None:
+    executed: list[str] = []
+    rows = [None, ("hash", "processing", None, None, True)]
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def execute(self, query, _params):
+            executed.append(query)
+
+        def fetchone(self):
+            return rows.pop(0)
+
+    class Connection:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def cursor(self):
+            return Cursor()
+
+    monkeypatch.setitem(
+        sys.modules, "psycopg", SimpleNamespace(connect=lambda _url: Connection())
+    )
+    store = MODULE.PostgresIdempotencyStore("postgresql://redacted")
+
+    assert store.reserve("key", "hash", "predict").state == "reserved"
+    assert "processing_expired" in executed[1]
+    assert "status='processing'" in executed[2]

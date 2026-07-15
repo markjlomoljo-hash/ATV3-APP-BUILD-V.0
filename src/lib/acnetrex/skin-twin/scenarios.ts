@@ -1,9 +1,11 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
 import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import { getPool } from "@/db";
 import { skinTwinScenarioSchema } from "@/lib/acnetrex/modules/schemas";
+import { requestHash } from "@/lib/reliability/idempotency";
 
 export const skinTwinScenarioRequestSchema = skinTwinScenarioSchema.superRefine((value, context) => {
   if (value.window === "provider_review_custom" && !value.providerReview) {
@@ -104,12 +106,14 @@ export async function createSkinTwinScenario(
   userId: string,
   input: SkinTwinScenarioRequest,
 ): Promise<{ snapshot: SkinTwinScenario; status: SkinTwinScenarioStatus }> {
-  await requirePersonalLearningConsent(client, userId);
-  const counts = await sourceCounts(client, userId);
+  const parsedInput = skinTwinScenarioRequestSchema.parse(input);
+  const parsedUserId = z.string().uuid().parse(userId);
+  await requirePersonalLearningConsent(client, parsedUserId);
+  const counts = await sourceCounts(client, parsedUserId);
   const ready = minimumDataMet(counts);
   const status: SkinTwinScenarioStatus = ready ? "queued_for_cloud" : "insufficient_data";
-  const sourceRefs = input.sourceRecordRefs;
-  const payload = JSON.stringify(input);
+  const sourceRefs = parsedInput.sourceRecordRefs;
+  const payload = JSON.stringify(parsedInput);
   const inserted = await client.query<SnapshotRow>(
     `insert into public.skin_twin_snapshots
        (user_id, scenario, scenario_payload, "window", status, source_record_refs,
@@ -118,37 +122,69 @@ export async function createSkinTwinScenario(
      returning id, scenario, "window", status, source_record_refs as "sourceRecordRefs",
                confidence, model_version as "modelVersion", simulation, uncertainty,
                snapshot_at as "snapshotAt"`,
-    [userId, input.name, payload, input.window, status, JSON.stringify(sourceRefs)],
+    [parsedUserId, parsedInput.name, payload, parsedInput.window, status, JSON.stringify(sourceRefs)],
   );
   const row = inserted.rows[0];
   if (!row) throw new Error("skin_twin_snapshot_insert_missing");
-  const features = JSON.stringify({ snapshotId: row.id, sourceCounts: counts, variables: input.variables, window: input.window });
+  const featurePayload = { snapshotId: row.id, sourceCounts: counts, variables: parsedInput.variables, window: parsedInput.window };
+  const features = JSON.stringify(featurePayload);
 
   if (ready) {
+    const requestId = randomUUID();
+    const idempotencyKey = `skin-twin:${parsedUserId}:${row.id}`;
+    const payloadHash = requestHash({
+      engine: "skin_twin",
+      operation: "scenario_simulation",
+      inputRecordRefs: sourceRefs,
+      features: featurePayload,
+    });
     const job = await client.query<{ id: string }>(
       `insert into public.ml_analysis_jobs
          (user_id, engine, operation, runtime_mode, status, input_record_refs,
-          feature_schema_version, features, features_missing, schema_version)
+          feature_schema_version, features, features_missing, schema_version,
+          request_id, idempotency_key, module, task, payload_hash, consent_snapshot)
        values ($1::uuid, 'skin_twin', 'scenario_simulation', 'queued_for_cloud', 'queued',
-               $2::jsonb, 'skin-twin-v1', $3::jsonb, '[]'::jsonb, '1')
+               $2::jsonb, 'skin-twin-v1', $3::jsonb, '[]'::jsonb, '1',
+               $4::uuid, $5, 'skin_twin', 'scenario_validation', $6,
+               coalesce((
+                 select jsonb_build_object(
+                   'personal_processing', c.personal_processing,
+                   'raw_image_processing', c.raw_image_processing,
+                   'raw_image_retention', c.raw_image_retention,
+                   'personal_learning', c.personal_learning,
+                   'anonymous_learning', c.anonymous_learning,
+                   'consented_at', c.consented_at,
+                   'captured_at', now()
+                 ) from public.consents c where c.user_id=$1::uuid
+               ), jsonb_build_object(
+                 'personal_processing', false,
+                 'raw_image_processing', false,
+                 'raw_image_retention', false,
+                 'personal_learning', false,
+                 'anonymous_learning', false,
+                 'consented_at', null,
+                 'captured_at', now()
+               )))
        returning id`,
-      [userId, JSON.stringify(sourceRefs), features],
+      [parsedUserId, JSON.stringify(sourceRefs), features, requestId, idempotencyKey, payloadHash],
     );
     if (!job.rows[0]) throw new Error("skin_twin_job_insert_missing");
-    await client.query(
+    const outbox = await client.query<{ id: string }>(
       `insert into public.outbox_events
          (event_type, aggregate_type, aggregate_id, user_id, payload, deduplication_key)
        values ('ml.analysis.requested', 'ml_analysis_job', $1::uuid, $2::uuid, $3::jsonb, $4)
-       on conflict (deduplication_key) do nothing`,
-      [job.rows[0].id, userId, JSON.stringify({ jobId: job.rows[0].id, snapshotId: row.id, engine: "skin_twin" }), `skin-twin:${userId}:${row.id}`],
+       on conflict (deduplication_key) do nothing
+       returning id`,
+      [job.rows[0].id, parsedUserId, JSON.stringify({ jobId: job.rows[0].id, snapshotId: row.id, engine: "skin_twin" }), idempotencyKey],
     );
+    if (!outbox.rows[0]) throw new Error("skin_twin_outbox_insert_missing");
   }
 
   await client.query(
     `insert into public.audit_logs
        (user_id, actor_type, action, target_table, target_id, metadata)
      values ($1::uuid, 'user', 'skin_twin_scenario_created', 'skin_twin_snapshots', $2::uuid, $3::jsonb)`,
-    [userId, row.id, JSON.stringify({ status, window: input.window, variables: input.variables, sourceCounts: counts })],
+    [parsedUserId, row.id, JSON.stringify({ status, window: parsedInput.window, variables: parsedInput.variables, sourceCounts: counts })],
   );
   return { snapshot: mapSnapshot(row), status };
 }

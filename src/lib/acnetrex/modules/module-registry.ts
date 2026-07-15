@@ -159,7 +159,7 @@ export const ACNETREX_MODULES: AcneTrexModule[] = [
     serviceStatus: "ready",
     readinessStatus: "ready",
     implementedSurfaces: allSurfaces,
-    missingSurfaces: [],
+    missingSurfaces: ["TriggerGraph lagged-correlation integration"],
     nextAction: "Connect sleep_logs to TriggerGraph correlation engine for pattern extraction.",
   },
   {
@@ -177,7 +177,7 @@ export const ACNETREX_MODULES: AcneTrexModule[] = [
     serviceStatus: "ready",
     readinessStatus: "ready",
     implementedSurfaces: allSurfaces,
-    missingSurfaces: [],
+    missingSurfaces: ["TriggerGraph dietary-pattern integration"],
     nextAction: "Connect food_logs to TriggerGraph dietary pattern extraction.",
   },
   {
@@ -303,7 +303,7 @@ export const ACNETREX_MODULES: AcneTrexModule[] = [
     serviceStatus: "ready",
     readinessStatus: "ready",
     implementedSurfaces: allSurfaces,
-    missingSurfaces: [],
+    missingSurfaces: ["Server-side treatment task generation"],
     nextAction: "Generate task-board items from active treatment schedules via server-side job.",
   },
   {
@@ -321,7 +321,7 @@ export const ACNETREX_MODULES: AcneTrexModule[] = [
     serviceStatus: "ready",
     readinessStatus: "ready",
     implementedSurfaces: allSurfaces,
-    missingSurfaces: [],
+    missingSurfaces: ["Structured outcome persistence for TriggerGraph and Skin Twin"],
     nextAction: "Persist structured skin outcomes for TriggerGraph and Skin Twin.",
   },
   {
