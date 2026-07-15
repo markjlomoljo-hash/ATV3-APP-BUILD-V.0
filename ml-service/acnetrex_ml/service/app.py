@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import secrets
 import time
@@ -24,6 +25,7 @@ from acnetrex_ml.contracts.responses import (
 )
 from acnetrex_ml.engines import dispatch_deterministic
 from acnetrex_ml.observability.metrics import METRICS
+from acnetrex_ml.predictive.artifact import ArtifactRejected, load_approved_artifact
 from acnetrex_ml.registry.local_registry import LocalModelRegistry
 from acnetrex_ml.runtime.vertex import VertexAdapter
 from acnetrex_ml.safety.consent import validate_consent
@@ -72,18 +74,116 @@ def _predict_core(payload: InferenceRequest) -> InferenceResponse:
             request_id=str(payload.request_id),
             module=payload.module,
             task=payload.task,
-            result_type="readiness",
-            result={"state": "consent_restricted", "reason": consent_reason},
+            result_type="consent_restricted",
+            result=None,
             runtime_mode=RuntimeMode.UNAVAILABLE,
             runtime_provider="none",
             readiness_state=ReadinessState.CONSENT_RESTRICTED,
             input_record_refs=payload.input_record_refs,
             safety_state=ReadinessState.CONSENT_RESTRICTED,
             limitations=[
-                "Processing was not performed because consent does not permit it."
+                "Processing was not performed because consent does not permit it.",
+                f"Consent gate: {consent_reason or 'required_scope_missing'}.",
             ],
             latency_ms=(time.perf_counter() - start) * 1000,
         )
+    registry_path = os.getenv(
+        "MODEL_REGISTRY_PATH", str(SERVICE_ROOT / "manifests/model-registry.json")
+    )
+    try:
+        artifact = load_approved_artifact(registry_path, task=payload.task)
+    except (ArtifactRejected, OSError, TypeError, ValueError, json.JSONDecodeError):
+        artifact = None
+    if artifact is not None:
+        invalid_features = [
+            name
+            for name in artifact.feature_names
+            if isinstance(payload.inputs.get(name), bool)
+            or not isinstance(payload.inputs.get(name), (int, float))
+            or not math.isfinite(float(payload.inputs[name]))
+        ]
+        if invalid_features:
+            supplied = len(artifact.feature_names) - len(invalid_features)
+            return InferenceResponse(
+                ok=False,
+                request_id=str(payload.request_id),
+                module=payload.module,
+                task=payload.task,
+                result_type="insufficient_data",
+                result=None,
+                runtime_mode=RuntimeMode.CLOUD_RUN,
+                runtime_provider="acnetrex_predictive_runtime",
+                readiness_state=ReadinessState.INSUFFICIENT_DATA,
+                model_name=artifact.model_name,
+                model_version=artifact.model_version,
+                training_data_version=artifact.dataset_version,
+                feature_schema_version=artifact.feature_schema_version,
+                input_record_refs=payload.input_record_refs,
+                features_used=[
+                    name for name in artifact.feature_names if name not in invalid_features
+                ],
+                features_missing=invalid_features,
+                sample_count=len(payload.input_record_refs),
+                coverage=supplied / len(artifact.feature_names),
+                confidence=None,
+                confidence_label="not_applicable",
+                calibration_state="unavailable",
+                uncertainty=["No predictive probability was produced."],
+                limitations=[
+                    "All required owner-derived features must be available.",
+                    *artifact.limitations,
+                ],
+                evidence_state="unavailable",
+                safety_state=ReadinessState.INSUFFICIENT_DATA,
+                sync_status="synced",
+                latency_ms=(time.perf_counter() - start) * 1000,
+            )
+        prediction = artifact.predict(payload.inputs)
+        probability = prediction.probability
+        certainty = max(probability, 1.0 - probability)
+        confidence_label = (
+            "high" if certainty >= 0.8 else "moderate" if certainty >= 0.65 else "low"
+        )
+        result = {
+            "state": "ready",
+            "estimated_direction": prediction.label,
+            "direction_probability": probability,
+            "component_models": prediction.component_probabilities,
+            "feature_contributions": prediction.feature_contributions,
+            "causal_claim": False,
+        }
+        return InferenceResponse(
+            ok=True,
+            request_id=str(payload.request_id),
+            module=payload.module,
+            task=payload.task,
+            result_type="calibrated_predictive_ensemble",
+            result=result,
+            runtime_mode=RuntimeMode.CLOUD_RUN,
+            runtime_provider="acnetrex_predictive_runtime",
+            readiness_state=ReadinessState.READY,
+            model_name=artifact.model_name,
+            model_version=artifact.model_version,
+            training_data_version=artifact.dataset_version,
+            feature_schema_version=artifact.feature_schema_version,
+            input_record_refs=payload.input_record_refs,
+            features_used=prediction.features_used,
+            sample_count=max(1, len(payload.input_record_refs)),
+            coverage=1.0,
+            confidence=probability,
+            confidence_label=confidence_label,
+            calibration_state=prediction.calibration_state,
+            uncertainty=[
+                "Probability is calibrated on an untouched participant-grouped temporal holdout.",
+                "This associational estimate is not a diagnosis or causal claim.",
+            ],
+            limitations=artifact.limitations,
+            evidence_state="available",
+            safety_state=ReadinessState.READY,
+            sync_status="synced",
+            latency_ms=(time.perf_counter() - start) * 1000,
+        )
+
     result = dispatch_deterministic(payload.module, payload.task, payload.inputs)
     if result is None:
         heavy = payload.module == "faceatlas" or payload.runtime_preference in {
@@ -126,7 +226,7 @@ def _predict_core(payload: InferenceRequest) -> InferenceResponse:
         module=payload.module,
         task=payload.task,
         result_type="deterministic_analysis",
-        result=result,
+        result=result if ok else None,
         runtime_mode=RuntimeMode.LOCAL_DETERMINISTIC,
         runtime_provider="acnetrex_ml",
         readiness_state=state,
