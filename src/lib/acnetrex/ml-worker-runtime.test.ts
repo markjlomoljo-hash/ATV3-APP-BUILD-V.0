@@ -18,6 +18,19 @@ const requiredEnvironment = {
 };
 
 describe("persistent ML worker runtime", () => {
+  it("starts paused without database secrets when the worker is explicitly disabled", async () => {
+    const config = buildMlWorkerRuntimeConfig({ ACNETREX_ML_WORKER_ENABLED: "false" });
+    const state = createMlWorkerRuntimeState("2026-07-14T00:00:00.000Z");
+    const processBatch = vi.fn();
+
+    expect(config).toMatchObject({ enabled: false });
+
+    await runMlWorkerLoop({ config, state, processBatch, maxCycles: 1 });
+
+    expect(processBatch).not.toHaveBeenCalled();
+    expect(state).toMatchObject({ ready: true, lastOutcome: "paused" });
+  });
+
   it("fails closed and names only missing configuration keys", () => {
     expect(() => buildMlWorkerRuntimeConfig({})).toThrowError(MlWorkerConfigurationError);
 
@@ -45,6 +58,7 @@ describe("persistent ML worker runtime", () => {
       ML_WORKER_MAX_JOBS: "100",
       ML_WORKER_ID: "railway-worker-01",
     })).toEqual({
+      enabled: true,
       port: 65_535,
       pollIntervalMs: 250,
       errorBackoffMs: 60_000,

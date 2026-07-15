@@ -1,4 +1,5 @@
 export type MlWorkerRuntimeConfig = {
+  enabled: boolean;
   port: number;
   pollIntervalMs: number;
   errorBackoffMs: number;
@@ -73,10 +74,14 @@ function safeWorkerId(value: string | undefined): string {
 export function buildMlWorkerRuntimeConfig(
   environment: Record<string, string | undefined>,
 ): MlWorkerRuntimeConfig {
-  const missingKeys = requiredEnvironmentKeys.filter((key) => !environment[key]?.trim());
+  const enabled = environment.ACNETREX_ML_WORKER_ENABLED !== "false";
+  const missingKeys = enabled
+    ? requiredEnvironmentKeys.filter((key) => !environment[key]?.trim())
+    : [];
   if (missingKeys.length > 0) throw new MlWorkerConfigurationError([...missingKeys]);
 
   return {
+    enabled,
     port: boundedInteger(environment.PORT, 8080, 1, 65_535),
     pollIntervalMs: boundedInteger(environment.ML_WORKER_POLL_INTERVAL_MS, 1_000, 250, 30_000),
     errorBackoffMs: boundedInteger(environment.ML_WORKER_ERROR_BACKOFF_MS, 5_000, 1_000, 60_000),
@@ -146,6 +151,15 @@ export async function runMlWorkerLoop(options: WorkerLoopOptions): Promise<void>
   let cycles = 0;
 
   try {
+    if (!options.config.enabled) {
+      options.state.ready = true;
+      options.state.lastCycleAt = now();
+      options.state.lastOutcome = "paused";
+      options.state.lastErrorCode = null;
+      onEvent({ level: "info", code: "worker_cycle_completed", outcome: "paused" });
+      return;
+    }
+
     while (!signal.aborted && cycles < maxCycles) {
       cycles += 1;
       try {
