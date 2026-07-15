@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -23,5 +25,12 @@ describe("route smoke input and HTML handling", () => {
     expect(visibleTextFromHtml(html)).toContain("Ready");
     expect(visibleTextFromHtml(html)).toContain("Visible result");
     expect(visibleTextFromHtml(html)).not.toMatch(/undefined|null/i);
+  });
+
+  it("keeps the internal ML service URL out of every browser and Expo public variable", () => {
+    const example = readFileSync(resolve(process.cwd(), ".env.example"), "utf8");
+
+    expect(example).not.toMatch(/^(?:NEXT_PUBLIC|VITE|EXPO_PUBLIC)_ACNETREX_ML_/m);
+    expect(example).toContain("ACNETREX_ML_PERSISTENCE_OWNER=nextjs");
   });
 });
