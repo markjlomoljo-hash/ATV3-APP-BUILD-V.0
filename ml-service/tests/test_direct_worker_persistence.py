@@ -4,6 +4,8 @@ from uuid import uuid4
 from fastapi.testclient import TestClient
 
 from acnetrex_ml.service.app import create_app
+from acnetrex_ml.service.dependencies import build_analysis_repository
+from acnetrex_ml.service.persistence import PostgresAnalysisRepository
 
 
 def inference_payload() -> dict:
@@ -17,7 +19,9 @@ def inference_payload() -> dict:
         "runtime_preference": "cloud",
         "feature_schema_version": "1.0.0",
         "input_record_refs": [],
-        "inputs": {"records": [{"date": "forged", "bedtime": "00:00", "wake_time": "00:01"}]},
+        "inputs": {
+            "records": [{"date": "forged", "bedtime": "00:00", "wake_time": "00:01"}]
+        },
         "context": {"timezone": "Asia/Manila", "locale": "en-PH"},
         "consent": {
             "personal_processing": True,
@@ -91,7 +95,9 @@ def authenticated_headers(body: dict) -> dict[str, str]:
     }
 
 
-def test_railway_mode_uses_owner_derived_inputs_and_finalizes_before_200(monkeypatch) -> None:
+def test_railway_mode_uses_owner_derived_inputs_and_finalizes_before_200(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("ACNETREX_ML_SHARED_SECRET", "server-secret")
     monkeypatch.setenv("ACNETREX_ML_PERSISTENCE_OWNER", "railway")
@@ -114,19 +120,23 @@ def test_railway_mode_uses_owner_derived_inputs_and_finalizes_before_200(monkeyp
     ]
 
 
-def test_railway_mode_replays_committed_response_without_executing_again(monkeypatch) -> None:
+def test_railway_mode_replays_committed_response_without_executing_again(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("ACNETREX_ML_SHARED_SECRET", "server-secret")
     monkeypatch.setenv("ACNETREX_ML_PERSISTENCE_OWNER", "railway")
     persistence = FakeRailwayPersistence()
     body = inference_payload()
     persistence.prepare_state = "replay"
-    persistence.replay_response = {"ok": True, "request_id": body["request_id"], "job_id": body["request_id"]}
+    persistence.replay_response = {
+        "ok": True,
+        "request_id": body["request_id"],
+        "job_id": body["request_id"],
+    }
     client = TestClient(create_app(analysis_repository=persistence))
 
-    response = client.post(
-        "/predict", json=body, headers=authenticated_headers(body)
-    )
+    response = client.post("/predict", json=body, headers=authenticated_headers(body))
 
     assert response.status_code == 200
     assert response.headers["idempotency-replayed"] == "true"
@@ -134,7 +144,9 @@ def test_railway_mode_replays_committed_response_without_executing_again(monkeyp
     assert persistence.finalized == []
 
 
-def test_railway_mode_rejects_missing_or_mismatched_correlation_headers(monkeypatch) -> None:
+def test_railway_mode_rejects_missing_or_mismatched_correlation_headers(
+    monkeypatch,
+) -> None:
     monkeypatch.setenv("APP_ENV", "production")
     monkeypatch.setenv("ACNETREX_ML_SHARED_SECRET", "server-secret")
     monkeypatch.setenv("ACNETREX_ML_PERSISTENCE_OWNER", "railway")
@@ -164,3 +176,16 @@ def test_railway_mode_rejects_missing_or_mismatched_correlation_headers(monkeypa
     assert mismatched.status_code == 409
     assert mismatched.json()["detail"]["code"] == "request_id_mismatch"
     assert persistence.prepared_payload is None
+
+
+def test_railway_repository_builder_fails_closed_without_database_url(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("ACNETREX_ML_PERSISTENCE_OWNER", "railway")
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+
+    assert build_analysis_repository() is None
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://railway-worker@example.test/db")
+    repository = build_analysis_repository()
+    assert isinstance(repository, PostgresAnalysisRepository)

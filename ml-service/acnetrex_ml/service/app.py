@@ -30,7 +30,7 @@ from acnetrex_ml.runtime.vertex import VertexAdapter
 from acnetrex_ml.safety.consent import validate_consent
 from acnetrex_ml.safety.output_validation import validate_safe_output
 
-from .dependencies import build_idempotency_store
+from .dependencies import build_analysis_repository, build_idempotency_store
 from .idempotency import IdempotencyStore, canonical_hash
 from .middleware import RequestContextMiddleware
 
@@ -260,6 +260,7 @@ def create_app(
     analysis_repository: Any | None = None,
 ) -> FastAPI:
     store = idempotency_store or build_idempotency_store()
+    repository = analysis_repository or build_analysis_repository()
     batch_limit = asyncio.Semaphore(int(os.getenv("MAX_BATCH_CONCURRENCY", "4")))
     maximum_batch_size = int(os.getenv("MAX_BATCH_SIZE", "32"))
 
@@ -321,7 +322,7 @@ def create_app(
             registry = {"count": 0, "active": [], "approved": []}
             registry_state = "error"
         persistence_owner = os.getenv("ACNETREX_ML_PERSISTENCE_OWNER", "nextjs")
-        persistence = analysis_repository if persistence_owner == "railway" else store
+        persistence = repository if persistence_owner == "railway" else store
         persistence_ready = persistence is not None and await asyncio.to_thread(
             persistence.healthcheck
         )
@@ -401,14 +402,14 @@ def create_app(
                 raise HTTPException(
                     status_code=409, detail={"code": "job_identity_mismatch"}
                 )
-            if analysis_repository is None:
+            if repository is None:
                 raise HTTPException(
                     status_code=503,
                     detail={"code": "railway_persistence_not_configured"},
                 )
             request_hash = canonical_hash(payload.model_dump(mode="json"))
             reservation = await asyncio.to_thread(
-                analysis_repository.prepare, payload, request_hash
+                repository.prepare, payload, request_hash
             )
             if reservation.state == "conflict":
                 raise HTTPException(
@@ -433,7 +434,7 @@ def create_app(
                     timeout=float(os.getenv("REQUEST_TIMEOUT_SECONDS", "20")),
                 )
                 body = await asyncio.to_thread(
-                    analysis_repository.finalize,
+                    repository.finalize,
                     reservation,
                     result,
                     request_hash,
@@ -441,7 +442,7 @@ def create_app(
                 return JSONResponse(status_code=200, content=body)
             except TimeoutError as exc:
                 await asyncio.to_thread(
-                    analysis_repository.fail,
+                    repository.fail,
                     reservation,
                     retryable=True,
                     code="inference_timeout",
@@ -451,7 +452,7 @@ def create_app(
                 ) from exc
             except (TypeError, ValueError) as exc:
                 await asyncio.to_thread(
-                    analysis_repository.fail,
+                    repository.fail,
                     reservation,
                     retryable=False,
                     code="invalid_input",

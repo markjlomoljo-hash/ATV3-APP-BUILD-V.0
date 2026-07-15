@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from typing import Any
-from uuid import uuid4
 
 from acnetrex_ml.contracts.requests import InferenceRequest
 from acnetrex_ml.service.app import _predict_core
@@ -68,7 +67,10 @@ class ScriptedDatabase:
         self.last_one = None
         self.last_all = []
         self.rowcount = 1
-        if "from public.ml_analysis_jobs j" in normalized and "for update" in normalized:
+        if (
+            "from public.ml_analysis_jobs j" in normalized
+            and "for update" in normalized
+        ):
             self.last_one = {
                 "id": JOB_ID,
                 "user_id": USER_ID,
@@ -89,7 +91,11 @@ class ScriptedDatabase:
                 "max_attempts": 5,
             }
         elif "insert into public.ml_service_idempotency" in normalized:
-            self.last_one = None if self.replay else {"scope": "direct:sleepderm:sleep_pattern_analysis"}
+            self.last_one = (
+                None
+                if self.replay
+                else {"scope": "direct:sleepderm:sleep_pattern_analysis"}
+            )
         elif "from public.ml_service_idempotency" in normalized:
             self.last_one = {
                 "request_hash": "hash-1",
@@ -114,7 +120,10 @@ class ScriptedDatabase:
             ]
         elif "insert into public.ml_analysis_results" in normalized:
             self.last_one = {"id": RESULT_ID}
-        elif "update public.ml_analysis_jobs" in normalized and "returning id" in normalized:
+        elif (
+            "update public.ml_analysis_jobs" in normalized
+            and "returning id" in normalized
+        ):
             self.last_one = {"id": JOB_ID}
         elif "select j.status, r.id as result_id" in normalized:
             self.last_one = {
@@ -159,12 +168,16 @@ def test_finalize_commits_lineage_job_state_and_replay_record_before_readback() 
     reservation = repository.prepare(request(), "hash-1")
     assert reservation.request is not None
 
-    body = repository.finalize(reservation, _predict_core(reservation.request), "hash-1")
+    body = repository.finalize(
+        reservation, _predict_core(reservation.request), "hash-1"
+    )
 
     assert body["job_id"] == JOB_ID
     statements = [sql for sql, _params in database.executed]
     result_index = next(
-        index for index, sql in enumerate(statements) if "insert into public.ml_analysis_results" in sql
+        index
+        for index, sql in enumerate(statements)
+        if "insert into public.ml_analysis_results" in sql
     )
     job_index = next(
         index
@@ -177,7 +190,9 @@ def test_finalize_commits_lineage_job_state_and_replay_record_before_readback() 
         if "update public.ml_service_idempotency" in sql and "response_reference" in sql
     )
     readback_index = next(
-        index for index, sql in enumerate(statements) if "select j.status, r.id as result_id" in sql
+        index
+        for index, sql in enumerate(statements)
+        if "select j.status, r.id as result_id" in sql
     )
     assert result_index < job_index < replay_index < readback_index
     assert database.commits >= 3
@@ -198,4 +213,6 @@ def test_prepare_replays_the_committed_canonical_response() -> None:
         "request_id": JOB_ID,
         "job_id": JOB_ID,
     }
-    assert not any("from public.sleep_logs" in sql for sql, _params in database.executed)
+    assert not any(
+        "from public.sleep_logs" in sql for sql, _params in database.executed
+    )
