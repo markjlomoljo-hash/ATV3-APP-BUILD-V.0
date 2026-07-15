@@ -153,10 +153,16 @@ export async function runMlWorkerLoop(options: WorkerLoopOptions): Promise<void>
   try {
     if (!options.config.enabled) {
       options.state.ready = true;
-      options.state.lastCycleAt = now();
       options.state.lastOutcome = "paused";
       options.state.lastErrorCode = null;
-      onEvent({ level: "info", code: "worker_cycle_completed", outcome: "paused" });
+      while (!signal.aborted && cycles < maxCycles) {
+        cycles += 1;
+        options.state.lastCycleAt = now();
+        onEvent({ level: "info", code: "worker_cycle_completed", outcome: "paused" });
+        if (!signal.aborted && cycles < maxCycles) {
+          await sleep(options.config.pollIntervalMs, signal);
+        }
+      }
       return;
     }
 

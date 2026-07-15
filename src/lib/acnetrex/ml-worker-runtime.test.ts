@@ -31,6 +31,19 @@ describe("persistent ML worker runtime", () => {
     expect(state).toMatchObject({ ready: true, lastOutcome: "paused" });
   });
 
+  it("keeps the health server alive while dispatch is paused", async () => {
+    const config = buildMlWorkerRuntimeConfig({ ACNETREX_ML_WORKER_ENABLED: "false" });
+    const state = createMlWorkerRuntimeState("2026-07-14T00:00:00.000Z");
+    const processBatch = vi.fn();
+    const sleep = vi.fn().mockResolvedValue(undefined);
+
+    await runMlWorkerLoop({ config, state, processBatch, sleep, maxCycles: 2 });
+
+    expect(processBatch).not.toHaveBeenCalled();
+    expect(sleep).toHaveBeenCalledTimes(1);
+    expect(sleep).toHaveBeenCalledWith(config.pollIntervalMs, expect.any(AbortSignal));
+  });
+
   it("fails closed and names only missing configuration keys", () => {
     expect(() => buildMlWorkerRuntimeConfig({})).toThrowError(MlWorkerConfigurationError);
 
