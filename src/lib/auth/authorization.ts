@@ -45,8 +45,16 @@ export function authorizationFromRole(input: { userId: string; sessionId: string
 export function isClerkConfigured(): boolean { return false; }
 export function authorizationFromMetadata(input: { clerkUserId: string; sessionId: string; publicMetadata: UserPublicMetadata; privateMetadata: UserPrivateMetadata; factorVerificationAge: [number, number] | null; ownerIds?: readonly string[] }): AuthorizationContext {
   const privileged = normalizeRole(input.publicMetadata.role) !== "user";
-  const context = authorizationFromRole({ userId: input.clerkUserId, sessionId: input.sessionId, dbRole: privileged && !validRoleVersion(input.publicMetadata.roleVersion) ? "user" : input.publicMetadata.role, roleVersion: input.publicMetadata.roleVersion, accountStatus: input.privateMetadata.accountStatus, factorVerificationAge: input.factorVerificationAge, ownerIds: input.ownerIds });
-  return { ...context, roleSource: context.role === "owner" ? "owner_allowlist" : "clerk_public_metadata" };
+  const downgraded = privileged && !validRoleVersion(input.publicMetadata.roleVersion);
+  const context = authorizationFromRole({ userId: input.clerkUserId, sessionId: input.sessionId, dbRole: downgraded ? "user" : input.publicMetadata.role, roleVersion: input.publicMetadata.roleVersion, accountStatus: input.privateMetadata.accountStatus, factorVerificationAge: input.factorVerificationAge, ownerIds: input.ownerIds });
+  return {
+    ...context,
+    roleSource: context.role === "owner"
+      ? "owner_allowlist"
+      : downgraded
+        ? "default_user"
+        : "clerk_public_metadata",
+  };
 }
 
 export async function getAuthorizationContext(userId: string, sessionId = "supabase"): Promise<AuthorizationContext> {
