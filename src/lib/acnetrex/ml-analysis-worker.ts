@@ -669,6 +669,18 @@ async function processClaimedJob(
         await withFinalizeTransaction(client, () => persistSuccess(client, job, parsed.data));
       } catch (error) {
         if (error instanceof MlWorkerLeaseLostError) throw error;
+        const databaseError = error as {
+          code?: unknown;
+          constraint?: unknown;
+          table?: unknown;
+          column?: unknown;
+        };
+        console.error("ml_result_persistence_failed", {
+          code: typeof databaseError.code === "string" ? databaseError.code : "unknown",
+          constraint: typeof databaseError.constraint === "string" ? databaseError.constraint : undefined,
+          table: typeof databaseError.table === "string" ? databaseError.table : undefined,
+          column: typeof databaseError.column === "string" ? databaseError.column : undefined,
+        });
         throw new MlResultPersistenceError(error);
       }
       return { status: "completed", jobId: job.jobId, outboxId: job.outboxId };
