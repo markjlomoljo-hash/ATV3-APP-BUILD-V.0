@@ -1,4 +1,5 @@
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from "react-native";
+import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "../../src/stores/auth";
@@ -127,7 +128,19 @@ function SleepInsightCard({ summary }: { summary: InsightsSummary }) {
   );
 }
 
+const INTELLIGENCE_MODULES = [
+  { icon: '🧠', title: 'CutisAI', subtitle: 'Clinical skin assistant', route: '/modules/cutisai' },
+  { icon: '🧬', title: 'Skin Twin', subtitle: 'Estimated projections', route: '/modules/skin-twin' },
+  { icon: '🔍', title: 'TriggerGraph', subtitle: 'Patterns & forecast', route: '/modules/triggers' },
+  { icon: '📋', title: 'Reports', subtitle: 'Dermatologist PDFs', route: '/modules/reports' },
+  { icon: '🔬', title: 'FormulaLens', subtitle: 'Product intelligence', route: '/modules/formulalens' },
+  { icon: '⚙️', title: 'Intelligence', subtitle: 'ML engine status', route: '/modules/intelligence' },
+  { icon: '🔬', title: 'Research', subtitle: 'Anonymous learning', route: '/modules/research' },
+  { icon: '🔒', title: 'Privacy', subtitle: 'Data controls', route: '/modules/privacy' },
+];
+
 export default function InsightsScreen() {
+  const router = useRouter();
   const { user } = useAuthStore();
 
   const { data: summary, isLoading } = useQuery({
@@ -149,6 +162,26 @@ export default function InsightsScreen() {
           <Text style={styles.subtitle}>
             Patterns derived from your personal logs. No fabricated scores.
           </Text>
+        </View>
+
+        {/* Intelligence Hub */}
+        <View style={styles.hubSection}>
+          <Text style={styles.hubTitle}>Intelligence Modules</Text>
+          <View style={styles.hubGrid}>
+            {INTELLIGENCE_MODULES.map(mod => (
+              <TouchableOpacity
+                key={mod.route}
+                onPress={() => router.push(mod.route as never)}
+                style={styles.hubCard}
+                accessibilityRole="button"
+                accessibilityLabel={mod.title}
+              >
+                <Text style={styles.hubIcon}>{mod.icon}</Text>
+                <Text style={styles.hubCardTitle}>{mod.title}</Text>
+                <Text style={styles.hubCardSubtitle}>{mod.subtitle}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {isLoading && (
@@ -338,4 +371,14 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 18,
   },
+  hubSection: { marginBottom: Spacing.lg },
+  hubTitle: { ...Typography.title3, color: Colors.textPrimary, marginBottom: Spacing.md },
+  hubGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  hubCard: {
+    width: '47%', backgroundColor: Colors.surface, borderRadius: BorderRadius.lg,
+    padding: Spacing.md, borderWidth: 1, borderColor: Colors.border,
+  },
+  hubIcon: { fontSize: 24, marginBottom: 4 },
+  hubCardTitle: { ...Typography.bodyMedium, color: Colors.textPrimary },
+  hubCardSubtitle: { ...Typography.caption, color: Colors.textMuted, marginTop: 2 },
 });
