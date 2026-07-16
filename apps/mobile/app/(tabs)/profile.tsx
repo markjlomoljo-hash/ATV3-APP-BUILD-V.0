@@ -4,19 +4,33 @@ import {
   Text,
   StyleSheet,
   ScrollView,
-  Switch,
   Alert,
   Pressable,
+  Modal,
+  TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import Constants from "expo-constants";
+import { router } from "expo-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../src/stores/auth";
 import { useProfileStore } from "../../src/stores/profile";
 import {
   fetchProfile,
-  fetchConsents,
-  upsertConsents,
+  fetchProfessionalProfile,
+  updateProfessionalProfileSection,
 } from "../../src/lib/profile-service";
+import {
+  ACNE_ONSET_OPTIONS,
+  MEAL_FREQUENCY_OPTIONS,
+  type AcneOnsetValue,
+  type MealFrequencyValue,
+} from "../../src/lib/onboarding-contracts";
+import {
+  buildAcneHistoryEdit,
+  buildLifestyleBaselineEdit,
+} from "../../src/lib/profile-baseline-editor";
 import { supabase } from "../../src/lib/supabase";
 import { Button, Card, Divider } from "../../src/components/ui";
 import {
@@ -25,31 +39,6 @@ import {
   Typography,
   BorderRadius,
 } from "../../src/components/ui/theme";
-
-interface ConsentRowProps {
-  title: string;
-  description: string;
-  value: boolean;
-  onToggle: () => void;
-}
-
-function ConsentRow({ title, description, value, onToggle }: ConsentRowProps) {
-  return (
-    <View style={styles.consentRow}>
-      <View style={styles.consentRowContent}>
-        <Text style={styles.consentRowTitle}>{title}</Text>
-        <Text style={styles.consentRowDesc}>{description}</Text>
-      </View>
-      <Switch
-        value={value}
-        onValueChange={onToggle}
-        trackColor={{ false: Colors.border, true: Colors.primary }}
-        thumbColor="#fff"
-        accessibilityLabel={title}
-      />
-    </View>
-  );
-}
 
 function ProfileRow({
   label,
@@ -71,6 +60,11 @@ export default function ProfileScreen() {
   const { reset: resetProfile } = useProfileStore();
   const queryClient = useQueryClient();
   const [signingOut, setSigningOut] = useState(false);
+  const [baselineEditor, setBaselineEditor] = useState<"acne_history" | "lifestyle_baseline" | null>(null);
+  const [selectedOnset, setSelectedOnset] = useState<AcneOnsetValue | null>(null);
+  const [onsetDetail, setOnsetDetail] = useState("");
+  const [selectedMealFrequency, setSelectedMealFrequency] = useState<MealFrequencyValue | null>(null);
+  const [savingBaseline, setSavingBaseline] = useState(false);
 
   const { data: profile } = useQuery({
     queryKey: ["profile", user?.id],
@@ -78,27 +72,24 @@ export default function ProfileScreen() {
     enabled: !!user,
   });
 
-  const { data: consents } = useQuery({
-    queryKey: ["consents", user?.id],
-    queryFn: () => fetchConsents(user!.id),
+  const { data: professionalProfile } = useQuery({
+    queryKey: ["professional-profile", user?.id],
+    queryFn: fetchProfessionalProfile,
     enabled: !!user,
   });
 
-  const { mutate: updateConsent } = useMutation({
-    mutationFn: async (updates: Record<string, boolean>) => {
-      if (!user) throw new Error("auth_required");
-      return upsertConsents(user.id, updates);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["consents", user?.id] });
-    },
-    onError: (e) => {
-      Alert.alert(
-        "Update Failed",
-        e instanceof Error ? e.message : "Please try again."
-      );
-    },
-  });
+  const acneHistory = professionalProfile?.sections.find(
+    (section) => section.sectionKey === "acne_history",
+  )?.value ?? {};
+  const lifestyleBaseline = professionalProfile?.sections.find(
+    (section) => section.sectionKey === "lifestyle_baseline",
+  )?.value ?? {};
+  const persistedOnset = typeof acneHistory.onset_pattern === "string"
+    ? acneHistory.onset_pattern as AcneOnsetValue
+    : null;
+  const persistedMealFrequency = typeof lifestyleBaseline.meal_frequency_baseline === "string"
+    ? lifestyleBaseline.meal_frequency_baseline as MealFrequencyValue
+    : null;
 
   const handleSignOut = async () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -119,15 +110,51 @@ export default function ProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This will permanently delete your account and all associated data. This action cannot be undone.\n\nTo proceed, please contact support@acnetrex.com.",
-      [{ text: "OK" }]
-    );
+    router.push("/modules/privacy");
   };
 
-  const toggle = (key: string, currentValue: boolean) => {
-    updateConsent({ [key]: !currentValue });
+  const openAcneHistoryEditor = () => {
+    setSelectedOnset(persistedOnset);
+    setOnsetDetail(typeof acneHistory.onset_detail === "string" ? acneHistory.onset_detail : "");
+    setBaselineEditor("acne_history");
+  };
+
+  const openLifestyleEditor = () => {
+    setSelectedMealFrequency(persistedMealFrequency);
+    setBaselineEditor("lifestyle_baseline");
+  };
+
+  const saveBaselineEdit = async () => {
+    setSavingBaseline(true);
+    try {
+      if (baselineEditor === "acne_history" && selectedOnset) {
+        await updateProfessionalProfileSection(
+          "acne_history",
+          buildAcneHistoryEdit(acneHistory, selectedOnset, onsetDetail),
+          "profile_acne_history_edit",
+        );
+      } else if (baselineEditor === "lifestyle_baseline" && selectedMealFrequency) {
+        await updateProfessionalProfileSection(
+          "lifestyle_baseline",
+          buildLifestyleBaselineEdit(lifestyleBaseline, selectedMealFrequency),
+          "profile_lifestyle_baseline_edit",
+        );
+      } else {
+        Alert.alert("Selection required", "Choose an option before saving.");
+        return;
+      }
+      await queryClient.invalidateQueries({ queryKey: ["professional-profile", user?.id] });
+      await queryClient.invalidateQueries({ queryKey: ["food"] });
+      setBaselineEditor(null);
+      Alert.alert(
+        "Baseline updated",
+        "The versioned Profile section was updated. Meal baseline changes apply to future food-log days; historical snapshots are unchanged.",
+      );
+    } catch (error) {
+      Alert.alert("Update failed", error instanceof Error ? error.message.replace(/_/g, " ") : "Please retry.");
+    } finally {
+      setSavingBaseline(false);
+    }
   };
 
   return (
@@ -176,102 +203,53 @@ export default function ProfileScreen() {
           </Card>
         </View>
 
-        {/* Privacy & Consent */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Privacy & Consent</Text>
-          <Text style={styles.sectionSubtitle}>
-            All settings are optional and can be changed at any time.
-          </Text>
-          <Card style={{ gap: 0 }}>
-            <ConsentRow
-              title="Anonymous Learning"
-              description="Contribute anonymized patterns to improve AcneTrex for everyone."
-              value={consents?.anonymous_learning ?? false}
-              onToggle={() =>
-                toggle(
-                  "anonymous_learning",
-                  consents?.anonymous_learning ?? false
-                )
-              }
+          <Text style={styles.sectionTitle}>Acne History</Text>
+          <Text style={styles.sectionSubtitle}>Versioned history used by reports and readiness checks.</Text>
+          <Card>
+            <ProfileRow
+              label="When did it start?"
+              value={ACNE_ONSET_OPTIONS.find((option) => option.value === persistedOnset)?.label ?? null}
             />
             <Divider style={{ marginVertical: 0 }} />
-            <ConsentRow
-              title="Raw Image Learning"
-              description="Use FaceAtlas images to improve skin analysis models."
-              value={consents?.raw_image_learning ?? false}
-              onToggle={() =>
-                toggle(
-                  "raw_image_learning",
-                  consents?.raw_image_learning ?? false
-                )
-              }
-            />
-            <Divider style={{ marginVertical: 0 }} />
-            <ConsentRow
-              title="Photos in Reports"
-              description="Include FaceAtlas photos in your generated skin reports."
-              value={consents?.include_faceatlas_photos_in_reports ?? false}
-              onToggle={() =>
-                toggle(
-                  "include_faceatlas_photos_in_reports",
-                  consents?.include_faceatlas_photos_in_reports ?? false
-                )
-              }
-            />
+            <Pressable style={styles.editRow} onPress={openAcneHistoryEditor} accessibilityLabel="Edit acne history onset">
+              <Text style={styles.editText}>Edit Acne History</Text>
+              <Text style={styles.aboutLink}>Edit →</Text>
+            </Pressable>
           </Card>
         </View>
 
-        {/* Notifications */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notifications</Text>
-          <Card style={{ gap: 0 }}>
-            <ConsentRow
-              title="Product Analysis Alerts"
-              description="Notified when potential product-skin interactions are detected."
-              value={consents?.product_analysis_notifications ?? true}
-              onToggle={() =>
-                toggle(
-                  "product_analysis_notifications",
-                  consents?.product_analysis_notifications ?? true
-                )
-              }
+          <Text style={styles.sectionTitle}>Lifestyle Baseline</Text>
+          <Text style={styles.sectionSubtitle}>Future DermDiet days adapt to this baseline; historical days retain their saved snapshot.</Text>
+          <Card>
+            <ProfileRow
+              label="Usual meal frequency"
+              value={MEAL_FREQUENCY_OPTIONS.find((option) => option.value === persistedMealFrequency)?.label ?? null}
             />
             <Divider style={{ marginVertical: 0 }} />
-            <ConsentRow
-              title="Report Ready"
-              description="Notified when your weekly or monthly skin report is ready."
-              value={consents?.report_ready_notifications ?? true}
-              onToggle={() =>
-                toggle(
-                  "report_ready_notifications",
-                  consents?.report_ready_notifications ?? true
-                )
-              }
-            />
-            <Divider style={{ marginVertical: 0 }} />
-            <ConsentRow
-              title="Streak Reminders"
-              description="Reminded when you are at risk of breaking your logging streak."
-              value={consents?.streak_risk_notifications ?? true}
-              onToggle={() =>
-                toggle(
-                  "streak_risk_notifications",
-                  consents?.streak_risk_notifications ?? true
-                )
-              }
-            />
-            <Divider style={{ marginVertical: 0 }} />
-            <ConsentRow
-              title="Marketing"
-              description="Occasional updates about new features and skin care tips."
-              value={consents?.marketing_notifications ?? false}
-              onToggle={() =>
-                toggle(
-                  "marketing_notifications",
-                  consents?.marketing_notifications ?? false
-                )
-              }
-            />
+            <Pressable style={styles.editRow} onPress={openLifestyleEditor} accessibilityLabel="Edit meal frequency baseline">
+              <Text style={styles.editText}>Edit Lifestyle Baseline</Text>
+              <Text style={styles.aboutLink}>Edit →</Text>
+            </Pressable>
+          </Card>
+        </View>
+
+        {/* Privacy and consent use one authenticated, audited API source. */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Privacy & Consent</Text>
+          <Text style={styles.sectionSubtitle}>
+            Review the consent values currently stored for your account. A change is shown only after the server confirms it.
+          </Text>
+          <Card>
+            <Pressable
+              style={styles.editRow}
+              onPress={() => router.push("/modules/privacy")}
+              accessibilityLabel="Open privacy and consent center"
+            >
+              <Text style={styles.editText}>Open Privacy & Consent Center</Text>
+              <Text style={styles.aboutLink}>Open</Text>
+            </Pressable>
           </Card>
         </View>
 
@@ -281,22 +259,17 @@ export default function ProfileScreen() {
           <Card>
             <View style={styles.aboutRow}>
               <Text style={styles.aboutLabel}>Version</Text>
-              <Text style={styles.aboutValue}>3.0.0-beta</Text>
+              <Text style={styles.aboutValue}>{Constants.expoConfig?.version ?? "Unavailable"}</Text>
             </View>
             <Divider style={{ marginVertical: 0 }} />
             <View style={styles.aboutRow}>
               <Text style={styles.aboutLabel}>Build</Text>
-              <Text style={styles.aboutValue}>Phase 1</Text>
+              <Text style={styles.aboutValue}>{Constants.expoConfig?.android?.versionCode ?? "Unavailable"}</Text>
             </View>
             <Divider style={{ marginVertical: 0 }} />
-            <Pressable style={styles.aboutRow}>
-              <Text style={styles.aboutLabel}>Privacy Policy</Text>
-              <Text style={styles.aboutLink}>View →</Text>
-            </Pressable>
-            <Divider style={{ marginVertical: 0 }} />
-            <Pressable style={styles.aboutRow}>
-              <Text style={styles.aboutLabel}>Terms of Service</Text>
-              <Text style={styles.aboutLink}>View →</Text>
+            <Pressable style={styles.aboutRow} onPress={() => router.push("/modules/privacy")}>
+              <Text style={styles.aboutLabel}>Privacy & data controls</Text>
+              <Text style={styles.aboutLink}>Open →</Text>
             </Pressable>
           </Card>
         </View>
@@ -323,6 +296,65 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
+      <Modal visible={baselineEditor !== null} animationType="slide" presentationStyle="pageSheet">
+        <SafeAreaView style={styles.safe}>
+          <View style={styles.modalHeader}>
+            <Pressable onPress={() => setBaselineEditor(null)} disabled={savingBaseline}>
+              <Text style={styles.aboutLink}>Cancel</Text>
+            </Pressable>
+            <Text style={styles.modalTitle}>
+              {baselineEditor === "acne_history" ? "Edit Acne History" : "Edit Lifestyle Baseline"}
+            </Text>
+            <Pressable onPress={() => void saveBaselineEdit()} disabled={savingBaseline}>
+              {savingBaseline ? <ActivityIndicator color={Colors.primary} /> : <Text style={styles.aboutLink}>Save</Text>}
+            </Pressable>
+          </View>
+          <ScrollView contentContainerStyle={styles.modalContent}>
+            {baselineEditor === "acne_history" ? (
+              <>
+                <Text style={styles.modalQuestion}>When did it start?</Text>
+                <Text style={styles.sectionSubtitle}>This correction creates a new version; it does not erase the prior answer.</Text>
+                {ACNE_ONSET_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    style={[styles.optionRow, selectedOnset === option.value && styles.optionRowSelected]}
+                    onPress={() => setSelectedOnset(option.value)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: selectedOnset === option.value }}
+                  >
+                    <Text style={[styles.optionText, selectedOnset === option.value && styles.optionTextSelected]}>{option.label}</Text>
+                  </Pressable>
+                ))}
+                <Text style={styles.modalQuestion}>Additional detail (optional)</Text>
+                <TextInput
+                  style={styles.detailInput}
+                  value={onsetDetail}
+                  onChangeText={setOnsetDetail}
+                  multiline
+                  maxLength={500}
+                  accessibilityLabel="Acne onset additional detail"
+                />
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalQuestion}>How many meals do you usually have in a day?</Text>
+                <Text style={styles.sectionSubtitle}>This changes future completion logic only. Existing food-log snapshots remain unchanged.</Text>
+                {MEAL_FREQUENCY_OPTIONS.map((option) => (
+                  <Pressable
+                    key={option.value}
+                    style={[styles.optionRow, selectedMealFrequency === option.value && styles.optionRowSelected]}
+                    onPress={() => setSelectedMealFrequency(option.value)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: selectedMealFrequency === option.value }}
+                  >
+                    <Text style={[styles.optionText, selectedMealFrequency === option.value && styles.optionTextSelected]}>{option.label}</Text>
+                  </Pressable>
+                ))}
+              </>
+            )}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -371,22 +403,14 @@ const styles = StyleSheet.create({
   },
   profileRowLabel: { ...Typography.body, color: Colors.textSecondary },
   profileRowValue: { ...Typography.bodyMedium, color: Colors.textPrimary },
-  consentRow: {
+  editRow: {
     flexDirection: "row",
-    alignItems: "center",
     justifyContent: "space-between",
+    alignItems: "center",
     paddingVertical: 12,
     paddingHorizontal: Spacing.md,
-    gap: Spacing.md,
   },
-  consentRowContent: { flex: 1 },
-  consentRowTitle: { ...Typography.bodyMedium, color: Colors.textPrimary },
-  consentRowDesc: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    marginTop: 2,
-    lineHeight: 16,
-  },
+  editText: { ...Typography.bodyMedium, color: Colors.textPrimary },
   aboutRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -412,4 +436,37 @@ const styles = StyleSheet.create({
   actions: { gap: Spacing.sm },
   deleteButton: { alignItems: "center", paddingVertical: Spacing.md },
   deleteText: { ...Typography.body, color: Colors.error },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: { ...Typography.title3, color: Colors.textPrimary },
+  modalContent: { padding: Spacing.lg, paddingBottom: Spacing.xxl },
+  modalQuestion: { ...Typography.bodyMedium, color: Colors.textPrimary, marginTop: Spacing.md, marginBottom: Spacing.sm },
+  optionRow: {
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+    backgroundColor: Colors.surface,
+  },
+  optionRowSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  optionText: { ...Typography.body, color: Colors.textSecondary },
+  optionTextSelected: { ...Typography.bodyMedium, color: Colors.primaryDark },
+  detailInput: {
+    minHeight: 100,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    color: Colors.textPrimary,
+    backgroundColor: Colors.surface,
+    textAlignVertical: "top",
+  },
 });

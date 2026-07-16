@@ -1,7 +1,7 @@
 // Server-side PDF rendering for dermatologist-ready reports. Runs entirely
 // on Node so report layout and sensitive record compilation stay off-device.
 import PDFDocument from "pdfkit";
-import { ReportData, ReportSection } from "./types";
+import { ReportData, ReportImageAttachment, ReportSection } from "./types";
 
 const GREEN = "#1f8a5f";
 const INK = "#0f172a";
@@ -148,7 +148,34 @@ function drawClinicianSignoff(doc: PDFKit.PDFDocument) {
     });
 }
 
-export async function renderReportPdf(report: ReportData): Promise<Buffer> {
+function drawFaceAtlasImages(doc: PDFKit.PDFDocument, attachments: ReportImageAttachment[]) {
+  if (attachments.length === 0) return;
+  drawSectionHeading(doc, "Verified FaceAtlas Images");
+  for (const attachment of attachments) {
+    if (doc.y > doc.page.height - 265) doc.addPage();
+    const top = doc.y;
+    doc.image(attachment.bytes, PAGE_MARGIN, top, {
+      fit: [doc.page.width - PAGE_MARGIN * 2, 205],
+      align: "center",
+      valign: "center",
+    });
+    doc.y = top + 210;
+    doc
+      .fontSize(8.5)
+      .font("Helvetica")
+      .fillColor(MUTED)
+      .text(`FaceAtlas scan captured ${attachment.scanDate.slice(0, 10)} · ${attachment.mimeType}`, {
+        width: doc.page.width - PAGE_MARGIN * 2,
+        align: "center",
+      });
+    doc.moveDown(0.6);
+  }
+}
+
+export async function renderReportPdf(
+  report: ReportData,
+  faceAtlasImages: ReportImageAttachment[] = [],
+): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "A4", margin: PAGE_MARGIN, autoFirstPage: true });
     const chunks: Buffer[] = [];
@@ -228,7 +255,10 @@ export async function renderReportPdf(report: ReportData): Promise<Buffer> {
       report.providerQuestions,
     ];
 
-    for (const section of sections) drawSection(doc, section);
+    for (const section of sections) {
+      drawSection(doc, section);
+      if (section === report.faceAtlasHistory) drawFaceAtlasImages(doc, faceAtlasImages);
+    }
     drawClinicianSignoff(doc);
 
     doc

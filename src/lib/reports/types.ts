@@ -38,6 +38,12 @@ export interface ReportData {
   providerQuestions: ReportSection;
 }
 
+export interface ReportImageAttachment {
+  scanDate: string;
+  mimeType: "image/png" | "image/jpeg";
+  bytes: Buffer;
+}
+
 export interface RawProfileBundle {
   userId: string;
   userName: string;
@@ -51,6 +57,7 @@ export interface RawProfileBundle {
     agreementPct: number | null;
     confidence: string;
     hasRetainedImage: boolean;
+    imageStorageRef?: string | null;
   }>;
   treatmentPlans: Array<{
     title: string;

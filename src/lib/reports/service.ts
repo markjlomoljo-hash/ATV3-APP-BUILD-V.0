@@ -20,6 +20,7 @@ import { buildReportStorageRef, putObject, getObject } from "@/lib/storage";
 import { compileReportData } from "./compile";
 import { renderReportPdf } from "./pdf";
 import { RawProfileBundle } from "./types";
+import { loadFaceAtlasReportImages } from "./faceatlas-images";
 import { recordProfileAuditEvent } from "@/lib/audit";
 
 function postgresErrorCode(error: unknown): string | undefined {
@@ -108,6 +109,7 @@ async function buildRawBundle(userId: string): Promise<RawProfileBundle> {
       agreementPct: s.agreementPct,
       confidence: s.confidence,
       hasRetainedImage: Boolean(s.imageStorageRef),
+      imageStorageRef: s.imageStorageRef,
     })),
     treatmentPlans: plans.map((p) => ({
       title: p.title,
@@ -227,8 +229,15 @@ export async function createAndProcessReport(
     };
 
     const bundle = await buildRawBundle(userId);
-    const reportData = compileReportData(bundle, effectiveInclusion);
-    const pdfBuffer = await renderReportPdf(reportData);
+    const faceAtlasImages = await loadFaceAtlasReportImages(
+      bundle,
+      effectiveInclusion.includeFaceAtlasPhotos,
+    );
+    const reportData = compileReportData(bundle, effectiveInclusion, {
+      embeddedCount: faceAtlasImages.attachments.length,
+      unavailableCount: faceAtlasImages.unavailableCount,
+    });
+    const pdfBuffer = await renderReportPdf(reportData, faceAtlasImages.attachments);
 
     const storageRef = buildReportStorageRef(userId, request.id);
     const { sizeBytes } = await putObject(storageRef, pdfBuffer);

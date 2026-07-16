@@ -113,6 +113,10 @@ function sleepAnalyticsRows(bundle: RawProfileBundle): Array<{ label: string; va
 export function compileReportData(
   bundle: RawProfileBundle,
   inclusionOptions: ReportInclusionOptions,
+  faceAtlasImageStatus: { embeddedCount: number; unavailableCount: number } = {
+    embeddedCount: 0,
+    unavailableCount: 0,
+  },
 ): ReportData {
   const reportId = randomUUID();
   const compiledAt = new Date().toISOString();
@@ -237,9 +241,14 @@ export function compileReportData(
           title: "FaceAtlas Scan History",
           insufficientData: false,
           notes: [
-            inclusionOptions.includeFaceAtlasPhotos
-              ? "Scan thumbnails included per explicit user consent at report time."
+            inclusionOptions.includeFaceAtlasPhotos && faceAtlasImageStatus.embeddedCount > 0
+              ? `${faceAtlasImageStatus.embeddedCount} verified scan image${faceAtlasImageStatus.embeddedCount === 1 ? "" : "s"} embedded per explicit user consent at report time.`
+              : inclusionOptions.includeFaceAtlasPhotos
+                ? "FaceAtlas images were requested, but no retained scan image could be verified and embedded."
               : "Scan thumbnails excluded — user did not opt in to including FaceAtlas photos in this report.",
+            ...(faceAtlasImageStatus.unavailableCount > 0
+              ? [`Unavailable or invalid retained scan images: ${faceAtlasImageStatus.unavailableCount}.`]
+              : []),
             `Total scans on record: ${bundle.faceAtlasScans.length}.`,
           ],
         }

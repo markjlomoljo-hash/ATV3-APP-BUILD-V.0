@@ -1,6 +1,43 @@
 import { supabase } from "./supabase";
 import { Profile, ConsentSettings } from "../stores/profile";
 import { randomUUID } from "expo-crypto";
+import { apiFetch, apiMutation, createMutationOperation } from "./api";
+
+export type ProfessionalProfileSection = {
+  sectionKey: string;
+  value: Record<string, unknown>;
+  version: number;
+  updatedAt: string | null;
+  updatedBy: string | null;
+  isVersioned: boolean;
+};
+
+export type ProfessionalProfile = {
+  sections: ProfessionalProfileSection[];
+};
+
+export async function fetchProfessionalProfile(): Promise<ProfessionalProfile> {
+  const response = await apiFetch<{ ok: true; profile: ProfessionalProfile }>(
+    "/api/profile/professional",
+  );
+  return response.profile;
+}
+
+export async function updateProfessionalProfileSection(
+  sectionKey: "acne_history" | "lifestyle_baseline",
+  value: Record<string, unknown>,
+  reason: "profile_acne_history_edit" | "profile_lifestyle_baseline_edit",
+): Promise<ProfessionalProfileSection> {
+  const response = await apiMutation<
+    { ok: true; section: ProfessionalProfileSection },
+    { value: Record<string, unknown>; reason: string; includeInReports: boolean }
+  >(
+    "PATCH",
+    `/api/profile/sections/${sectionKey}`,
+    createMutationOperation({ value, reason, includeInReports: true }),
+  );
+  return response.section;
+}
 
 export async function fetchProfile(userId: string): Promise<Profile | null> {
   const { data, error } = await supabase

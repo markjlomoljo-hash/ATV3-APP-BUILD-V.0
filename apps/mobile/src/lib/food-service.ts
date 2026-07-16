@@ -3,6 +3,7 @@ import * as Crypto from "expo-crypto";
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { apiFetch, apiMutation, createMutationOperation } from "./api";
 import { supabase } from "./supabase";
+import { resolveMealFrequencyBaseline } from "./profile-baseline-editor";
 
 export type FoodItem = { name: string; portion?: string | null };
 
@@ -81,20 +82,13 @@ type FetchResponse = {
   log: ApiFoodRow | null;
 };
 
-function mealFrequency(value: unknown): MealFrequencyBaseline {
-  return value === "1" || value === "2" || value === "3" || value === "varies" ||
-    value === "not_sure" || value === "prefer_not_to_answer"
-    ? value
-    : null;
-}
-
 function normalizeDailyLog(response: FetchResponse): DailyFoodLog {
   const snapshot = response.log?.baseline_snapshot ?? response.baseline;
   return {
     id: response.log?.id ?? null,
     logDate: response.log?.log_date ?? response.date,
     expectedMealCount: response.log?.expected_meal_count ?? response.expectedMealCount,
-    mealFrequencyBaseline: mealFrequency(snapshot.meal_frequency_baseline),
+    mealFrequencyBaseline: resolveMealFrequencyBaseline(response.baseline, snapshot),
     mealEvents: Array.isArray(response.log?.meal_events) ? response.log.meal_events : [],
     snackEvents: Array.isArray(response.log?.snack_events) ? response.log.snack_events : [],
     completionState: response.log?.completion_state ?? response.completionState,

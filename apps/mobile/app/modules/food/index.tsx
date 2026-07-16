@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   deleteFoodEvent,
@@ -38,6 +39,7 @@ import {
   type FoodItem,
 } from "../../../src/lib/food-service";
 import { Colors, Spacing } from "../../../src/components/ui/theme";
+import { combineFoodLogDateAndTime, defaultFoodEventClock } from "../../../src/lib/food-event-time";
 
 function localDate(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -81,6 +83,8 @@ export default function FoodScreen() {
   const [snackConfidence, setSnackConfidence] = useState<"certain" | "unsure" | "unknown">("certain");
   const [pendingSnackPhotoUri, setPendingSnackPhotoUri] = useState<string | null>(null);
   const [removeExistingSnackPhoto, setRemoveExistingSnackPhoto] = useState(false);
+  const [eventTime, setEventTime] = useState(() => new Date());
+  const [showEventTimePicker, setShowEventTimePicker] = useState(false);
 
   const load = useCallback(async (date: string) => {
     const log = await fetchDailyFoodLog(date);
@@ -111,6 +115,8 @@ export default function FoodScreen() {
     setSnackConfidence("certain");
     setPendingSnackPhotoUri(null);
     setRemoveExistingSnackPhoto(false);
+    setEventTime(defaultFoodEventClock(activeDate));
+    setShowEventTimePicker(false);
   };
 
   const openMeal = (event?: DailyMealEvent, suggestedType?: string) => {
@@ -122,6 +128,7 @@ export default function FoodScreen() {
       setItems(event.items);
       setTags(event.tags);
       setNotes(event.notes ?? "");
+      setEventTime(new Date(event.time));
     } else if (suggestedType) {
       setMealType(suggestedType);
     }
@@ -138,6 +145,7 @@ export default function FoodScreen() {
       setTags(event.tags);
       setSnackConfidence(event.confidenceLevel);
       setNotes(event.notes ?? "");
+      setEventTime(new Date(event.time));
     }
     setModalVisible(true);
   };
@@ -184,10 +192,10 @@ export default function FoodScreen() {
           return;
         }
         const event = editingMeal
-          ? { ...editingMeal, type: mealType, items: validItems, tags, notes: notes.trim() || null }
+          ? { ...editingMeal, type: mealType, time: combineFoodLogDateAndTime(activeDate, eventTime), items: validItems, tags, notes: notes.trim() || null }
           : newMealEvent({
               type: mealType,
-              time: new Date().toISOString(),
+              time: combineFoodLogDateAndTime(activeDate, eventTime),
               items: validItems,
               tags,
               notes: notes.trim() || null,
@@ -201,6 +209,7 @@ export default function FoodScreen() {
         let event = editingSnack
           ? {
               ...editingSnack,
+              time: combineFoodLogDateAndTime(activeDate, eventTime),
               description: snackDescription.trim(),
               portionEstimate: snackPortion.trim() || null,
               tags,
@@ -209,7 +218,7 @@ export default function FoodScreen() {
               photoStorageRef: removeExistingSnackPhoto ? null : editingSnack.photoStorageRef,
             }
           : newSnackEvent({
-              time: new Date().toISOString(),
+              time: combineFoodLogDateAndTime(activeDate, eventTime),
               description: snackDescription.trim(),
               photoStorageRef: null,
               portionEstimate: snackPortion.trim() || null,
@@ -315,11 +324,16 @@ export default function FoodScreen() {
           <Text style={styles.disclaimer}>Recorded exposure events only. No food-to-acne causation is assumed.</Text>
           {history.length === 0 && <Text style={styles.empty}>No food logs yet.</Text>}
           {history.map((log) => (
-            <View key={log.logDate} style={styles.card}>
+            <TouchableOpacity
+              key={log.logDate}
+              style={styles.card}
+              onPress={() => { setActiveDate(log.logDate); setShowHistory(false); }}
+              accessibilityLabel={`Open food log for ${log.logDate}`}
+            >
               <Text style={styles.cardTitle}>{log.logDate}</Text>
               <Text style={styles.meta}>{COMPLETION_LABELS[log.completionState]}</Text>
               <Text style={styles.meta}>{log.mealEvents.length} meals · {log.snackEvents.length} snacks</Text>
-            </View>
+            </TouchableOpacity>
           ))}
         </ScrollView>
       ) : (
@@ -348,7 +362,11 @@ export default function FoodScreen() {
                   <View><Text style={styles.cardTitle}>{label}</Text><Text style={styles.meta}>{event ? "Logged" : "Not logged"}</Text></View>
                   <TouchableOpacity onPress={() => openMeal(event, key)}><Text style={styles.link}>{event ? "Edit" : "Add"}</Text></TouchableOpacity>
                 </View>
-                {event && <Text style={styles.body}>{event.items.map((item) => item.name).join(", ")}</Text>}
+                {event && (
+                  <Text style={styles.body}>
+                    {new Date(event.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · {event.items.map((item) => item.name).join(", ")}
+                  </Text>
+                )}
               </View>
             );
           })}
@@ -387,7 +405,11 @@ export default function FoodScreen() {
             style={styles.completeButton}
             onPress={() => void markDailyFoodLogComplete(activeDate, !dailyLog.userMarkedComplete).then(setDailyLog)}
           >
-            <Text style={styles.completeText}>{dailyLog.userMarkedComplete ? "Reopen today’s log" : "Mark today’s food log complete"}</Text>
+            <Text style={styles.completeText}>
+              {dailyLog.userMarkedComplete
+                ? `Reopen ${activeDate === localDate() ? "today’s" : "this historical"} log`
+                : `Mark ${activeDate === localDate() ? "today’s" : "this historical"} food log complete`}
+            </Text>
           </TouchableOpacity>
           <View style={{ height: 40 }} />
         </ScrollView>
@@ -402,6 +424,23 @@ export default function FoodScreen() {
               <TouchableOpacity onPress={save} disabled={saving}>{saving ? <ActivityIndicator color={Colors.primary} /> : <Text style={styles.link}>Save</Text>}</TouchableOpacity>
             </View>
             <ScrollView keyboardShouldPersistTaps="handled">
+              <View style={styles.section}>
+                <Text style={styles.cardTitle}>Event time</Text>
+                <Text style={styles.meta}>Saved on {activeDate}; choose the time the meal or snack occurred.</Text>
+                <TouchableOpacity style={styles.timeButton} onPress={() => setShowEventTimePicker(true)} accessibilityLabel="Choose food event time">
+                  <Text style={styles.link}>{eventTime.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</Text>
+                </TouchableOpacity>
+                {showEventTimePicker && (
+                  <DateTimePicker
+                    value={eventTime}
+                    mode="time"
+                    onChange={(_event, selected) => {
+                      if (Platform.OS !== "ios") setShowEventTimePicker(false);
+                      if (selected) setEventTime(selected);
+                    }}
+                  />
+                )}
+              </View>
               {!editingMeal && !editingSnack && (
                 <View style={styles.section}>
                   <Text style={styles.cardTitle}>Event type</Text>
@@ -494,4 +533,5 @@ const styles = StyleSheet.create({
   photoPreview: { width: "100%", height: 190, borderRadius: 10, marginTop: Spacing.sm },
   photoActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: Spacing.sm },
   photoButton: { paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: Colors.border, borderRadius: 8 },
+  timeButton: { marginTop: Spacing.sm, padding: Spacing.sm, borderWidth: 1, borderColor: Colors.border, borderRadius: 8, alignItems: "center" },
 });

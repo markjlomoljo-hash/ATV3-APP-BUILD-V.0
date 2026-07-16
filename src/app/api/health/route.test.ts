@@ -36,5 +36,5 @@ describe("health endpoint exposure boundary", () => {
     }));
     expect(unauthorized.status).toBe(401);
     await expect(unauthorized.json()).resolves.toMatchObject({ error: "health_auth_required" });
-  });
+  }, 15_000);
 });

@@ -130,16 +130,21 @@ export async function PATCH(request: Request) {
     const pool = getPool();
     const client = await pool.connect();
     try {
+      await client.query("BEGIN");
       await client.query(updateSql, values);
 
-      // Audit log (non-blocking — do not await)
-      void client.query(
+      // Keep the consent change and its audit record atomic.
+      await client.query(
         `INSERT INTO public.consent_audit_events (user_id, event_type, changes, created_at)
          VALUES ($1::uuid, 'consent_updated', $2::jsonb, now())`,
         [auth.userId, JSON.stringify(updates)],
-      ).catch(() => undefined);
+      );
+      await client.query("COMMIT");
 
       return NextResponse.json({ ok: true });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
     } finally {
       client.release();
     }
