@@ -3,7 +3,18 @@
   "build": {
     "development": { "developmentClient": true, "distribution": "internal" },
     "preview": { "distribution": "internal", "environment": "production" },
-    "production": { "autoIncrement": true }
+    "production": { "autoIncrement": true, "environment": "production" },
+    "production-apk": {
+      "distribution": "internal",
+      "environment": "production",
+      "autoIncrement": true,
+      "android": { "buildType": "apk" }
+    },
+    "ios-internal": {
+      "distribution": "internal",
+      "environment": "production",
+      "autoIncrement": true
+    }
   },
   "submit": { "production": {} }
 }

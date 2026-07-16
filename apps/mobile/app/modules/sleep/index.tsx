@@ -15,7 +15,14 @@ import {
   fetchSleepForDate, upsertSleepLog, fetchSleepHistory,
   computeSleepAnalytics, fetchSleepConfiguration, saveSleepConfiguration,
   QUALITY_LABELS, SleepLog, type SleepRecord, type SleepTargetSource,
+  type SleepDisturbance, type SleepNap,
 } from '../../../src/lib/sleep-service';
+import {
+  normalizeSleepDisturbances,
+  normalizeSleepNaps,
+  removeSleepEvent,
+  updateSleepEvent,
+} from '../../../src/lib/sleep-events';
 import { Colors, Spacing } from '../../../src/components/ui/theme';
 
 function getLocalDate(): string {
@@ -51,6 +58,8 @@ export default function SleepScreen() {
   const [sleepAgeRange, setSleepAgeRange] = useState<string | null>(null);
   const [typicalSchedule, setTypicalSchedule] = useState<string | null>(null);
   const [targetRuleVersion, setTargetRuleVersion] = useState<string | null>(null);
+  const [disturbances, setDisturbances] = useState<SleepDisturbance[]>([]);
+  const [naps, setNaps] = useState<SleepNap[]>([]);
 
   // Picker visibility
   const [showSleepPicker, setShowSleepPicker] = useState(false);
@@ -74,11 +83,13 @@ export default function SleepScreen() {
         setWakeTime(data.wake_time ? new Date(data.wake_time) : null);
         setQuality(data.quality);
         setNotes(data.notes ?? '');
-        if (data.manual_duration_override != null) {
-          setUseManualDuration(true);
-          setManualDuration(String(Math.round(data.manual_duration_override / 60 * 10) / 10));
-          setManualDurationReason(data.manual_duration_reason ?? '');
-        }
+        setDisturbances(normalizeSleepDisturbances(data.disturbances));
+        setNaps(normalizeSleepNaps(data.naps));
+        setUseManualDuration(data.manual_duration_override != null);
+        setManualDuration(data.manual_duration_override != null
+          ? String(Math.round(data.manual_duration_override / 60 * 10) / 10)
+          : '');
+        setManualDurationReason(data.manual_duration_reason ?? '');
       } else {
         setSleepTime(null);
         setWakeTime(null);
@@ -87,6 +98,8 @@ export default function SleepScreen() {
         setManualDuration('');
         setManualDurationReason('');
         setUseManualDuration(false);
+        setDisturbances([]);
+        setNaps([]);
       }
     } catch (e) {
       console.error('Failed to load sleep log:', e);
@@ -120,6 +133,14 @@ export default function SleepScreen() {
       Alert.alert('Reason required', 'Explain why you are overriding the calculated duration.');
       return;
     }
+    if (disturbances.some((event) => !event.duration_minutes || event.duration_minutes <= 0)) {
+      Alert.alert('Disturbance duration required', 'Enter minutes awake for every disturbance, or remove the empty row.');
+      return;
+    }
+    if (naps.some((event) => !event.duration_minutes || event.duration_minutes <= 0)) {
+      Alert.alert('Nap duration required', 'Enter minutes for every nap, or remove the empty row.');
+      return;
+    }
     setSaving(true);
     try {
       const manualMins = useManualDuration && manualDuration
@@ -146,8 +167,8 @@ export default function SleepScreen() {
         sleep_time: sleepTimestamp?.toISOString() ?? null,
         wake_time: wakeTimestamp?.toISOString() ?? null,
         quality,
-        disturbances: log?.disturbances ?? [],
-        naps: log?.naps ?? [],
+        disturbances: normalizeSleepDisturbances(disturbances),
+        naps: normalizeSleepNaps(naps),
         notes: notes || null,
         manual_duration_override: manualMins,
         manual_duration_reason: manualMins != null ? manualDurationReason.trim() : null,
@@ -428,6 +449,106 @@ export default function SleepScreen() {
               </View>
             </View>
 
+            <View style={styles.section}>
+              <View style={styles.eventHeader}>
+                <View style={styles.eventHeaderCopy}>
+                  <Text style={styles.sectionTitle}>Awakenings / Disturbances</Text>
+                  <Text style={styles.analyticsDetail}>Minutes awake are excluded from calculated nighttime sleep.</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setDisturbances((current) => [...current, {}])}
+                  accessibilityLabel="Add sleep disturbance"
+                >
+                  <Text style={styles.addEventText}>+ Add</Text>
+                </TouchableOpacity>
+              </View>
+              {disturbances.length === 0 && (
+                <Text style={styles.emptyEventText}>No disturbances recorded.</Text>
+              )}
+              {disturbances.map((event, index) => (
+                <View key={`disturbance-${index}`} style={styles.eventCard}>
+                  <View style={styles.eventHeader}>
+                    <Text style={styles.eventTitle}>Disturbance {index + 1}</Text>
+                    <TouchableOpacity
+                      onPress={() => setDisturbances((current) => removeSleepEvent(current, index))}
+                      accessibilityLabel={`Remove disturbance ${index + 1}`}
+                    >
+                      <Text style={styles.removeEventText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    value={event.duration_minutes == null ? '' : String(event.duration_minutes)}
+                    onChangeText={(value) => setDisturbances((current) => updateSleepEvent(current, index, {
+                      duration_minutes: value.trim() === '' ? undefined : Number(value),
+                    }))}
+                    keyboardType="number-pad"
+                    placeholder="Minutes awake"
+                    accessibilityLabel={`Disturbance ${index + 1} minutes awake`}
+                  />
+                  <TextInput
+                    style={styles.inputField}
+                    value={event.reason ?? ''}
+                    onChangeText={(value) => setDisturbances((current) => updateSleepEvent(current, index, { reason: value }))}
+                    placeholder="Reason or context (optional)"
+                    accessibilityLabel={`Disturbance ${index + 1} reason`}
+                  />
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.eventHeader}>
+                <View style={styles.eventHeaderCopy}>
+                  <Text style={styles.sectionTitle}>Naps</Text>
+                  <Text style={styles.analyticsDetail}>Nap credit is capped at 90 minutes and is not treated as a full replacement for nighttime sleep.</Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => setNaps((current) => [...current, {}])}
+                  accessibilityLabel="Add nap"
+                >
+                  <Text style={styles.addEventText}>+ Add</Text>
+                </TouchableOpacity>
+              </View>
+              {naps.length === 0 && <Text style={styles.emptyEventText}>No naps recorded.</Text>}
+              {naps.map((event, index) => (
+                <View key={`nap-${index}`} style={styles.eventCard}>
+                  <View style={styles.eventHeader}>
+                    <Text style={styles.eventTitle}>Nap {index + 1}</Text>
+                    <TouchableOpacity
+                      onPress={() => setNaps((current) => removeSleepEvent(current, index))}
+                      accessibilityLabel={`Remove nap ${index + 1}`}
+                    >
+                      <Text style={styles.removeEventText}>Remove</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <TextInput
+                    style={styles.inputField}
+                    value={event.duration_minutes == null ? '' : String(event.duration_minutes)}
+                    onChangeText={(value) => setNaps((current) => updateSleepEvent(current, index, {
+                      duration_minutes: value.trim() === '' ? undefined : Number(value),
+                    }))}
+                    keyboardType="number-pad"
+                    placeholder="Nap duration in minutes"
+                    accessibilityLabel={`Nap ${index + 1} duration in minutes`}
+                  />
+                  <Text style={styles.eventQualityLabel}>Nap quality (optional)</Text>
+                  <View style={styles.eventQualityRow}>
+                    {[1, 2, 3, 4, 5].map((rating) => (
+                      <TouchableOpacity
+                        key={rating}
+                        style={[styles.eventQualityButton, event.quality === rating && styles.qualityButtonActive]}
+                        onPress={() => setNaps((current) => updateSleepEvent(current, index, { quality: rating }))}
+                        accessibilityLabel={`Nap ${index + 1} quality ${rating}`}
+                      >
+                        <Text style={[styles.targetButtonText, event.quality === rating && styles.targetButtonTextActive]}>{rating}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
+
             {/* Target hours */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Sleep Target (hours)</Text>
@@ -541,6 +662,24 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: Colors.border, borderRadius: 8,
     padding: Spacing.sm, fontSize: 16, color: Colors.text,
     backgroundColor: Colors.background, marginTop: Spacing.xs,
+  },
+  eventHeader: {
+    flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', gap: Spacing.sm,
+  },
+  eventHeaderCopy: { flex: 1 },
+  addEventText: { color: Colors.primary, fontSize: 14, fontWeight: '700', paddingVertical: 2 },
+  emptyEventText: { fontSize: 13, color: Colors.textMuted, paddingVertical: Spacing.sm },
+  eventCard: {
+    marginTop: Spacing.sm, borderWidth: 1, borderColor: Colors.border,
+    borderRadius: 10, padding: Spacing.sm, backgroundColor: Colors.background,
+  },
+  eventTitle: { fontSize: 13, fontWeight: '700', color: Colors.text },
+  removeEventText: { fontSize: 12, color: Colors.error, fontWeight: '600' },
+  eventQualityLabel: { fontSize: 12, color: Colors.textSecondary, marginTop: Spacing.sm },
+  eventQualityRow: { flexDirection: 'row', gap: 6, marginTop: Spacing.xs },
+  eventQualityButton: {
+    flex: 1, alignItems: 'center', paddingVertical: 8,
+    borderRadius: 8, borderWidth: 1, borderColor: Colors.border,
   },
   qualityRow: { flexDirection: 'row', gap: 6 },
   qualityButton: {
