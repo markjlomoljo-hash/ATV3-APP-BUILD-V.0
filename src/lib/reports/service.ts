@@ -1,5 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
-import { getDb } from "@/db";
+import { getDb, getPool } from "@/db";
 import {
   dailyLogs,
   faceAtlasScans,
@@ -57,6 +57,22 @@ async function buildRawBundle(userId: string): Promise<RawProfileBundle> {
     .where(eq(forecastSummaries.userId, userId))
     .orderBy(desc(forecastSummaries.createdAt));
   const logs = await db.select().from(dailyLogs).where(eq(dailyLogs.userId, userId));
+  const latestSleepResult = await getPool().query<{
+    log_date: string;
+    analytics_snapshot: Record<string, unknown>;
+    analytics_rule_version: string;
+    analytics_source: "client_deterministic" | "server_deterministic";
+    analytics_computed_at: Date | string;
+  }>(
+    `select log_date::text, analytics_snapshot, analytics_rule_version, analytics_source,
+            analytics_computed_at
+       from public.sleep_logs
+      where user_id = $1::uuid and analytics_snapshot is not null
+      order by log_date desc, analytics_computed_at desc
+      limit 1`,
+    [userId],
+  );
+  const latestSleep = latestSleepResult.rows[0] ?? null;
 
   const sectionsMap: RawProfileBundle["sections"] = {};
   for (const s of sectionRecords) {
@@ -123,6 +139,15 @@ async function buildRawBundle(userId: string): Promise<RawProfileBundle> {
     // There is no governed citation store in this bundle yet, so the report
     // compiler must render an explicit insufficient-data requirement.
     evidenceCitations: [],
+    latestSleepAnalytics: latestSleep
+      ? {
+          logDate: latestSleep.log_date,
+          snapshot: latestSleep.analytics_snapshot,
+          ruleVersion: latestSleep.analytics_rule_version,
+          source: latestSleep.analytics_source,
+          computedAt: new Date(latestSleep.analytics_computed_at).toISOString(),
+        }
+      : null,
     dailyLogCount: logs.length,
     daysOfHistory,
   };

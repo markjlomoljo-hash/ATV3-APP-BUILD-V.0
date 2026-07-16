@@ -11,6 +11,9 @@ export const skinTwinScenarioRequestSchema = skinTwinScenarioSchema.superRefine(
   if (value.window === "provider_review_custom" && !value.providerReview) {
     context.addIssue({ code: "custom", path: ["providerReview"], message: "Provider review is required for a custom timeline" });
   }
+  if (value.window === "provider_review_custom" && !value.providerReviewContext) {
+    context.addIssue({ code: "custom", path: ["providerReviewContext"], message: "Provider review context is required for a custom timeline" });
+  }
 });
 
 export type SkinTwinScenarioRequest = z.infer<typeof skinTwinScenarioRequestSchema>;
@@ -21,6 +24,7 @@ export type SkinTwinScenario = {
   name: string;
   window: SkinTwinScenarioRequest["window"];
   status: SkinTwinScenarioStatus;
+  variables: SkinTwinScenarioRequest["variables"];
   sourceRecordRefs: unknown[];
   confidence: string | null;
   modelVersion: string | null;
@@ -41,6 +45,7 @@ type SnapshotRow = {
   scenario: string | null;
   window: SkinTwinScenarioRequest["window"] | null;
   status: SkinTwinScenarioStatus;
+  variables: SkinTwinScenarioRequest["variables"];
   sourceRecordRefs: unknown[];
   confidence: string | null;
   modelVersion: string | null;
@@ -66,6 +71,7 @@ function mapSnapshot(row: SnapshotRow): SkinTwinScenario {
     name: row.scenario ?? "Untitled scenario",
     window: row.window ?? "7d",
     status: row.status,
+    variables: Array.isArray(row.variables) ? row.variables : [],
     sourceRecordRefs: Array.isArray(row.sourceRecordRefs) ? row.sourceRecordRefs : [],
     confidence: row.confidence,
     modelVersion: row.modelVersion,
@@ -119,7 +125,8 @@ export async function createSkinTwinScenario(
        (user_id, scenario, scenario_payload, "window", status, source_record_refs,
         confidence, simulation, uncertainty)
      values ($1::uuid, $2, $3::jsonb, $4, $5, $6::jsonb, 'insufficient_data', null, null)
-     returning id, scenario, "window", status, source_record_refs as "sourceRecordRefs",
+     returning id, scenario, "window", status, (scenario_payload->'variables') as variables,
+               source_record_refs as "sourceRecordRefs",
                confidence, model_version as "modelVersion", simulation, uncertainty,
                snapshot_at as "snapshotAt"`,
     [parsedUserId, parsedInput.name, payload, parsedInput.window, status, JSON.stringify(sourceRefs)],
@@ -192,7 +199,8 @@ export async function createSkinTwinScenario(
 
 export async function listSkinTwinScenarios(userId: string): Promise<SkinTwinScenario[]> {
   const result = await getPool().query<SnapshotRow>(
-    `select id, scenario, "window", status, source_record_refs as "sourceRecordRefs",
+    `select id, scenario, "window", status, (scenario_payload->'variables') as variables,
+            source_record_refs as "sourceRecordRefs",
             confidence, model_version as "modelVersion", simulation, uncertainty,
             snapshot_at as "snapshotAt"
        from public.skin_twin_snapshots
@@ -207,7 +215,8 @@ export async function listSkinTwinScenarios(userId: string): Promise<SkinTwinSce
 export async function getSkinTwinScenario(userId: string, scenarioId: string, clientOrPool?: PoolClient | Pool): Promise<SkinTwinScenario | null> {
   const queryable = clientOrPool ?? getPool();
   const result = await queryable.query<SnapshotRow>(
-    `select id, scenario, "window", status, source_record_refs as "sourceRecordRefs",
+    `select id, scenario, "window", status, (scenario_payload->'variables') as variables,
+            source_record_refs as "sourceRecordRefs",
             confidence, model_version as "modelVersion", simulation, uncertainty,
             snapshot_at as "snapshotAt"
        from public.skin_twin_snapshots
@@ -216,4 +225,27 @@ export async function getSkinTwinScenario(userId: string, scenarioId: string, cl
     [scenarioId, userId],
   );
   return result.rows[0] ? mapSnapshot(result.rows[0]) : null;
+}
+
+export async function deleteSkinTwinScenario(
+  userId: string,
+  scenarioId: string,
+  clientOrPool?: PoolClient | Pool,
+): Promise<boolean> {
+  const queryable = clientOrPool ?? getPool();
+  const result = await queryable.query<{ targetId: string }>(
+    `with deleted as (
+       delete from public.skin_twin_snapshots
+        where id = $1::uuid and user_id = $2::uuid
+        returning id
+     )
+     insert into public.audit_logs
+       (user_id, actor_type, action, target_table, target_id, metadata)
+     select $2::uuid, 'user', 'skin_twin_scenario_deleted',
+            'skin_twin_snapshots', deleted.id, '{}'::jsonb
+       from deleted
+     returning target_id as "targetId"`,
+    [scenarioId, userId],
+  );
+  return Boolean(result.rows[0]?.targetId);
 }

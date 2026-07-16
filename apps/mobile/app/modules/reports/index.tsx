@@ -12,21 +12,30 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import * as Crypto from 'expo-crypto';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { supabase } from '../../../src/lib/supabase';
+import { apiFetch, apiMutation, createMutationOperation } from '../../../src/lib/api';
 import { Colors, Spacing, Typography, BorderRadius } from '../../../src/components/ui/theme';
 import { Button, Card } from '../../../src/components/ui';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 
-type ReportStatus = 'queued' | 'processing' | 'completed' | 'failed_retryable' | 'failed_terminal' | 'cancelled' | 'expired';
+type ReportStatus = 'queued' | 'processing' | 'completed' | 'failed';
+
+type ReportInclusionOptions = {
+  includeFaceAtlasPhotos: boolean;
+  includeTreatmentDetails: boolean;
+  includeSections: 'all';
+};
 
 interface ReportRecord {
   id: string;
   status: ReportStatus;
-  createdAt: string;
-  completedAt: string | null;
-  expiresAt: string | null;
-  inclusionOptions: Record<string, boolean>;
+  requestedAt: string;
+  inclusionOptions: ReportInclusionOptions;
+  fileSizeBytes: number | null;
+  failureReason: string | null;
 }
 
 type ScreenState = 'loading' | 'ready' | 'auth_required' | 'not_configured' | 'database_unavailable';
@@ -35,35 +44,20 @@ const STATUS_COLORS: Record<ReportStatus, string> = {
   completed: Colors.success,
   queued: Colors.info,
   processing: Colors.warning,
-  failed_retryable: Colors.error,
-  failed_terminal: Colors.error,
-  cancelled: Colors.textMuted,
-  expired: Colors.textMuted,
+  failed: Colors.error,
 };
 
 const STATUS_LABELS: Record<ReportStatus, string> = {
   completed: 'Ready to Download',
   queued: 'Queued',
   processing: 'Generating…',
-  failed_retryable: 'Failed — Retryable',
-  failed_terminal: 'Failed',
-  cancelled: 'Cancelled',
-  expired: 'Expired',
+  failed: 'Failed',
 };
 
 const INCLUSION_OPTIONS = [
-  { key: 'includeSkinState', label: 'Skin State Journal', description: 'Acne severity, zones, lesion types' },
-  { key: 'includeSleep', label: 'SleepDerm', description: 'Sleep duration, debt, regularity' },
-  { key: 'includeDiet', label: 'DermDiet', description: 'Meal patterns, dietary categories' },
-  { key: 'includeContext', label: 'Context Logs', description: 'Stress, activity, hydration, cycle, contact' },
-  { key: 'includeTreatment', label: 'Treatment Plan', description: 'Protocol, adherence, tolerance' },
-  { key: 'includeFaceAtlas', label: 'FaceAtlas Summaries', description: 'Scan summaries (no raw images)' },
-  { key: 'includeFaceAtlasImages', label: 'FaceAtlas Images', description: 'Include raw scan images (optional)' },
-  { key: 'includeTriggers', label: 'TriggerGraph', description: 'Hypotheses and episode labels' },
-  { key: 'includeForecasts', label: 'Forecasts', description: 'Prediction history and evaluations' },
-  { key: 'includeSkinTwin', label: 'Skin Twin', description: 'Selected scenarios (labeled estimated)' },
-  { key: 'includeCutisAI', label: 'CutisAI Insights', description: 'Validated messages and citations' },
-];
+  { key: 'includeTreatmentDetails', label: 'Treatment details', description: 'Include recorded plans and treatment check-ins.' },
+  { key: 'includeFaceAtlasPhotos', label: 'FaceAtlas photos', description: 'Include only when report consent permits retained scan photos.' },
+] as const;
 
 function getAccessToken(): Promise<string | null> {
   return supabase.auth.getSession().then(({ data }) => data.session?.access_token ?? null);
@@ -79,25 +73,22 @@ export default function ReportsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [inclusions, setInclusions] = useState<Record<string, boolean>>(() =>
-    Object.fromEntries(INCLUSION_OPTIONS.map(o => [o.key, o.key !== 'includeFaceAtlasImages']))
-  );
+  const [inclusions, setInclusions] = useState<ReportInclusionOptions>({
+    includeFaceAtlasPhotos: false,
+    includeTreatmentDetails: true,
+    includeSections: 'all',
+  });
 
   const loadReports = useCallback(async () => {
-    const token = await getAccessToken();
-    if (!token) { setScreenState('auth_required'); return; }
     if (!API_BASE) { setScreenState('not_configured'); return; }
     try {
-      const res = await fetch(`${API_BASE}/api/reports/history`, {
-        headers: { authorization: `Bearer ${token}` },
-      });
-      if (res.status === 503) { setScreenState('database_unavailable'); return; }
-      if (!res.ok) { setScreenState('not_configured'); return; }
-      const payload = await res.json() as { reports?: ReportRecord[] };
-      setReports(payload.reports ?? []);
+      const payload = await apiFetch<{ ok: true; history: ReportRecord[] }>('/api/reports/history');
+      setReports(payload.history);
       setScreenState('ready');
-    } catch {
-      setScreenState('database_unavailable');
+    } catch (error) {
+      setScreenState(error instanceof Error && error.message === 'auth_required'
+        ? 'auth_required'
+        : 'database_unavailable');
     }
   }, []);
 
@@ -110,82 +101,83 @@ export default function ReportsScreen() {
   }, [loadReports]);
 
   const createReport = useCallback(async () => {
-    const token = await getAccessToken();
-    if (!token || !API_BASE) return;
+    if (!API_BASE) return;
     setCreating(true);
     try {
       const idempotencyKey = generateIdempotencyKey();
-      const res = await fetch(`${API_BASE}/api/reports/dermatologist`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({ inclusionOptions: inclusions, idempotencyKey }),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'unknown' })) as { error?: string };
-        Alert.alert('Error', err.error === 'insufficient_data'
-          ? 'Not enough data to generate a report. Keep logging daily.'
-          : 'Could not create report. Please try again.');
-        return;
-      }
-      const payload = await res.json() as { id?: string; status?: ReportStatus };
-      if (payload.id) {
-        const newReport: ReportRecord = {
-          id: payload.id,
-          status: payload.status ?? 'queued',
-          createdAt: new Date().toISOString(),
-          completedAt: null,
-          expiresAt: null,
-          inclusionOptions: inclusions,
-        };
-        setReports(prev => [newReport, ...prev]);
-      }
+      const payload = await apiMutation<
+        { ok: true; reportRequestId: string; status: ReportStatus },
+        { inclusionOptions: ReportInclusionOptions; idempotencyKey: string }
+      >(
+        'POST',
+        '/api/reports/dermatologist',
+        createMutationOperation({ inclusionOptions: inclusions, idempotencyKey }),
+      );
+      await loadReports();
       setShowCreate(false);
-      Alert.alert('Report Queued', 'Your report is being generated. Check back in a moment.');
-    } catch {
-      Alert.alert('Error', 'Could not create report. Please try again.');
+      Alert.alert(
+        payload.status === 'completed' ? 'Report Ready' : 'Report Processing',
+        payload.status === 'completed'
+          ? 'Your private PDF is ready to save or share.'
+          : 'Your report is processing. Pull to refresh for its verified status.',
+      );
+    } catch (error) {
+      Alert.alert(
+        'Report generation failed',
+        error instanceof Error ? error.message.replace(/_/g, ' ') : 'Please retry.',
+      );
     } finally {
       setCreating(false);
     }
-  }, [inclusions]);
+  }, [inclusions, loadReports]);
 
   const downloadReport = useCallback(async (reportId: string) => {
     const token = await getAccessToken();
     if (!token || !API_BASE) return;
     try {
-      const res = await fetch(`${API_BASE}/api/reports/${reportId}/download`, {
-        headers: { authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) {
-        Alert.alert('Download Failed', 'Could not get download link. The report may have expired.');
-        return;
+      const directory = FileSystem.cacheDirectory ?? FileSystem.documentDirectory;
+      if (!directory) throw new Error('device_storage_unavailable');
+      const destination = `${directory}acnetrex-dermatologist-report-${reportId}.pdf`;
+      const result = await FileSystem.downloadAsync(
+        `${API_BASE}/api/reports/${reportId}/download`,
+        destination,
+        { headers: { authorization: `Bearer ${token}` } },
+      );
+      if (result.status !== 200) throw new Error(`download_http_${result.status}`);
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(result.uri, {
+          mimeType: 'application/pdf',
+          dialogTitle: 'Save or share AcneTrex dermatologist report',
+          UTI: 'com.adobe.pdf',
+        });
+      } else {
+        Alert.alert('Report saved', `The private PDF was saved on this device at ${result.uri}.`);
       }
-      const payload = await res.json() as { url?: string };
-      if (payload.url) {
-        Alert.alert('Download Ready', 'Open this link in your browser to download your report:\n\n' + payload.url);
-      }
-    } catch {
-      Alert.alert('Error', 'Could not get download link.');
+    } catch (error) {
+      Alert.alert(
+        'Download failed',
+        error instanceof Error ? error.message.replace(/_/g, ' ') : 'Please retry.',
+      );
     }
   }, []);
 
   const retryReport = useCallback(async (reportId: string) => {
-    const token = await getAccessToken();
-    if (!token || !API_BASE) return;
+    const failedReport = reports.find((report) => report.id === reportId);
+    if (!failedReport || !API_BASE) return;
     try {
-      const res = await fetch(`${API_BASE}/api/reports/${reportId}`, {
-        method: 'POST',
-        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ action: 'retry' }),
-      });
-      if (!res.ok) { Alert.alert('Error', 'Could not retry report.'); return; }
-      setReports(prev => prev.map(r => r.id === reportId ? { ...r, status: 'queued' } : r));
-    } catch {
-      Alert.alert('Error', 'Could not retry report.');
+      await apiMutation(
+        'POST',
+        '/api/reports/dermatologist',
+        createMutationOperation({
+          inclusionOptions: failedReport.inclusionOptions,
+          idempotencyKey: generateIdempotencyKey(),
+        }),
+      );
+      await loadReports();
+    } catch (error) {
+      Alert.alert('Retry failed', error instanceof Error ? error.message.replace(/_/g, ' ') : 'Please retry.');
     }
-  }, []);
+  }, [loadReports, reports]);
 
   if (screenState === 'loading') {
     return (
@@ -300,7 +292,7 @@ export default function ReportsScreen() {
             <Text style={styles.emptyTitle}>No reports yet</Text>
             <Text style={styles.emptyText}>
               Generate your first report to share with your dermatologist.
-              Requires at least 7 days of logs.
+              Missing sections will state the exact records required instead of using substitute data.
             </Text>
             <Button title="Create Report" onPress={() => setShowCreate(true)} style={styles.startBtn} />
           </Card>
@@ -309,7 +301,7 @@ export default function ReportsScreen() {
             <Card key={report.id} style={styles.reportCard}>
               <View style={styles.reportHeader}>
                 <Text style={styles.reportDate}>
-                  {new Date(report.createdAt).toLocaleDateString()}
+                  {new Date(report.requestedAt).toLocaleDateString()}
                 </Text>
                 <View style={[styles.statusBadge, { backgroundColor: STATUS_COLORS[report.status] + '20' }]}>
                   <Text style={[styles.statusText, { color: STATUS_COLORS[report.status] }]}>
@@ -325,7 +317,7 @@ export default function ReportsScreen() {
                   style={styles.downloadBtn}
                 />
               )}
-              {report.status === 'failed_retryable' && (
+              {report.status === 'failed' && (
                 <Button
                   title="Retry"
                   onPress={() => retryReport(report.id)}
@@ -333,6 +325,7 @@ export default function ReportsScreen() {
                   style={styles.downloadBtn}
                 />
               )}
+              {report.failureReason && <Text style={styles.failureReason}>{report.failureReason}</Text>}
               {(report.status === 'queued' || report.status === 'processing') && (
                 <View style={styles.processingRow}>
                   <ActivityIndicator color={Colors.warning} size="small" />
@@ -382,6 +375,7 @@ const styles = StyleSheet.create({
   downloadBtn: { marginTop: Spacing.sm },
   processingRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginTop: Spacing.sm },
   processingText: { ...Typography.caption, color: Colors.warning },
+  failureReason: { ...Typography.caption, color: Colors.error, marginTop: Spacing.sm },
   inclusionRow: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: Spacing.sm, borderBottomWidth: 1, borderBottomColor: Colors.border,

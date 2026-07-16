@@ -9,8 +9,13 @@ import { useAuthStore } from "../../src/stores/auth";
 import { apiMutation, createMutationOperation } from "../../src/lib/api";
 import {
   MEAL_FREQUENCY_OPTIONS,
+  SLEEP_AGE_RANGE_OPTIONS,
   SNACK_TENDENCY_OPTIONS,
   SNACK_TYPE_OPTIONS,
+  TYPICAL_SCHEDULE_OPTIONS,
+  USUAL_SLEEP_NEED_OPTIONS,
+  deriveSleepTarget,
+  type SleepAgeRange,
 } from "../../src/lib/onboarding-contracts";
 
 const GOALS = [
@@ -34,6 +39,9 @@ export default function GoalsScreen() {
   const [snackTendency, setSnackTendency] = useState("");
   const [snackTypes, setSnackTypes] = useState<string[]>([]);
   const [customSnack, setCustomSnack] = useState("");
+  const [sleepAgeRange, setSleepAgeRange] = useState<SleepAgeRange | "">("");
+  const [typicalSchedule, setTypicalSchedule] = useState("");
+  const [usualSleepNeed, setUsualSleepNeed] = useState<number | null>(null);
 
   const toggleGoal = (value: string) => {
     setSelectedGoals((prev) =>
@@ -47,13 +55,20 @@ export default function GoalsScreen() {
     );
   };
 
-  const isValid = selectedGoals.length >= 1 && mealFrequency && snackTendency;
+  const isValid = Boolean(
+    selectedGoals.length >= 1 &&
+    mealFrequency &&
+    snackTendency &&
+    sleepAgeRange &&
+    typicalSchedule,
+  );
 
   const handleContinue = async () => {
     if (!user || !isValid) return;
     setSaving(true);
     setError(null);
     try {
+      const sleepTarget = deriveSleepTarget(sleepAgeRange as SleepAgeRange, usualSleepNeed);
       await apiMutation(
         "PATCH",
         "/api/profile/sections/goals",
@@ -77,6 +92,12 @@ export default function GoalsScreen() {
             user_specific_snack: snackTypes.includes("user_specific")
               ? customSnack.trim() || null
               : null,
+            sleep_age_range: sleepAgeRange,
+            typical_schedule: typicalSchedule,
+            target_sleep_range: sleepTarget?.range ?? null,
+            working_sleep_target: sleepTarget?.workingTarget ?? null,
+            target_source: sleepTarget?.source ?? null,
+            sleep_target_rule_version: sleepTarget?.ruleVersion ?? null,
             set_during_onboarding: true,
           },
           reason: "onboarding_lifestyle_baseline",
@@ -239,6 +260,74 @@ export default function GoalsScreen() {
             />
           )}
         </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>What is your age range?</Text>
+          <Text style={styles.sectionHint}>
+            Used only to select an age-aware sleep target range. It does not create a diagnosis.
+          </Text>
+          <View style={styles.mealGrid}>
+            {SLEEP_AGE_RANGE_OPTIONS.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => setSleepAgeRange(option.value)}
+                style={[styles.mealOption, sleepAgeRange === option.value && styles.mealOptionSelected]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: sleepAgeRange === option.value }}
+              >
+                <Text style={[styles.mealLabel, sleepAgeRange === option.value && styles.mealLabelSelected]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>What is your typical school/work schedule?</Text>
+          <Text style={styles.sectionHint}>
+            SleepDerm uses this context to avoid treating variable or shift schedules as regular schedules.
+          </Text>
+          <View style={styles.mealGrid}>
+            {TYPICAL_SCHEDULE_OPTIONS.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => setTypicalSchedule(option.value)}
+                style={[styles.mealOption, typicalSchedule === option.value && styles.mealOptionSelected]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: typicalSchedule === option.value }}
+              >
+                <Text style={[styles.mealLabel, typicalSchedule === option.value && styles.mealLabelSelected]}>
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {sleepAgeRange && sleepAgeRange !== "prefer_not_to_answer" && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>Usual sleep need</Text>
+            <Text style={styles.sectionHint}>
+              Optional. Values outside the age-aware range are bounded to that range and remain editable.
+            </Text>
+            <View style={styles.mealGrid}>
+              {USUAL_SLEEP_NEED_OPTIONS.map((option) => (
+                <Pressable
+                  key={option.value ?? "age_default"}
+                  onPress={() => setUsualSleepNeed(option.value)}
+                  style={[styles.mealOption, usualSleepNeed === option.value && styles.mealOptionSelected]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: usualSleepNeed === option.value }}
+                >
+                  <Text style={[styles.mealLabel, usualSleepNeed === option.value && styles.mealLabelSelected]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        )}
 
         {error && (
           <View style={styles.errorBox}>

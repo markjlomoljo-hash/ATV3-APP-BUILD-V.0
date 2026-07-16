@@ -83,6 +83,39 @@ describe("compileReportData", () => {
     expect(report.lifestyleContext.rows?.some((row) => row.value === "[object Object]")).toBe(false);
   });
 
+  it("includes only persisted SleepDerm analytics with explicit deterministic provenance", () => {
+    const report = compileReportData(
+      bundle({
+        latestSleepAnalytics: {
+          logDate: "2026-07-16",
+          snapshot: {
+            readiness: "sufficient_data",
+            days_logged: 8,
+            duration_hours: 7.5,
+            cumulative_debt_7d: 2.5,
+            circadian_alignment_score: 82,
+            nocturnal_recovery_opportunity: "Adequate",
+          },
+          ruleVersion: "sleep-analytics-v2",
+          source: "client_deterministic",
+          computedAt: "2026-07-16T08:00:00.000Z",
+        },
+      }),
+      allSections,
+    );
+
+    expect(report.lifestyleContext.rows).toEqual(expect.arrayContaining([
+      { label: "7-day sleep debt", value: "2.5 hours" },
+      { label: "Circadian alignment estimate", value: "82" },
+      { label: "Nocturnal recovery opportunity estimate", value: "Adequate" },
+      {
+        label: "Sleep analytics provenance",
+        value: "client_deterministic; sleep-analytics-v2; computed 2026-07-16T08:00:00.000Z",
+      },
+    ]));
+    expect(report.lifestyleContext.notes?.join(" ")).toMatch(/not sleep-stage measurements/i);
+  });
+
   it("states exact evidence requirements instead of inventing clinical metrics", () => {
     const report = compileReportData(bundle(), allSections);
 

@@ -8,6 +8,7 @@ import { getPool } from "@/db";
 import {
   SkinTwinConsentRequiredError,
   createSkinTwinScenario,
+  deleteSkinTwinScenario,
   getSkinTwinScenario,
   listSkinTwinScenarios,
   skinTwinScenarioRequestSchema,
@@ -38,6 +39,7 @@ function snapshot(status: "insufficient_data" | "queued_for_cloud") {
     scenario: "Better sleep",
     window: "7d",
     status,
+    variables: ["better_sleep"],
     sourceRecordRefs: [],
     confidence: "insufficient_data",
     modelVersion: null,
@@ -58,6 +60,17 @@ describe("Skin Twin scenario service", () => {
   it("requires provider review for a custom timeline", () => {
     const result = skinTwinScenarioRequestSchema.safeParse({ ...input, window: "provider_review_custom", providerReview: false });
     expect(result.success).toBe(false);
+    expect(skinTwinScenarioRequestSchema.safeParse({
+      ...input,
+      window: "provider_review_custom",
+      providerReview: true,
+    }).success).toBe(false);
+    expect(skinTwinScenarioRequestSchema.safeParse({
+      ...input,
+      window: "provider_review_custom",
+      providerReview: true,
+      providerReviewContext: "Review planned with treating dermatologist",
+    }).success).toBe(true);
   });
 
   it("validates a scenario again at the persistence boundary", async () => {
@@ -122,6 +135,7 @@ describe("Skin Twin scenario service", () => {
     pool.mockReturnValue({ query } as never);
     const result = await listSkinTwinScenarios(userId);
     expect(result[0]?.id).toBe(snapshotId);
+    expect(result[0]?.variables).toEqual(["better_sleep"]);
     expect(query.mock.calls[0]?.[0]).toContain("where user_id = $1::uuid");
   });
 
@@ -130,5 +144,14 @@ describe("Skin Twin scenario service", () => {
     const result = await getSkinTwinScenario(userId, snapshotId, client);
     expect(result).toBeNull();
     expect(query.mock.calls[0]?.[0]).toContain("where id = $1::uuid and user_id = $2::uuid");
+  });
+
+  it("deletes only an owner-scoped scenario and writes its audit event atomically", async () => {
+    const { client, query } = clientWithResponses([{ rows: [{ targetId: snapshotId }] }]);
+    const deleted = await deleteSkinTwinScenario(userId, snapshotId, client);
+
+    expect(deleted).toBe(true);
+    expect(String(query.mock.calls[0]?.[0])).toContain("where id = $1::uuid and user_id = $2::uuid");
+    expect(String(query.mock.calls[0]?.[0])).toContain("skin_twin_scenario_deleted");
   });
 });

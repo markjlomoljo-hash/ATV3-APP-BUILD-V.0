@@ -7,9 +7,21 @@ import { apiFetch, apiMutation, createMutationOperation } from './api';
 import {
   computeSleepAnalytics as computeCircadianAnalytics,
   type SleepAnalytics,
+  type SleepRecord,
 } from './sleep-analytics';
 
-export type { SleepAnalytics } from './sleep-analytics';
+export type { SleepAnalytics, SleepRecord } from './sleep-analytics';
+
+export type SleepTargetSource = 'age_default' | 'user_selected' | 'wearable_estimated' | 'clinician_entered';
+
+export type SleepConfiguration = {
+  ageRange: string | null;
+  typicalSchedule: string | null;
+  targetRange: [number, number] | null;
+  workingTarget: number | null;
+  targetSource: SleepTargetSource | null;
+  ruleVersion: string | null;
+};
 
 export type SleepLog = {
   id: string;
@@ -30,8 +42,12 @@ export type SleepLog = {
   manual_duration_reason?: string | null;
   working_sleep_target?: number | null;
   target_sleep_range?: [number, number] | null;
-  target_source?: 'age_default' | 'user_selected' | 'wearable_estimated' | 'clinician_entered' | null;
+  target_source?: SleepTargetSource | null;
   timezone?: string | null;
+  analytics_snapshot?: SleepAnalytics | null;
+  analytics_rule_version?: string | null;
+  analytics_source?: 'client_deterministic' | 'server_deterministic' | null;
+  analytics_computed_at?: string | null;
 };
 
 export type SleepDisturbance = {
@@ -117,6 +133,75 @@ export async function fetchSleepHistory(limit = 30, offset = 0): Promise<SleepLo
     `/api/logs/sleep?limit=${limit}&offset=${offset}`,
   );
   return response.logs;
+}
+
+type ProfessionalProfileResponse = {
+  ok: true;
+  profile: {
+    sections: Array<{ sectionKey: string; value: Record<string, unknown> }>;
+  };
+};
+
+function finiteTarget(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 4 && value <= 14
+    ? value
+    : null;
+}
+
+function targetRange(value: unknown): [number, number] | null {
+  if (!Array.isArray(value) || value.length !== 2) return null;
+  const lower = finiteTarget(value[0]);
+  const upper = finiteTarget(value[1]);
+  return lower !== null && upper !== null && lower <= upper ? [lower, upper] : null;
+}
+
+function targetSource(value: unknown): SleepTargetSource | null {
+  return value === 'age_default' || value === 'user_selected' ||
+    value === 'wearable_estimated' || value === 'clinician_entered'
+    ? value
+    : null;
+}
+
+async function lifestyleSection(): Promise<Record<string, unknown>> {
+  const response = await apiFetch<ProfessionalProfileResponse>('/api/profile/professional');
+  return response.profile.sections.find((section) => section.sectionKey === 'lifestyle_baseline')?.value ?? {};
+}
+
+export async function fetchSleepConfiguration(): Promise<SleepConfiguration> {
+  const value = await lifestyleSection();
+  return {
+    ageRange: typeof value.sleep_age_range === 'string' ? value.sleep_age_range : null,
+    typicalSchedule: typeof value.typical_schedule === 'string' ? value.typical_schedule : null,
+    targetRange: targetRange(value.target_sleep_range),
+    workingTarget: finiteTarget(value.working_sleep_target),
+    targetSource: targetSource(value.target_source),
+    ruleVersion: typeof value.sleep_target_rule_version === 'string'
+      ? value.sleep_target_rule_version
+      : null,
+  };
+}
+
+export async function saveSleepConfiguration(
+  configuration: SleepConfiguration,
+): Promise<void> {
+  const current = await lifestyleSection();
+  await apiMutation(
+    'PATCH',
+    '/api/profile/sections/lifestyle_baseline',
+    createMutationOperation({
+      value: {
+        ...current,
+        sleep_age_range: configuration.ageRange,
+        typical_schedule: configuration.typicalSchedule,
+        target_sleep_range: configuration.targetRange,
+        working_sleep_target: configuration.workingTarget,
+        target_source: configuration.targetSource,
+        sleep_target_rule_version: configuration.ruleVersion,
+      },
+      reason: 'sleep_target_updated',
+      includeInReports: true,
+    }),
+  );
 }
 
 /**
@@ -226,7 +311,7 @@ export function computeSleepAnalyticsV1(
 }
 
 export function computeSleepAnalytics(
-  logs: SleepLog[],
+  logs: SleepRecord[],
   targetHours: number | null,
   forDate: string,
 ): SleepAnalytics {

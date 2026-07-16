@@ -12,38 +12,81 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import * as Crypto from 'expo-crypto';
-import { supabase } from '../../../src/lib/supabase';
+import { apiFetch, apiMutation, createMutationOperation } from '../../../src/lib/api';
 import { Colors, Spacing, Typography, BorderRadius } from '../../../src/components/ui/theme';
 import { Button, Card } from '../../../src/components/ui';
+import {
+  EstimatedProjectionVisualization,
+  ObservedSkinVisualization,
+} from '../../../src/components/SkinVisualization';
+import { fetchLatestObservedSkin } from '../../../src/lib/faceatlas-service';
+import {
+  buildObservedSkinViewModel,
+  buildSkinTwinProjectionViewModel,
+  type ObservedSkinViewModel,
+} from '../../../src/lib/faceatlas-visualization';
 
 const API_BASE = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 
 type ScenarioStatus = 'insufficient_data' | 'queued_for_cloud' | 'completed' | 'failed' | 'not_configured';
-type TimeWindow = '7d' | '30d' | '90d' | '6m' | '1y' | 'provider_review_custom';
+type TimeWindow = '3d' | '7d' | '14d' | '30d' | 'treatment_cycle' | 'provider_review_custom';
+type SkinTwinVariable =
+  | 'better_sleep' | 'reduced_sleep_debt' | 'circadian_improvement' | 'lower_stress'
+  | 'reduced_dairy' | 'reduced_high_glycemic' | 'reduced_sugary_processed_snacks'
+  | 'hydration_improvement' | 'meal_timing_consistency' | 'routine_consistency'
+  | 'product_removal' | 'product_replacement' | 'active_ingredient_pause'
+  | 'active_ingredient_introduction_provider_review' | 'sunscreen_consistency'
+  | 'treatment_adherence' | 'missed_dose_reduction' | 'weather_exposure_change'
+  | 'reduced_contact_occlusion' | 'reduced_picking_touching' | 'cycle_context_confounder';
 
 interface Scenario {
   id: string;
   name: string;
   window: TimeWindow;
   status: ScenarioStatus;
+  variables: SkinTwinVariable[];
   confidence: string | null;
   modelVersion: string | null;
   simulation: unknown;
   uncertainty: unknown;
+  sourceRecordRefs: unknown[];
   snapshotAt: string;
 }
 
 type ScreenState = 'loading' | 'ready' | 'auth_required' | 'consent_required' | 'not_configured' | 'database_unavailable';
 
 const WINDOW_LABELS: Record<TimeWindow, string> = {
+  '3d': '3 Days',
   '7d': '7 Days',
+  '14d': '14 Days',
   '30d': '30 Days',
-  '90d': '90 Days',
-  '6m': '6 Months',
-  '1y': '1 Year',
+  'treatment_cycle': 'Treatment Cycle',
   'provider_review_custom': 'Provider Review (Custom)',
 };
+
+const VARIABLE_OPTIONS: ReadonlyArray<{ value: SkinTwinVariable; label: string }> = [
+  { value: 'better_sleep', label: 'Better sleep' },
+  { value: 'reduced_sleep_debt', label: 'Reduced sleep debt' },
+  { value: 'circadian_improvement', label: 'Circadian improvement' },
+  { value: 'lower_stress', label: 'Lower stress' },
+  { value: 'reduced_dairy', label: 'Reduced dairy' },
+  { value: 'reduced_high_glycemic', label: 'Reduced high-glycemic foods' },
+  { value: 'reduced_sugary_processed_snacks', label: 'Reduced sugary/processed snacks' },
+  { value: 'hydration_improvement', label: 'Hydration improvement' },
+  { value: 'meal_timing_consistency', label: 'Meal timing consistency' },
+  { value: 'routine_consistency', label: 'Routine consistency' },
+  { value: 'product_removal', label: 'Product removal' },
+  { value: 'product_replacement', label: 'Product replacement' },
+  { value: 'active_ingredient_pause', label: 'Active ingredient pause' },
+  { value: 'active_ingredient_introduction_provider_review', label: 'Provider-reviewed active introduction' },
+  { value: 'sunscreen_consistency', label: 'Sunscreen consistency' },
+  { value: 'treatment_adherence', label: 'Treatment adherence' },
+  { value: 'missed_dose_reduction', label: 'Reduced missed doses' },
+  { value: 'weather_exposure_change', label: 'Weather exposure change' },
+  { value: 'reduced_contact_occlusion', label: 'Reduced contact/occlusion' },
+  { value: 'reduced_picking_touching', label: 'Reduced picking/touching' },
+  { value: 'cycle_context_confounder', label: 'Cycle context (confounder)' },
+];
 
 const STATUS_COLORS: Record<ScenarioStatus, string> = {
   completed: Colors.success,
@@ -53,41 +96,40 @@ const STATUS_COLORS: Record<ScenarioStatus, string> = {
   not_configured: Colors.textMuted,
 };
 
-function getAccessToken(): Promise<string | null> {
-  return supabase.auth.getSession().then(({ data }) => data.session?.access_token ?? null);
-}
-
-function generateIdempotencyKey(): string {
-  return `skin-twin-${Crypto.randomUUID()}`;
+function variableLabel(value: SkinTwinVariable): string {
+  return VARIABLE_OPTIONS.find((option) => option.value === value)?.label ?? value.replace(/_/g, ' ');
 }
 
 export default function SkinTwinScreen() {
   const [screenState, setScreenState] = useState<ScreenState>('loading');
   const [scenarios, setScenarios] = useState<Scenario[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [observedSkin, setObservedSkin] = useState<ObservedSkinViewModel>(() => buildObservedSkinViewModel(null));
   const [showBuilder, setShowBuilder] = useState(false);
   const [building, setBuilding] = useState(false);
   // Builder form
   const [scenarioName, setScenarioName] = useState('');
   const [selectedWindow, setSelectedWindow] = useState<TimeWindow>('30d');
   const [providerReview, setProviderReview] = useState('');
+  const [selectedVariables, setSelectedVariables] = useState<SkinTwinVariable[]>([]);
 
   const loadScenarios = useCallback(async () => {
-    const token = await getAccessToken();
-    if (!token) { setScreenState('auth_required'); return; }
     if (!API_BASE) { setScreenState('not_configured'); return; }
     try {
-      const res = await fetch(`${API_BASE}/api/skin-twin/scenarios`, {
-        headers: { authorization: `Bearer ${token}` },
-      });
-      if (res.status === 403) { setScreenState('consent_required'); return; }
-      if (res.status === 503) { setScreenState('database_unavailable'); return; }
-      if (!res.ok) { setScreenState('not_configured'); return; }
-      const payload = await res.json() as { scenarios?: Scenario[] };
-      setScenarios(payload.scenarios ?? []);
+      const [payload, observed] = await Promise.all([
+        apiFetch<{ ok: true; scenarios: Scenario[] }>('/api/skin-twin/scenarios'),
+        fetchLatestObservedSkin().catch(() => buildObservedSkinViewModel(null)),
+      ]);
+      setScenarios(payload.scenarios);
+      setObservedSkin(observed);
       setScreenState('ready');
-    } catch {
-      setScreenState('database_unavailable');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'database_unavailable';
+      setScreenState(reason === 'auth_required'
+        ? 'auth_required'
+        : reason === 'consent_required'
+          ? 'consent_required'
+          : 'database_unavailable');
     }
   }, []);
 
@@ -102,72 +144,61 @@ export default function SkinTwinScreen() {
   const createScenario = useCallback(async () => {
     const name = scenarioName.trim();
     if (!name) { Alert.alert('Name Required', 'Please enter a scenario name.'); return; }
+    if (selectedVariables.length === 0) {
+      Alert.alert('Variable Required', 'Select at least one active variable for this estimated scenario.');
+      return;
+    }
     if (selectedWindow === 'provider_review_custom' && !providerReview.trim()) {
       Alert.alert('Provider Review Required', 'Please describe the provider review context for a custom timeline.');
       return;
     }
-    const token = await getAccessToken();
-    if (!token || !API_BASE) return;
+    if (!API_BASE) return;
     setBuilding(true);
     try {
-      const body: Record<string, unknown> = {
-        scenario: name,
+      const body = {
+        name,
         window: selectedWindow,
-        idempotencyKey: generateIdempotencyKey(),
+        variables: selectedVariables,
+        sourceRecordRefs: [],
+        providerReview: selectedWindow === 'provider_review_custom',
+        providerReviewContext: selectedWindow === 'provider_review_custom'
+          ? providerReview.trim()
+          : undefined,
       };
-      if (selectedWindow === 'provider_review_custom') {
-        body.providerReview = { context: providerReview.trim() };
-      }
-      const res = await fetch(`${API_BASE}/api/skin-twin/scenarios`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/json',
-          'idempotency-key': body.idempotencyKey as string,
-        },
-        body: JSON.stringify(body),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'unknown' })) as { error?: string };
-        if (err.error === 'consent_required') {
-          Alert.alert('Consent Required', 'Enable personal learning consent in Profile → Privacy.');
-        } else if (err.error === 'insufficient_data') {
-          Alert.alert('Insufficient Data', 'More skin logs are needed before a Skin Twin scenario can be created. Keep logging daily.');
-        } else {
-          Alert.alert('Error', 'Could not create scenario. Please try again.');
-        }
-        return;
-      }
-      const payload = await res.json() as { scenario?: Scenario };
-      if (payload.scenario) {
-        setScenarios(prev => [payload.scenario!, ...prev]);
-      }
+      const payload = await apiMutation<
+        { ok: true; snapshot: Scenario; projection: unknown; projectionStatus: ScenarioStatus },
+        typeof body
+      >('POST', '/api/skin-twin/scenarios', createMutationOperation(body));
+      setScenarios(prev => [payload.snapshot, ...prev]);
       setShowBuilder(false);
       setScenarioName('');
       setProviderReview('');
+      setSelectedVariables([]);
       setSelectedWindow('30d');
-    } catch {
-      Alert.alert('Error', 'Could not create scenario. Please try again.');
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : 'unknown_error';
+      Alert.alert(
+        reason === 'consent_required' ? 'Consent Required' : 'Scenario not created',
+        reason === 'consent_required'
+          ? 'Enable personal learning consent in Profile → Privacy.'
+          : reason.replace(/_/g, ' '),
+      );
     } finally {
       setBuilding(false);
     }
-  }, [scenarioName, selectedWindow, providerReview]);
+  }, [providerReview, scenarioName, selectedVariables, selectedWindow]);
 
   const deleteScenario = useCallback(async (id: string) => {
     Alert.alert('Delete Scenario', 'Are you sure you want to delete this scenario?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete', style: 'destructive', onPress: async () => {
-          const token = await getAccessToken();
-          if (!token || !API_BASE) return;
+          if (!API_BASE) return;
           try {
-            await fetch(`${API_BASE}/api/skin-twin/scenarios/${id}`, {
-              method: 'DELETE',
-              headers: { authorization: `Bearer ${token}` },
-            });
+            await apiMutation('DELETE', `/api/skin-twin/scenarios/${id}`, createMutationOperation({}));
             setScenarios(prev => prev.filter(s => s.id !== id));
-          } catch {
-            Alert.alert('Error', 'Could not delete scenario.');
+          } catch (error) {
+            Alert.alert('Delete failed', error instanceof Error ? error.message.replace(/_/g, ' ') : 'Please retry.');
           }
         },
       },
@@ -241,6 +272,10 @@ export default function SkinTwinScreen() {
           </View>
         </Card>
 
+        <Card style={styles.currentStateCard}>
+          <ObservedSkinVisualization model={observedSkin} />
+        </Card>
+
         {/* Scenarios */}
         <Text style={styles.sectionTitle}>Scenarios ({scenarios.length})</Text>
         {scenarios.length === 0 ? (
@@ -267,8 +302,30 @@ export default function SkinTwinScreen() {
                   </Text>
                 </View>
               </View>
+              <Text style={styles.variableSummary}>
+                Active variables: {scenario.variables.length > 0
+                  ? scenario.variables.map(variableLabel).join(', ')
+                  : 'Not recorded'}
+              </Text>
               {scenario.status === 'completed' && scenario.confidence && (
                 <Text style={styles.confidenceText}>Confidence: {scenario.confidence}</Text>
+              )}
+              {scenario.status === 'completed' && (
+                <View style={styles.projectionPanel}>
+                  <Text style={styles.projectionTitle}>Observed vs estimated</Text>
+                  <View style={styles.comparisonRow}>
+                    <View style={styles.comparisonColumn}>
+                      <ObservedSkinVisualization model={observedSkin} compact />
+                    </View>
+                    <View style={styles.comparisonColumn}>
+                      <EstimatedProjectionVisualization model={buildSkinTwinProjectionViewModel(scenario)} compact />
+                    </View>
+                  </View>
+                  <Text style={styles.uncertaintyText}>
+                    {buildSkinTwinProjectionViewModel(scenario).explanation}
+                  </Text>
+                  <Text style={styles.estimatedOnly}>{buildSkinTwinProjectionViewModel(scenario).disclaimer}</Text>
+                </View>
               )}
               {scenario.status === 'insufficient_data' && (
                 <Text style={styles.hintText}>
@@ -333,6 +390,37 @@ export default function SkinTwinScreen() {
                 </TouchableOpacity>
               ))}
             </View>
+            <Text style={styles.fieldLabel}>Active Variables * (1–8)</Text>
+            <Text style={styles.helperText}>
+              Select only changes you actually want to compare. These are scenario assumptions, not observed outcomes.
+            </Text>
+            <View style={styles.variableGrid}>
+              {VARIABLE_OPTIONS.map((option) => {
+                const selected = selectedVariables.includes(option.value);
+                return (
+                  <TouchableOpacity
+                    key={option.value}
+                    onPress={() => {
+                      setSelectedVariables((current) => {
+                        if (selected) return current.filter((value) => value !== option.value);
+                        if (current.length >= 8) {
+                          Alert.alert('Maximum selected', 'A scenario can compare up to 8 active variables.');
+                          return current;
+                        }
+                        return [...current, option.value];
+                      });
+                    }}
+                    style={[styles.variableChip, selected && styles.variableChipSelected]}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                  >
+                    <Text style={[styles.variableChipText, selected && styles.variableChipTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
             {selectedWindow === 'provider_review_custom' && (
               <>
                 <Text style={styles.fieldLabel}>Provider Review Context *</Text>
@@ -388,6 +476,7 @@ const styles = StyleSheet.create({
   stateTitle: { ...Typography.title3, color: Colors.textPrimary, marginBottom: Spacing.sm, textTransform: 'capitalize' },
   stateMessage: { ...Typography.body, color: Colors.textSecondary, textAlign: 'center', lineHeight: 22, maxWidth: 320 },
   aboutCard: { marginBottom: Spacing.lg },
+  currentStateCard: { marginBottom: Spacing.lg },
   aboutTitle: { ...Typography.bodyMedium, color: Colors.textPrimary, marginBottom: 6 },
   aboutText: { ...Typography.caption, color: Colors.textSecondary, lineHeight: 18, marginBottom: Spacing.sm },
   disclaimerRow: { backgroundColor: '#fef3c7', borderRadius: BorderRadius.sm, padding: Spacing.sm },
@@ -405,6 +494,16 @@ const styles = StyleSheet.create({
   statusBadge: { borderRadius: BorderRadius.sm, paddingHorizontal: 8, paddingVertical: 3 },
   statusText: { ...Typography.caption, fontWeight: '600', textTransform: 'capitalize' },
   confidenceText: { ...Typography.caption, color: Colors.primary, marginBottom: 4 },
+  variableSummary: { ...Typography.caption, color: Colors.textSecondary, lineHeight: 18, marginBottom: Spacing.sm },
+  projectionPanel: { padding: Spacing.md, borderRadius: BorderRadius.md, backgroundColor: Colors.primaryLight, marginVertical: Spacing.sm },
+  projectionTitle: { ...Typography.bodyMedium, color: Colors.primaryDark, marginBottom: Spacing.sm },
+  comparisonRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing.sm },
+  comparisonColumn: { flex: 1, minWidth: 0 },
+  projectionRow: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.sm, marginBottom: 6 },
+  projectionLabel: { ...Typography.caption, color: Colors.textSecondary, textTransform: 'capitalize', flex: 1 },
+  projectionValue: { ...Typography.caption, color: Colors.textPrimary, fontWeight: '600', flex: 1, textAlign: 'right' },
+  uncertaintyText: { ...Typography.caption, color: Colors.textMuted, marginTop: 4 },
+  estimatedOnly: { ...Typography.caption, color: Colors.primaryDark, fontStyle: 'italic', marginTop: Spacing.sm },
   hintText: { ...Typography.caption, color: Colors.textSecondary, lineHeight: 18, marginBottom: 4 },
   metaText: { ...Typography.caption, color: Colors.textMuted, marginTop: 2 },
   deleteBtn: { marginTop: Spacing.sm, alignSelf: 'flex-start' },
@@ -434,6 +533,12 @@ const styles = StyleSheet.create({
   windowChipSelected: { backgroundColor: Colors.primary, borderColor: Colors.primary },
   windowChipText: { ...Typography.caption, color: Colors.textSecondary },
   windowChipTextSelected: { color: '#fff', fontWeight: '600' },
+  helperText: { ...Typography.caption, color: Colors.textMuted, lineHeight: 18, marginBottom: Spacing.sm },
+  variableGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
+  variableChip: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm, borderRadius: BorderRadius.md, borderWidth: 1, borderColor: Colors.border, backgroundColor: Colors.surface },
+  variableChipSelected: { borderColor: Colors.primary, backgroundColor: Colors.primaryLight },
+  variableChipText: { ...Typography.caption, color: Colors.textSecondary },
+  variableChipTextSelected: { color: Colors.primary, fontWeight: '700' },
   estimatedNotice: {
     backgroundColor: '#eff6ff', borderRadius: BorderRadius.md, padding: Spacing.md,
     marginTop: Spacing.lg,

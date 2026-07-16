@@ -98,6 +98,63 @@ export const SNACK_TYPE_OPTIONS = [
   { value: "not_sure", label: "Not sure" },
 ] as const;
 
+export const SLEEP_AGE_RANGE_OPTIONS = [
+  { value: "teen_13_17", label: "13–17 years" },
+  { value: "adult_18_64", label: "18–64 years" },
+  { value: "older_adult_65_plus", label: "65 years or older" },
+  { value: "prefer_not_to_answer", label: "Prefer not to answer" },
+] as const;
+
+export const TYPICAL_SCHEDULE_OPTIONS = [
+  { value: "regular", label: "Mostly regular" },
+  { value: "variable", label: "Variable" },
+  { value: "shift_work", label: "Shift work / rotating schedule" },
+  { value: "not_sure", label: "Not sure" },
+  { value: "prefer_not_to_answer", label: "Prefer not to answer" },
+] as const;
+
+export const USUAL_SLEEP_NEED_OPTIONS = [
+  { value: null, label: "Use age-aware default" },
+  { value: 7, label: "7 hours" },
+  { value: 7.5, label: "7.5 hours" },
+  { value: 8, label: "8 hours" },
+  { value: 8.5, label: "8.5 hours" },
+  { value: 9, label: "9 hours" },
+] as const;
+
+export type SleepAgeRange = (typeof SLEEP_AGE_RANGE_OPTIONS)[number]["value"];
+
+export type SleepTargetConfiguration = {
+  range: [number, number];
+  workingTarget: number;
+  source: "age_default" | "user_selected";
+  ruleVersion: "sleep-target-v1";
+};
+
+export function deriveSleepTarget(
+  ageRange: SleepAgeRange,
+  userSelectedHours: number | null,
+): SleepTargetConfiguration | null {
+  const range: [number, number] | null = ageRange === "teen_13_17"
+    ? [8, 10]
+    : ageRange === "adult_18_64"
+      ? [7, 9]
+      : ageRange === "older_adult_65_plus"
+        ? [7, 8]
+        : null;
+  if (!range) return null;
+
+  const selected = userSelectedHours !== null && Number.isFinite(userSelectedHours)
+    ? Math.min(range[1], Math.max(range[0], userSelectedHours))
+    : null;
+  return {
+    range,
+    workingTarget: selected ?? (range[0] + range[1]) / 2,
+    source: selected === null ? "age_default" : "user_selected",
+    ruleVersion: "sleep-target-v1",
+  };
+}
+
 export type AcneOnsetValue = (typeof ACNE_ONSET_OPTIONS)[number]["value"];
 export type MealFrequencyValue = (typeof MEAL_FREQUENCY_OPTIONS)[number]["value"];
 export type SnackTendencyValue = (typeof SNACK_TENDENCY_OPTIONS)[number]["value"];

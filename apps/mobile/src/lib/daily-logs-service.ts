@@ -8,6 +8,7 @@ import {
   saveSnackEvent,
 } from "./food-service";
 import { upsertSleepLog as saveSleepDermLog } from "./sleep-service";
+import { isFoodDayComplete } from "./daily-log-completion";
 
 // ─── Types matching actual DB schema ─────────────────────────────────────────
 
@@ -68,6 +69,8 @@ export interface TodaySummary {
   skinStateLogged: boolean;
   sleepLogged: boolean;
   foodLogged: boolean;
+  foodStarted: boolean;
+  foodCompletionState: string;
   treatmentCheckedIn: boolean;
   stressLogged: boolean;
   logsCount: number;
@@ -94,7 +97,7 @@ export async function fetchTodayLogs(userId: string): Promise<TodaySummary> {
         .limit(1),
       supabase
         .from("food_logs")
-        .select("id")
+        .select("id, completion_state")
         .eq("user_id", userId)
         .eq("log_date", today)
         .limit(5),
@@ -108,7 +111,11 @@ export async function fetchTodayLogs(userId: string): Promise<TodaySummary> {
 
   const dailyLog = dailyResult.data?.[0] as DailyLog | undefined;
   const sleepLogged = (sleepResult.data?.length ?? 0) > 0;
-  const foodLogged = (foodResult.data?.length ?? 0) > 0;
+  const foodCompletionState = typeof foodResult.data?.[0]?.completion_state === "string"
+    ? foodResult.data[0].completion_state
+    : "not_started";
+  const foodStarted = (foodResult.data?.length ?? 0) > 0 && foodCompletionState !== "not_started";
+  const foodLogged = isFoodDayComplete(foodCompletionState);
   const treatmentCheckedIn = (treatmentResult.data?.length ?? 0) > 0;
   const stressLogged = !!dailyLog?.stress_level;
 
@@ -124,6 +131,8 @@ export async function fetchTodayLogs(userId: string): Promise<TodaySummary> {
     skinStateLogged: false, // skin state is tracked via acne_history, not daily
     sleepLogged,
     foodLogged,
+    foodStarted,
+    foodCompletionState,
     treatmentCheckedIn,
     stressLogged,
     logsCount: count,

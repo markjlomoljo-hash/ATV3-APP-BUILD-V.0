@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,9 +16,11 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
+import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   deleteFoodEvent,
+  deleteSnackPhoto,
   expectedMealSlots,
   fetchDailyFoodLog,
   fetchFoodHistory,
@@ -28,6 +31,7 @@ import {
   newSnackEvent,
   saveMealEvent,
   saveSnackEvent,
+  uploadSnackPhoto,
   type DailyFoodLog,
   type DailyMealEvent,
   type DailySnackEvent,
@@ -75,6 +79,8 @@ export default function FoodScreen() {
   const [snackDescription, setSnackDescription] = useState("");
   const [snackPortion, setSnackPortion] = useState("");
   const [snackConfidence, setSnackConfidence] = useState<"certain" | "unsure" | "unknown">("certain");
+  const [pendingSnackPhotoUri, setPendingSnackPhotoUri] = useState<string | null>(null);
+  const [removeExistingSnackPhoto, setRemoveExistingSnackPhoto] = useState(false);
 
   const load = useCallback(async (date: string) => {
     const log = await fetchDailyFoodLog(date);
@@ -103,6 +109,8 @@ export default function FoodScreen() {
     setSnackDescription("");
     setSnackPortion("");
     setSnackConfidence("certain");
+    setPendingSnackPhotoUri(null);
+    setRemoveExistingSnackPhoto(false);
   };
 
   const openMeal = (event?: DailyMealEvent, suggestedType?: string) => {
@@ -134,6 +142,36 @@ export default function FoodScreen() {
     setModalVisible(true);
   };
 
+  const chooseSnackPhoto = async (source: "camera" | "library") => {
+    const permission = source === "camera"
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        "Permission required",
+        source === "camera"
+          ? "Camera permission is required only when you choose to capture a snack photo."
+          : "Photo permission is required only for the image you choose.",
+      );
+      return;
+    }
+    const result = source === "camera"
+      ? await ImagePicker.launchCameraAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.85,
+        })
+      : await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ImagePicker.MediaTypeOptions.Images,
+          allowsEditing: true,
+          quality: 0.85,
+        });
+    if (!result.canceled && result.assets[0]?.uri) {
+      setPendingSnackPhotoUri(result.assets[0].uri);
+      setRemoveExistingSnackPhoto(false);
+    }
+  };
+
   const save = async () => {
     setSaving(true);
     try {
@@ -160,7 +198,7 @@ export default function FoodScreen() {
           Alert.alert("Snack details required", "Describe the snack you had.");
           return;
         }
-        const event = editingSnack
+        let event = editingSnack
           ? {
               ...editingSnack,
               description: snackDescription.trim(),
@@ -168,6 +206,7 @@ export default function FoodScreen() {
               tags,
               confidenceLevel: snackConfidence,
               notes: notes.trim() || null,
+              photoStorageRef: removeExistingSnackPhoto ? null : editingSnack.photoStorageRef,
             }
           : newSnackEvent({
               time: new Date().toISOString(),
@@ -178,7 +217,26 @@ export default function FoodScreen() {
               confidenceLevel: snackConfidence,
               notes: notes.trim() || null,
             });
-        setDailyLog(await saveSnackEvent(activeDate, event));
+        const priorPhotoRef = editingSnack?.photoStorageRef ?? null;
+        let uploadedPhotoRef: string | null = null;
+        try {
+          if (pendingSnackPhotoUri) {
+            uploadedPhotoRef = await uploadSnackPhoto(pendingSnackPhotoUri, activeDate, event.id);
+            event = { ...event, photoStorageRef: uploadedPhotoRef };
+          }
+          setDailyLog(await saveSnackEvent(activeDate, event));
+        } catch (error) {
+          if (uploadedPhotoRef) await deleteSnackPhoto(uploadedPhotoRef).catch(() => undefined);
+          throw error;
+        }
+        if (priorPhotoRef && priorPhotoRef !== event.photoStorageRef) {
+          await deleteSnackPhoto(priorPhotoRef).catch(() => {
+            Alert.alert(
+              "Photo cleanup pending",
+              "The snack entry was saved, but its previous private photo could not be removed. Retry when online.",
+            );
+          });
+        }
       }
       setModalVisible(false);
     } catch {
@@ -195,8 +253,21 @@ export default function FoodScreen() {
         text: "Delete",
         style: "destructive",
         onPress: () => {
+          const photoRef = kind === "snack"
+            ? dailyLog?.snackEvents.find((event) => event.id === id)?.photoStorageRef ?? null
+            : null;
           void deleteFoodEvent(activeDate, kind, id)
-            .then(setDailyLog)
+            .then(async (updated) => {
+              setDailyLog(updated);
+              if (photoRef) {
+                await deleteSnackPhoto(photoRef).catch(() => {
+                  Alert.alert(
+                    "Entry deleted; photo cleanup pending",
+                    "The log entry was removed, but its private photo could not be deleted while offline. Retry when connected.",
+                  );
+                });
+              }
+            })
             .catch(() => Alert.alert("Delete failed", "Please retry."));
         },
       },
@@ -308,6 +379,7 @@ export default function FoodScreen() {
                 <View><Text style={styles.cardTitle}>{event.description}</Text><Text style={styles.meta}>{new Date(event.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}{event.portionEstimate ? ` · ${event.portionEstimate}` : ""}</Text></View>
                 <View style={styles.actions}><TouchableOpacity onPress={() => openSnack(event)}><Text style={styles.link}>Edit</Text></TouchableOpacity><TouchableOpacity onPress={() => removeEvent("snack", event.id)}><Text style={styles.delete}>Delete</Text></TouchableOpacity></View>
               </View>
+              {event.photoStorageRef && <Text style={styles.photoAttached}>Private photo attached</Text>}
             </View>
           ))}
 
@@ -347,6 +419,24 @@ export default function FoodScreen() {
                   <Text style={styles.cardTitle}>Snack details</Text>
                   <TextInput style={styles.input} value={snackDescription} onChangeText={setSnackDescription} placeholder="Snack name or description" />
                   <TextInput style={styles.input} value={snackPortion} onChangeText={setSnackPortion} placeholder="Portion estimate (optional)" />
+                  <Text style={styles.fieldLabel}>Optional private photo</Text>
+                  <Text style={styles.meta}>Stored privately and linked only to this snack event.</Text>
+                  {pendingSnackPhotoUri && <Image source={{ uri: pendingSnackPhotoUri }} style={styles.photoPreview} />}
+                  {!pendingSnackPhotoUri && editingSnack?.photoStorageRef && !removeExistingSnackPhoto && (
+                    <Text style={styles.photoAttached}>A private photo is attached.</Text>
+                  )}
+                  <View style={styles.photoActions}>
+                    <TouchableOpacity style={styles.photoButton} onPress={() => void chooseSnackPhoto("camera")}><Text style={styles.link}>Take photo</Text></TouchableOpacity>
+                    <TouchableOpacity style={styles.photoButton} onPress={() => void chooseSnackPhoto("library")}><Text style={styles.link}>Choose photo</Text></TouchableOpacity>
+                    {(pendingSnackPhotoUri || (editingSnack?.photoStorageRef && !removeExistingSnackPhoto)) && (
+                      <TouchableOpacity
+                        style={styles.photoButton}
+                        onPress={() => { setPendingSnackPhotoUri(null); setRemoveExistingSnackPhoto(true); }}
+                      >
+                        <Text style={styles.delete}>Remove</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
                   <Text style={styles.fieldLabel}>Confidence</Text>
                   <View style={styles.chips}>{(["certain", "unsure", "unknown"] as const).map((confidence) => <Pressable key={confidence} onPress={() => setSnackConfidence(confidence)} style={[styles.chip, snackConfidence === confidence && styles.chipActive]}><Text style={[styles.chipText, snackConfidence === confidence && styles.chipTextActive]}>{confidence}</Text></Pressable>)}</View>
                 </View>
@@ -400,4 +490,8 @@ const styles = StyleSheet.create({
   notes: { minHeight: 90, paddingVertical: 10, textAlignVertical: "top" },
   itemRow: { flexDirection: "row", gap: 8 },
   fieldLabel: { marginTop: Spacing.md, color: Colors.textSecondary, fontWeight: "600" },
+  photoAttached: { marginTop: 4, color: Colors.primary, fontSize: 12, fontWeight: "600" },
+  photoPreview: { width: "100%", height: 190, borderRadius: 10, marginTop: Spacing.sm },
+  photoActions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: Spacing.sm },
+  photoButton: { paddingHorizontal: 10, paddingVertical: 8, borderWidth: 1, borderColor: Colors.border, borderRadius: 8 },
 });

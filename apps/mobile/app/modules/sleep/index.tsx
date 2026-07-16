@@ -13,7 +13,8 @@ import { router } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import {
   fetchSleepForDate, upsertSleepLog, fetchSleepHistory,
-  computeSleepAnalytics, QUALITY_LABELS, SleepLog,
+  computeSleepAnalytics, fetchSleepConfiguration, saveSleepConfiguration,
+  QUALITY_LABELS, SleepLog, type SleepRecord, type SleepTargetSource,
 } from '../../../src/lib/sleep-service';
 import { Colors, Spacing } from '../../../src/components/ui/theme';
 
@@ -45,7 +46,11 @@ export default function SleepScreen() {
   const [manualDurationReason, setManualDurationReason] = useState('');
   const [useManualDuration, setUseManualDuration] = useState(false);
   const [targetHours, setTargetHours] = useState<number | null>(null);
-  const [targetSource, setTargetSource] = useState<'user_selected' | null>(null);
+  const [targetRange, setTargetRange] = useState<[number, number] | null>(null);
+  const [targetSource, setTargetSource] = useState<SleepTargetSource | null>(null);
+  const [sleepAgeRange, setSleepAgeRange] = useState<string | null>(null);
+  const [typicalSchedule, setTypicalSchedule] = useState<string | null>(null);
+  const [targetRuleVersion, setTargetRuleVersion] = useState<string | null>(null);
 
   // Picker visibility
   const [showSleepPicker, setShowSleepPicker] = useState(false);
@@ -53,8 +58,17 @@ export default function SleepScreen() {
 
   const loadLog = useCallback(async (date: string) => {
     try {
-      const data = await fetchSleepForDate(date);
+      const [data, configuration] = await Promise.all([
+        fetchSleepForDate(date),
+        fetchSleepConfiguration(),
+      ]);
       setLog(data);
+      setSleepAgeRange(configuration.ageRange);
+      setTypicalSchedule(configuration.typicalSchedule);
+      setTargetRuleVersion(configuration.ruleVersion);
+      setTargetRange(data?.target_sleep_range ?? configuration.targetRange);
+      setTargetHours(data?.working_sleep_target ?? configuration.workingTarget);
+      setTargetSource(data?.target_source ?? configuration.targetSource);
       if (data) {
         setSleepTime(data.sleep_time ? new Date(data.sleep_time) : null);
         setWakeTime(data.wake_time ? new Date(data.wake_time) : null);
@@ -65,8 +79,6 @@ export default function SleepScreen() {
           setManualDuration(String(Math.round(data.manual_duration_override / 60 * 10) / 10));
           setManualDurationReason(data.manual_duration_reason ?? '');
         }
-        setTargetHours(data.working_sleep_target ?? null);
-        setTargetSource(data.target_source === 'user_selected' ? 'user_selected' : null);
       } else {
         setSleepTime(null);
         setWakeTime(null);
@@ -75,8 +87,6 @@ export default function SleepScreen() {
         setManualDuration('');
         setManualDurationReason('');
         setUseManualDuration(false);
-        setTargetHours(null);
-        setTargetSource(null);
       }
     } catch (e) {
       console.error('Failed to load sleep log:', e);
@@ -121,19 +131,51 @@ export default function SleepScreen() {
         sleepTimestamp.setDate(sleepTimestamp.getDate() - 1);
       }
 
-      const saved = await upsertSleepLog(activeDate, {
+      if (targetHours !== null) {
+        await saveSleepConfiguration({
+          ageRange: sleepAgeRange,
+          typicalSchedule,
+          targetRange: targetRange ?? [targetHours, targetHours],
+          workingTarget: targetHours,
+          targetSource: targetSource ?? 'user_selected',
+          ruleVersion: targetRuleVersion ?? 'sleep-target-v1',
+        });
+      }
+
+      const sleepInput = {
         sleep_time: sleepTimestamp?.toISOString() ?? null,
         wake_time: wakeTimestamp?.toISOString() ?? null,
         quality,
+        disturbances: log?.disturbances ?? [],
+        naps: log?.naps ?? [],
         notes: notes || null,
         manual_duration_override: manualMins,
         manual_duration_reason: manualMins != null ? manualDurationReason.trim() : null,
         working_sleep_target: targetHours,
-        target_sleep_range: targetHours != null
-          ? [Math.max(4, targetHours - 0.5), Math.min(14, targetHours + 0.5)]
-          : null,
+        target_sleep_range: targetHours != null ? (targetRange ?? [targetHours, targetHours]) : null,
         target_source: targetHours != null ? targetSource : null,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        schedule_context: typicalSchedule,
+      };
+      const provisionalRecord: SleepRecord = {
+        log_date: activeDate,
+        sleep_time: sleepInput.sleep_time,
+        wake_time: sleepInput.wake_time,
+        quality: sleepInput.quality,
+        disturbances: sleepInput.disturbances,
+        naps: sleepInput.naps,
+        notes: sleepInput.notes,
+        manual_duration_override: sleepInput.manual_duration_override,
+      };
+      const analyticsInputs = [
+        provisionalRecord,
+        ...history.filter((entry) => entry.log_date !== activeDate),
+      ].sort((left, right) => right.log_date.localeCompare(left.log_date));
+      const analyticsSnapshot = computeSleepAnalytics(analyticsInputs, targetHours, activeDate);
+
+      const saved = await upsertSleepLog(activeDate, {
+        ...sleepInput,
+        analytics_snapshot: analyticsSnapshot,
       });
       setLog(saved);
       const h = await fetchSleepHistory(30, 0);
@@ -151,6 +193,13 @@ export default function SleepScreen() {
   const analytics = history.length > 0
     ? computeSleepAnalytics(history, targetHours, activeDate)
     : null;
+
+  const targetChoices = targetRange
+    ? Array.from(
+        { length: Math.round((targetRange[1] - targetRange[0]) * 2) + 1 },
+        (_, index) => targetRange[0] + index * 0.5,
+      )
+    : [7, 7.5, 8, 8.5, 9];
 
   if (loading) {
     return (
@@ -382,12 +431,25 @@ export default function SleepScreen() {
             {/* Target hours */}
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>Sleep Target (hours)</Text>
+              <Text style={styles.analyticsDetail}>
+                {targetRange
+                  ? `Recommended range: ${targetRange[0]}–${targetRange[1]}h · Source: ${targetSource ?? 'not recorded'}`
+                  : 'No age-aware range is available. Select a working target or update your onboarding age range.'}
+              </Text>
+              {typicalSchedule && (
+                <Text style={styles.analyticsDetail}>Schedule context: {typicalSchedule.replace(/_/g, ' ')}</Text>
+              )}
               <View style={styles.targetRow}>
-                {[6, 7, 7.5, 8, 9].map(h => (
+                {targetChoices.map(h => (
                   <TouchableOpacity
                     key={h}
                     style={[styles.targetButton, targetHours === h && styles.targetButtonActive]}
-                    onPress={() => { setTargetHours(h); setTargetSource('user_selected'); }}
+                    onPress={() => {
+                      setTargetHours(h);
+                      setTargetRange((current) => current ?? [h, h]);
+                      setTargetSource('user_selected');
+                      setTargetRuleVersion('sleep-target-v1');
+                    }}
                     accessibilityLabel={`${h} hours target`}
                   >
                     <Text style={[styles.targetButtonText, targetHours === h && styles.targetButtonTextActive]}>{h}h</Text>

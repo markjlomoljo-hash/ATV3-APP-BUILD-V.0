@@ -84,6 +84,13 @@ export interface RawProfileBundle {
     url: string | null;
     accessedAt: string | null;
   }>;
+  latestSleepAnalytics?: {
+    logDate: string;
+    snapshot: Record<string, unknown>;
+    ruleVersion: string;
+    source: "client_deterministic" | "server_deterministic";
+    computedAt: string;
+  } | null;
   dailyLogCount: number;
   daysOfHistory: number;
 }

@@ -68,6 +68,18 @@ const sleepDermInputsMigrationPath = join(
   "migrations",
   "20260716113000_sleepderm_circadian_inputs.sql",
 );
+const privateFoodPhotosMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260716133000_private_food_log_photos.sql",
+);
+const sleepDermAnalyticsMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260716143000_sleepderm_analytics_snapshots.sql",
+);
 
 describe("Supabase migration contract", () => {
   it("defines persistent memory and ML lineage tables with RLS enabled", () => {
@@ -360,5 +372,34 @@ describe("SleepDerm circadian input schema", () => {
     expect(sql).toContain("add column if not exists target_sleep_range jsonb");
     expect(sql).toContain("add column if not exists target_source text");
     expect(sql).not.toMatch(/insert\s+into/i);
+  });
+});
+
+describe("SleepDerm analytics persistence", () => {
+  it("stores deterministic snapshots only with complete provenance", () => {
+    const sql = readFileSync(sleepDermAnalyticsMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("add column if not exists analytics_snapshot jsonb");
+    expect(sql).toContain("add column if not exists analytics_rule_version text");
+    expect(sql).toContain("add column if not exists analytics_source text");
+    expect(sql).toContain("add column if not exists analytics_computed_at timestamptz");
+    expect(sql).toContain("'client_deterministic', 'server_deterministic'");
+    expect(sql).toContain("sleep_logs_analytics_provenance_check");
+    expect(sql).not.toMatch(/math\.random|mock|placeholder/i);
+  });
+});
+
+describe("private food-log photo storage", () => {
+  it("keeps optional snack photos private, bounded, and owner-scoped", () => {
+    const sql = readFileSync(privateFoodPhotosMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("'food-log-photos'");
+    expect(sql).toContain("false");
+    expect(sql).toContain("4194304");
+    expect(sql).toContain("for select to authenticated");
+    expect(sql).toContain("for insert to authenticated");
+    expect(sql).toContain("for delete to authenticated");
+    expect(sql).toContain("(storage.foldername(name))[1] = (select auth.uid())::text");
+    expect(sql).not.toContain("to anon");
   });
 });

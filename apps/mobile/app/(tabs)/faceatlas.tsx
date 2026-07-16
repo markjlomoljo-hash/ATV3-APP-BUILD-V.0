@@ -2,37 +2,28 @@ import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "../../src/stores/auth";
-import { supabase } from "../../src/lib/supabase";
 import { Card, EmptyState, Badge } from "../../src/components/ui";
 import { Colors, Spacing, Typography, BorderRadius } from "../../src/components/ui/theme";
-
-interface FaceScan {
-  id: string;
-  user_id: string;
-  status: string;
-  created_at: string;
-  metadata: Record<string, unknown>;
-}
-
-async function fetchFaceScans(userId: string): Promise<FaceScan[]> {
-  const { data, error } = await supabase
-    .from("face_atlas_scans")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(20);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as FaceScan[];
-}
+import { ObservedSkinVisualization } from "../../src/components/SkinVisualization";
+import { fetchFaceAtlasScanDetail, fetchFaceAtlasScans } from "../../src/lib/faceatlas-service";
+import { buildObservedSkinViewModel, latestCompletedScan } from "../../src/lib/faceatlas-visualization";
 
 export default function FaceAtlasScreen() {
   const { user } = useAuthStore();
 
-  const { data: scans = [], isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["face-scans", user?.id],
-    queryFn: () => fetchFaceScans(user!.id),
+    queryFn: async () => {
+      const scans = await fetchFaceAtlasScans();
+      const latest = latestCompletedScan(scans);
+      const observed = latest
+        ? buildObservedSkinViewModel(await fetchFaceAtlasScanDetail(latest.id))
+        : buildObservedSkinViewModel(null);
+      return { scans, observed };
+    },
     enabled: !!user,
   });
+  const scans = data?.scans ?? [];
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -62,6 +53,19 @@ export default function FaceAtlasScreen() {
           </View>
         </Card>
 
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Current Skin Model</Text>
+          <Card style={styles.observedCard}>
+            {isLoading ? (
+              <Text style={styles.loadingText}>Loading persisted FaceAtlas observations…</Text>
+            ) : isError ? (
+              <Text style={styles.errorText}>FaceAtlas observations are temporarily unavailable. No skin markers are shown.</Text>
+            ) : (
+              <ObservedSkinVisualization model={data?.observed ?? buildObservedSkinViewModel(null)} />
+            )}
+          </Card>
+        </View>
+
         {/* Scan history */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Scan History</Text>
@@ -80,12 +84,12 @@ export default function FaceAtlasScreen() {
                 <Text style={styles.scanIcon}>🖼️</Text>
                 <View style={styles.scanContent}>
                   <Text style={styles.scanDate}>
-                    {new Date(scan.created_at).toLocaleDateString()}
+                    {new Date(scan.capturedAt).toLocaleDateString()} · {scan.angle.replace(/_/g, " ")}
                   </Text>
                   <Badge
                     label={scan.status}
-                    color={scan.status === "complete" ? Colors.primaryLight : "#fef3c7"}
-                    textColor={scan.status === "complete" ? Colors.primary : "#92400e"}
+                    color={["complete", "completed", "analyzed"].includes(scan.status) ? Colors.primaryLight : "#fef3c7"}
+                    textColor={["complete", "completed", "analyzed"].includes(scan.status) ? Colors.primary : "#92400e"}
                   />
                 </View>
               </View>
@@ -128,6 +132,8 @@ const styles = StyleSheet.create({
   scanIcon: { fontSize: 24 },
   scanContent: { flex: 1, gap: 4 },
   scanDate: { ...Typography.bodyMedium, color: Colors.textPrimary },
+  observedCard: { alignItems: "stretch" },
+  errorText: { ...Typography.caption, color: Colors.error, lineHeight: 18 },
   infoCard: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryMid },
   infoTitle: { ...Typography.bodyMedium, color: Colors.primaryDark, marginBottom: 6 },
   infoText: { ...Typography.caption, color: Colors.primaryDark, lineHeight: 18 },

@@ -1,6 +1,8 @@
 /** DermDiet daily-parent service. Meals and snacks are typed sub-events. */
 import * as Crypto from "expo-crypto";
+import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { apiFetch, apiMutation, createMutationOperation } from "./api";
+import { supabase } from "./supabase";
 
 export type FoodItem = { name: string; portion?: string | null };
 
@@ -181,6 +183,41 @@ export function deleteFoodEvent(
 
 export function markDailyFoodLogComplete(date: string, complete: boolean): Promise<DailyFoodLog> {
   return mutateDailyFoodLog({ date, operation: "mark_complete", complete });
+}
+
+export async function uploadSnackPhoto(
+  localUri: string,
+  date: string,
+  eventId: string,
+): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("auth_required");
+
+  const normalized = await manipulateAsync(
+    localUri,
+    [{ resize: { width: 1600 } }],
+    { compress: 0.78, format: SaveFormat.JPEG },
+  );
+  const response = await fetch(normalized.uri);
+  if (!response.ok) throw new Error("snack_photo_read_failed");
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength > 4 * 1024 * 1024) throw new Error("snack_photo_too_large");
+
+  const storageRef = `${user.id}/food/${date}/${eventId}/${Crypto.randomUUID()}.jpg`;
+  const { error } = await supabase.storage
+    .from("food-log-photos")
+    .upload(storageRef, bytes, { contentType: "image/jpeg", upsert: false });
+  if (error) throw new Error(`snack_photo_upload_failed:${error.message}`);
+  return storageRef;
+}
+
+export async function deleteSnackPhoto(storageRef: string): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("auth_required");
+  if (!storageRef.startsWith(`${user.id}/food/`)) throw new Error("invalid_snack_photo_reference");
+
+  const { error } = await supabase.storage.from("food-log-photos").remove([storageRef]);
+  if (error) throw new Error(`snack_photo_delete_failed:${error.message}`);
 }
 
 export async function fetchFoodHistory(limit = 14): Promise<DailyFoodLog[]> {

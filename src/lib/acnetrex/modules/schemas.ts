@@ -126,6 +126,7 @@ export const skinTwinScenarioSchema = z.object({
   variables: z.array(skinTwinVariableSchema).min(1).max(8),
   sourceRecordRefs: z.array(sourceRecordRefSchema).default([]),
   providerReview: z.boolean().default(false),
+  providerReviewContext: z.string().trim().min(1).max(500).optional(),
 });
 
 export const cutisAiMessageSchema = z.object({

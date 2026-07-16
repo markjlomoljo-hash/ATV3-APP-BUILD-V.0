@@ -56,7 +56,11 @@ function getModules(summary: TodaySummary | undefined): LogModule[] {
       key: "food",
       icon: "🥗",
       title: "DermDiet",
-      subtitle: summary?.foodLogged ? "Meals logged" : "Log today's meals",
+      subtitle: summary?.foodLogged
+        ? "Expected meals complete"
+        : summary?.foodStarted
+          ? "Food log in progress"
+          : "Log today's meals",
       logged: summary?.foodLogged ?? false,
       route: "/modules/food",
     },

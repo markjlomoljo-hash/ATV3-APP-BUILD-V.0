@@ -71,7 +71,7 @@ describe("Skin Twin scenario routes", () => {
   it("returns a persisted insufficient-data state without projection", async () => {
     create.mockResolvedValue({
       status: "insufficient_data",
-      snapshot: { id: snapshotId, name: "Sleep", window: "7d", status: "insufficient_data", sourceRecordRefs: [], confidence: "insufficient_data", modelVersion: null, simulation: null, uncertainty: null, snapshotAt: "2026-07-13T00:00:00.000Z" },
+      snapshot: { id: snapshotId, name: "Sleep", window: "7d", status: "insufficient_data", variables: ["better_sleep"], sourceRecordRefs: [], confidence: "insufficient_data", modelVersion: null, simulation: null, uncertainty: null, snapshotAt: "2026-07-13T00:00:00.000Z" },
     });
     idempotent.mockImplementation(async (options) => ({ ...(await options.execute({} as never)), replayed: false }));
     const response = await POST(request({ name: "Sleep", window: "7d", variables: ["better_sleep"] }, { "idempotency-key": "skin-twin-scenario-01" }));

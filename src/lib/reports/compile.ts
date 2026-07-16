@@ -80,6 +80,36 @@ function displayPersistedValue(value: unknown): string {
   return String(value);
 }
 
+function sleepAnalyticsRows(bundle: RawProfileBundle): Array<{ label: string; value: string }> {
+  const persisted = bundle.latestSleepAnalytics;
+  if (!persisted) return [];
+  const snapshot = persisted.snapshot;
+  const readiness = snapshot.readiness === "sufficient_data" ? "Sufficient data" : "Insufficient data";
+  const rows = [
+    { label: "Sleep analytics date", value: persisted.logDate },
+    { label: "Sleep analytics readiness", value: readiness },
+    { label: "Valid sleep records", value: displayPersistedValue(snapshot.days_logged) },
+    { label: "Latest sleep duration", value: typeof snapshot.duration_hours === "number" ? `${snapshot.duration_hours} hours` : "Insufficient data" },
+    { label: "7-day sleep debt", value: typeof snapshot.cumulative_debt_7d === "number" ? `${snapshot.cumulative_debt_7d} hours` : "Insufficient data" },
+  ];
+  if (snapshot.readiness === "sufficient_data") {
+    rows.push(
+      { label: "Circadian alignment estimate", value: displayPersistedValue(snapshot.circadian_alignment_score) },
+      { label: "Nocturnal recovery opportunity estimate", value: displayPersistedValue(snapshot.nocturnal_recovery_opportunity) },
+    );
+  } else {
+    rows.push({
+      label: "Circadian and recovery estimates",
+      value: "Insufficient data — at least 7 valid sleep records are required",
+    });
+  }
+  rows.push({
+    label: "Sleep analytics provenance",
+    value: `${persisted.source}; ${persisted.ruleVersion}; computed ${persisted.computedAt}`,
+  });
+  return rows;
+}
+
 export function compileReportData(
   bundle: RawProfileBundle,
   inclusionOptions: ReportInclusionOptions,
@@ -334,17 +364,24 @@ export function compileReportData(
 
   // --- Lifestyle context -------------------------------------------------
   const lifestyle = sectionValue(bundle, "lifestyle_baseline");
-  const lifestyleContext: ReportSection = hasContent(lifestyle)
+  const persistedSleepRows = sleepAnalyticsRows(bundle);
+  const lifestyleContext: ReportSection = hasContent(lifestyle) || persistedSleepRows.length > 0
     ? {
         title: "Lifestyle Context (Sleep, Stress, Diet, Cycle, Climate)",
         insufficientData: false,
-        rows: Object.entries(lifestyle).map(([k, v]) => ({
-          label: humanizeKey(k),
-          value:
-            k === "meal_frequency_baseline" && typeof v === "string"
-              ? (MEAL_FREQUENCY_LABELS[v] ?? v)
-              : displayPersistedValue(v),
-        })),
+        rows: [
+          ...Object.entries(lifestyle).map(([k, v]) => ({
+            label: humanizeKey(k),
+            value:
+              k === "meal_frequency_baseline" && typeof v === "string"
+                ? (MEAL_FREQUENCY_LABELS[v] ?? v)
+                : displayPersistedValue(v),
+          })),
+          ...persistedSleepRows,
+        ],
+        notes: persistedSleepRows.length > 0
+          ? ["SleepDerm values are deterministic estimates from user-entered records, not sleep-stage measurements, diagnoses, or causal skin findings."]
+          : undefined,
       }
     : insufficient(
         "Lifestyle Context (Sleep, Stress, Diet, Cycle, Climate)",

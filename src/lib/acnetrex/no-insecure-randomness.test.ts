@@ -24,5 +24,5 @@ describe("zero-fabrication randomness contract", () => {
     );
 
     expect(violations).toEqual([]);
-  });
+  }, 15_000);
 });

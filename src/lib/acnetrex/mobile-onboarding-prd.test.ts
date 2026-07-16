@@ -4,6 +4,9 @@ import {
   MEAL_FREQUENCY_OPTIONS,
   SNACK_TENDENCY_OPTIONS,
   SNACK_TYPE_OPTIONS,
+  SLEEP_AGE_RANGE_OPTIONS,
+  TYPICAL_SCHEDULE_OPTIONS,
+  deriveSleepTarget,
 } from "../../../apps/mobile/src/lib/onboarding-contracts";
 
 describe("PRD V1.5 mobile onboarding contracts", () => {
@@ -65,5 +68,40 @@ describe("PRD V1.5 mobile onboarding contracts", () => {
       "User-specific snack",
       "Not sure",
     ]);
+  });
+
+  it("derives an explicit age-aware target range without guessing an undisclosed age", () => {
+    expect(SLEEP_AGE_RANGE_OPTIONS.map((option) => option.value)).toEqual([
+      "teen_13_17",
+      "adult_18_64",
+      "older_adult_65_plus",
+      "prefer_not_to_answer",
+    ]);
+    expect(TYPICAL_SCHEDULE_OPTIONS.map((option) => option.value)).toEqual([
+      "regular",
+      "variable",
+      "shift_work",
+      "not_sure",
+      "prefer_not_to_answer",
+    ]);
+    expect(deriveSleepTarget("teen_13_17", null)).toEqual({
+      range: [8, 10],
+      workingTarget: 9,
+      source: "age_default",
+      ruleVersion: "sleep-target-v1",
+    });
+    expect(deriveSleepTarget("adult_18_64", 8.5)).toEqual({
+      range: [7, 9],
+      workingTarget: 8.5,
+      source: "user_selected",
+      ruleVersion: "sleep-target-v1",
+    });
+    expect(deriveSleepTarget("older_adult_65_plus", null)).toEqual({
+      range: [7, 8],
+      workingTarget: 7.5,
+      source: "age_default",
+      ruleVersion: "sleep-target-v1",
+    });
+    expect(deriveSleepTarget("prefer_not_to_answer", null)).toBeNull();
   });
 });
