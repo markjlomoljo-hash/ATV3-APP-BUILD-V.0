@@ -23,6 +23,7 @@ import {
   removeSleepEvent,
   updateSleepEvent,
 } from '../../../src/lib/sleep-events';
+import { buildSleepDebtTracker } from '../../../src/lib/sleep-debt-tracker';
 import { Colors, Spacing } from '../../../src/components/ui/theme';
 
 function getLocalDate(): string {
@@ -214,6 +215,11 @@ export default function SleepScreen() {
   const analytics = history.length > 0
     ? computeSleepAnalytics(history, targetHours, activeDate)
     : null;
+  const debtTracker = buildSleepDebtTracker(history, targetHours, activeDate, typicalSchedule);
+  const maxGraphDebt = Math.max(
+    1,
+    ...debtTracker.sevenDaySeries.map((point) => point.debtHours),
+  );
 
   const targetChoices = targetRange
     ? Array.from(
@@ -363,6 +369,75 @@ export default function SleepScreen() {
                 </Text>
               </View>
             )}
+
+            <View style={styles.debtTrackerCard}>
+              <Text style={styles.analyticsTitle}>Sleep Debt Tracker</Text>
+              <Text style={styles.analyticsSubtitle}>Real records only · recovery credit capped at {debtTracker.recoveryCreditCapHours}h per record</Text>
+              {debtTracker.readiness === 'insufficient_data' ? (
+                <Text style={styles.analyticsWarning}>
+                  At least 7 valid records, a working target, and a valid record for this date are required. No debt or action is inferred.
+                </Text>
+              ) : (
+                <>
+                  <View style={styles.debtSummaryRow}>
+                    <View style={styles.analyticsStat}>
+                      <Text style={styles.analyticsValue}>{debtTracker.currentDebtHours}h</Text>
+                      <Text style={styles.analyticsLabel}>Current debt</Text>
+                    </View>
+                    <View style={styles.analyticsStat}>
+                      <Text style={styles.debtBalanceValue}>
+                        {debtTracker.lastNightBalance.kind === 'deficit'
+                          ? `${debtTracker.lastNightBalance.hours}h deficit`
+                          : debtTracker.lastNightBalance.kind === 'recovery_credit'
+                            ? `${debtTracker.lastNightBalance.hours}h credit`
+                            : 'Balanced'}
+                      </Text>
+                      <Text style={styles.analyticsLabel}>Last valid night</Text>
+                    </View>
+                    <View style={styles.analyticsStat}>
+                      <Text style={styles.analyticsValue}>{debtTracker.realisticallyRecoverableHours}h</Text>
+                      <Text style={styles.analyticsLabel}>Recoverable next record</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.debtSectionLabel}>Rolling debt across the last 7 valid records</Text>
+                  <View style={styles.debtGraph}>
+                    {debtTracker.sevenDaySeries.map((point) => (
+                      <View key={point.logDate} style={styles.debtGraphPoint}>
+                        <Text style={styles.debtGraphValue}>{point.debtHours}h</Text>
+                        <View style={styles.debtGraphTrack}>
+                          <View
+                            style={[
+                              styles.debtGraphBar,
+                              { height: Math.max(4, Math.round((point.debtHours / maxGraphDebt) * 64)) },
+                            ]}
+                          />
+                        </View>
+                        <Text style={styles.debtGraphDate}>{point.logDate.slice(5)}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <Text style={styles.analyticsDetail}>
+                    Target: {targetRange ? `${targetRange[0]}–${targetRange[1]}h` : `${targetHours}h`} · Confidence: {analytics?.confidence ?? 'insufficient_data'}
+                  </Text>
+                  <Text style={styles.debtSectionLabel}>What contributed most</Text>
+                  {debtTracker.topContributors.map((contributor) => (
+                    <Text key={contributor} style={styles.analyticsDetail}>• {contributor}</Text>
+                  ))}
+                  <View style={styles.tonightActionCard}>
+                    <Text style={styles.tonightActionTitle}>What to do tonight</Text>
+                    <Text style={styles.tonightActionText}>{debtTracker.tonightAction}</Text>
+                  </View>
+                </>
+              )}
+              {debtTracker.missingDataWarning && (
+                <Text style={styles.analyticsWarning}>{debtTracker.missingDataWarning}</Text>
+              )}
+              <Text style={styles.analyticsDisclaimer}>
+                Sleep debt is a gradual behavioral estimate. Missing days are not counted as zero sleep, and recovery is not guaranteed.
+              </Text>
+            </View>
 
             {/* Sleep time */}
             <View style={styles.section}>
@@ -646,6 +721,29 @@ const styles = StyleSheet.create({
   analyticsLabel: { fontSize: 11, color: Colors.textMuted },
   analyticsDetail: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
   analyticsDisclaimer: { fontSize: 11, color: Colors.textMuted, fontStyle: 'italic', lineHeight: 16 },
+  debtTrackerCard: {
+    marginHorizontal: Spacing.md, marginBottom: Spacing.md,
+    backgroundColor: Colors.surface, borderRadius: 12, padding: Spacing.md,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  debtSummaryRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.md },
+  debtBalanceValue: { fontSize: 15, fontWeight: '700', color: Colors.primary, textAlign: 'center' },
+  debtSectionLabel: { fontSize: 12, fontWeight: '700', color: Colors.text, marginBottom: Spacing.xs },
+  debtGraph: {
+    flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between',
+    minHeight: 96, marginBottom: Spacing.md,
+  },
+  debtGraphPoint: { flex: 1, alignItems: 'center' },
+  debtGraphValue: { fontSize: 9, color: Colors.textSecondary, marginBottom: 3 },
+  debtGraphTrack: { height: 64, justifyContent: 'flex-end', width: 12, backgroundColor: Colors.background, borderRadius: 6 },
+  debtGraphBar: { width: 12, backgroundColor: Colors.primary, borderRadius: 6 },
+  debtGraphDate: { fontSize: 8, color: Colors.textMuted, marginTop: 3 },
+  tonightActionCard: {
+    backgroundColor: '#ECFDF5', borderRadius: 10, padding: Spacing.sm,
+    borderLeftWidth: 3, borderLeftColor: Colors.success, marginVertical: Spacing.sm,
+  },
+  tonightActionTitle: { fontSize: 12, fontWeight: '700', color: Colors.text, marginBottom: 3 },
+  tonightActionText: { fontSize: 12, color: Colors.textSecondary, lineHeight: 18 },
   section: {
     marginHorizontal: Spacing.md, marginBottom: Spacing.md,
     backgroundColor: Colors.surface, borderRadius: 12, padding: Spacing.md,
