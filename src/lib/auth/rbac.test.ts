@@ -6,9 +6,12 @@ vi.mock("@clerk/nextjs/server", () => ({ auth: vi.fn(), clerkClient: vi.fn() }))
 import {
   authorizationFromMetadata,
   hasPermission,
+  isClerkConfigured,
   requirePermission,
   requireRecentAuthentication,
   type AuthorizationContext,
+  type UserPrivateMetadata,
+  type UserPublicMetadata,
 } from "./authorization";
 import { AuthorizationError } from "./errors";
 import { permissionsForRole } from "./permissions";
@@ -34,6 +37,20 @@ describe("Clerk RBAC policy", () => {
   it("resolves missing and unknown roles to user", () => {
     expect(normalizeRole(undefined)).toBe("user");
     expect(normalizeRole("superadmin")).toBe("user");
+  });
+
+  it("exports Clerk metadata contracts and reflects real Clerk configuration", () => {
+    const publicMetadata: UserPublicMetadata = { role: "admin", roleVersion: 2 };
+    const privateMetadata: UserPrivateMetadata = { accountStatus: "active" };
+    expect(publicMetadata.role).toBe("admin");
+    expect(privateMetadata.accountStatus).toBe("active");
+
+    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY", "pk_test_configured");
+    vi.stubEnv("CLERK_SECRET_KEY", "configured-clerk-secret");
+    expect(isClerkConfigured()).toBe(true);
+
+    vi.stubEnv("CLERK_SECRET_KEY", "");
+    expect(isClerkConfigured()).toBe(false);
   });
 
   it("rejects privileged metadata without a valid roleVersion", () => {

@@ -17,18 +17,21 @@ import {
   integer,
   jsonb,
   pgTable,
+  pgSchema,
   real,
   text,
   timestamp,
   uuid,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
-import { randomUUID } from "crypto";
 
 const id = () =>
-  text("id")
-    .primaryKey()
-    .$defaultFn(() => randomUUID());
+  uuid("id").defaultRandom().primaryKey();
+
+const auth = pgSchema("auth");
+export const authUsers = auth.table("users", {
+  id: uuid("id").primaryKey(),
+});
 
 const timestamps = {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -53,7 +56,7 @@ export const users = pgTable("users", {
 
 export const consentSettings = pgTable("consent_settings", {
   id: id(),
-  userId: text("user_id").notNull().unique(),
+  userId: uuid("user_id").notNull().unique().references(() => authUsers.id, { onDelete: "cascade" }),
   anonymousLearning: boolean("anonymous_learning").notNull().default(false),
   rawImageLearning: boolean("raw_image_learning").notNull().default(false),
   includeFaceAtlasPhotosInReports: boolean("include_faceatlas_photos_in_reports")
@@ -74,7 +77,7 @@ export const consentSettings = pgTable("consent_settings", {
 
 export const consentAuditEvents = pgTable("consent_audit_events", {
   id: id(),
-  userId: text("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   changes: jsonb("changes").notNull(),
   source: text("source").notNull().default("user"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -88,7 +91,7 @@ export const profileSections = pgTable(
   "profile_sections",
   {
     id: id(),
-    userId: text("user_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
     sectionKey: text("section_key").notNull(),
     valueJson: jsonb("value_json").notNull(),
     version: integer("version").notNull().default(1),
@@ -104,7 +107,7 @@ export const profileVersionHistory = pgTable(
   "profile_version_history",
   {
     id: id(),
-    userId: text("user_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
     sectionKey: text("section_key").notNull(),
     version: integer("version").notNull(),
     previousValueJson: jsonb("previous_value_json"),
@@ -125,7 +128,7 @@ export const profileVersionHistory = pgTable(
 
 export const profileAuditEvents = pgTable("profile_audit_events", {
   id: id(),
-  userId: text("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   eventType: text("event_type").notNull(),
   metadataJson: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -139,7 +142,7 @@ export const dailyLogs = pgTable(
   "daily_logs",
   {
     id: id(),
-    userId: text("user_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
     logDate: text("log_date").notNull(), // YYYY-MM-DD
     sleep: jsonb("sleep"),
     food: jsonb("food"),
@@ -153,7 +156,7 @@ export const dailyLogs = pgTable(
 
 export const faceAtlasScans = pgTable("face_atlas_scans", {
   id: id(),
-  userId: text("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   scanDate: timestamp("scan_date", { withTimezone: true }).notNull().defaultNow(),
   angles: jsonb("angles").notNull(),
   userLesionCount: integer("user_lesion_count"),
@@ -168,7 +171,7 @@ export const faceAtlasScans = pgTable("face_atlas_scans", {
 
 export const treatmentPlans = pgTable("treatment_plans", {
   id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description"),
   schedule: jsonb("schedule"),
@@ -180,8 +183,8 @@ export const treatmentPlans = pgTable("treatment_plans", {
 
 export const treatmentCheckins = pgTable("treatment_checkins", {
   id: id(),
-  planId: text("plan_id").notNull(),
-  userId: text("user_id").notNull(),
+  planId: uuid("plan_id").notNull().references(() => treatmentPlans.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   checkinDate: text("checkin_date").notNull(),
   status: text("status").notNull(), // used | skipped | delayed | partial | stopped
   irritation: integer("irritation"),
@@ -191,8 +194,8 @@ export const treatmentCheckins = pgTable("treatment_checkins", {
 
 export const treatmentTasks = pgTable("treatment_tasks", {
   id: uuid("id").defaultRandom().primaryKey(),
-  planId: uuid("plan_id").notNull(),
-  userId: uuid("user_id").notNull(),
+  planId: uuid("plan_id").notNull().references(() => treatmentPlans.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   taskName: text("task_name").notNull(),
   dueAt: timestamp("due_at", { withTimezone: true }),
   completedAt: timestamp("completed_at", { withTimezone: true }),
@@ -203,7 +206,7 @@ export const treatmentTasks = pgTable("treatment_tasks", {
 
 export const triggerHypotheses = pgTable("trigger_hypotheses", {
   id: id(),
-  userId: text("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   triggerName: text("trigger_name").notNull(),
   status: text("status").notNull().default("insufficient_data"),
   evidenceCount: integer("evidence_count").notNull().default(0),
@@ -213,7 +216,7 @@ export const triggerHypotheses = pgTable("trigger_hypotheses", {
 
 export const forecastSummaries = pgTable("forecast_summaries", {
   id: id(),
-  userId: text("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   window: text("window").notNull(), // 3d | 7d | 14d | 30d | treatment_cycle
   status: text("status").notNull().default("insufficient_data"),
   summary: text("summary"),
@@ -223,7 +226,7 @@ export const forecastSummaries = pgTable("forecast_summaries", {
 
 export const gamification = pgTable("gamification", {
   id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   currentStreak: integer("current_streak").notNull().default(0),
   longestStreak: integer("longest_streak").notNull().default(0),
   points: integer("points").notNull().default(0),
@@ -246,14 +249,14 @@ export const badges = pgTable("badges", {
 
 export const userBadges = pgTable("user_badges", {
   id: uuid("id").defaultRandom().primaryKey(),
-  userId: uuid("user_id").notNull(),
-  badgeId: uuid("badge_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  badgeId: uuid("badge_id").notNull().references(() => badges.id, { onDelete: "cascade" }),
   earnedAt: timestamp("earned_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
 export const weatherSnapshots = pgTable("weather_snapshots", {
   id: id(),
-  userId: text("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
   source: text("source").notNull().default("provider"),
   geohash: text("geohash"),
@@ -272,7 +275,7 @@ export const reportRequests = pgTable(
   "report_requests",
   {
     id: id(),
-    userId: text("user_id").notNull(),
+    userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
     requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
     inclusionOptions: jsonb("inclusion_options").notNull(),
     status: text("status").notNull().default("queued"), // queued|processing|completed|failed
@@ -285,8 +288,8 @@ export const reportRequests = pgTable(
 
 export const reportJobs = pgTable("report_jobs", {
   id: id(),
-  userId: text("user_id").notNull(),
-  reportRequestId: text("report_request_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  reportRequestId: uuid("report_request_id").notNull().references(() => reportRequests.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("queued"),
   attemptCount: integer("attempt_count").notNull().default(0),
   startedAt: timestamp("started_at", { withTimezone: true }),
@@ -297,8 +300,8 @@ export const reportJobs = pgTable("report_jobs", {
 
 export const reportFiles = pgTable("report_files", {
   id: id(),
-  userId: text("user_id").notNull(),
-  reportRequestId: text("report_request_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  reportRequestId: uuid("report_request_id").notNull().references(() => reportRequests.id, { onDelete: "cascade" }),
   storageRef: text("storage_path").notNull(),
   mimeType: text("mime_type").notNull().default("application/pdf"),
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull().default(0),
@@ -309,8 +312,8 @@ export const reportFiles = pgTable("report_files", {
 
 export const reportConsentSnapshots = pgTable("report_consent_snapshots", {
   id: id(),
-  userId: text("user_id").notNull(),
-  reportRequestId: text("report_request_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  reportRequestId: uuid("report_request_id").notNull().references(() => reportRequests.id, { onDelete: "cascade" }),
   consentJson: jsonb("consent_snapshot").notNull(),
   capturedAt: timestamp("captured_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -321,7 +324,7 @@ export const reportConsentSnapshots = pgTable("report_consent_snapshots", {
 
 export const exportRequests = pgTable("export_requests", {
   id: id(),
-  userId: text("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   format: text("format").notNull(), // json | csv
   scope: jsonb("scope").notNull().default({}),
   status: text("status").notNull().default("queued"),
@@ -332,8 +335,8 @@ export const exportRequests = pgTable("export_requests", {
 
 export const exportFiles = pgTable("export_files", {
   id: id(),
-  userId: text("user_id").notNull(),
-  exportRequestId: text("export_request_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
+  exportRequestId: uuid("export_request_id").notNull().references(() => exportRequests.id, { onDelete: "cascade" }),
   storageRef: text("storage_path").notNull(),
   mimeType: text("mime_type").notNull(),
   sizeBytes: bigint("size_bytes", { mode: "number" }).notNull().default(0),
@@ -348,7 +351,7 @@ export const exportFiles = pgTable("export_files", {
 
 export const deletionRequests = pgTable("deletion_requests", {
   id: id(),
-  userId: text("user_id").notNull(),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   type: text("request_type").notNull(),
   status: text("status").notNull().default("pending"), // pending|scheduled|cancelled|completed
   requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
@@ -360,8 +363,8 @@ export const deletionRequests = pgTable("deletion_requests", {
 
 export const deletionAuditEvents = pgTable("deletion_audit_events", {
   id: id(),
-  deletionRequestId: text("deletion_request_id").notNull(),
-  userId: text("user_id").notNull(),
+  deletionRequestId: uuid("deletion_request_id").notNull().references(() => deletionRequests.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").notNull().references(() => authUsers.id, { onDelete: "cascade" }),
   eventType: text("event_type").notNull(),
   metadataJson: jsonb("metadata").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

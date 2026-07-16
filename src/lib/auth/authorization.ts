@@ -5,6 +5,16 @@ import { AuthorizationError } from "./errors";
 import { hasPermission as roleHasPermission, permissionsForRole, type AppPermission } from "./permissions";
 import { normalizeRole, type AppRole } from "./roles";
 
+export interface UserPublicMetadata {
+  role?: AppRole;
+  roleVersion?: number;
+}
+
+export interface UserPrivateMetadata {
+  accountStatus?: "active" | "suspended" | "restricted";
+  accountStatusReason?: string;
+}
+
 export type AuthorizationContext = {
   userId?: string;
   clerkUserId: string;
@@ -42,7 +52,12 @@ export function authorizationFromRole(input: { userId: string; sessionId: string
   };
 }
 
-export function isClerkConfigured(): boolean { return false; }
+export function isClerkConfigured(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY?.trim() &&
+      process.env.CLERK_SECRET_KEY?.trim(),
+  );
+}
 export function authorizationFromMetadata(input: { clerkUserId: string; sessionId: string; publicMetadata: UserPublicMetadata; privateMetadata: UserPrivateMetadata; factorVerificationAge: [number, number] | null; ownerIds?: readonly string[] }): AuthorizationContext {
   const privileged = normalizeRole(input.publicMetadata.role) !== "user";
   const downgraded = privileged && !validRoleVersion(input.publicMetadata.roleVersion);

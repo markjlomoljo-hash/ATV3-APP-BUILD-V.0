@@ -50,6 +50,12 @@ const auditRetentionDeletionMigrationPath = join(
   "migrations",
   "20260715053000_preserve_audit_on_user_deletion.sql",
 );
+const scinGovernanceSchemaMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260716090000_scin_governance_schema.sql",
+);
 
 describe("Supabase migration contract", () => {
   it("defines persistent memory and ML lineage tables with RLS enabled", () => {
@@ -288,5 +294,33 @@ describe("audit retention during account deletion", () => {
     expect(sql).toContain("new.user_id is null");
     expect(sql).toContain("raise exception 'audit_logs_are_append_only'");
     expect(sql).not.toContain("disable trigger");
+  });
+});
+
+describe("SCIN governance schema", () => {
+  it("creates split and consent evidence tables without fabricating approvals", () => {
+    const sql = readFileSync(scinGovernanceSchemaMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("create table if not exists public.split_manifest");
+    expect(sql).toContain("create table if not exists public.consent_review");
+    expect(sql).toContain(
+      "references public.ml_dataset_versions(dataset_name, dataset_version)",
+    );
+    expect(sql).toContain("default 'pending'");
+    expect(sql).not.toMatch(/insert\s+into/i);
+    expect(sql).not.toMatch(/'approved'|'verified'|'passed'/i);
+  });
+
+  it("keeps governance evidence service-role only", () => {
+    const sql = readFileSync(scinGovernanceSchemaMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("alter table public.split_manifest enable row level security");
+    expect(sql).toContain("alter table public.consent_review enable row level security");
+    expect(sql).toContain(
+      "revoke all on public.split_manifest, public.consent_review from anon, authenticated",
+    );
+    expect(sql).toContain(
+      "grant select, insert, update, delete on public.split_manifest, public.consent_review to service_role",
+    );
   });
 });
