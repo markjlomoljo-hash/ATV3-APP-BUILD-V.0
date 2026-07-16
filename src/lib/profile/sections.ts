@@ -23,6 +23,13 @@ export const SECTION_METADATA: Record<ProfileSectionKey, SectionMetadata> = {
     isVersioned: false,
     emptyValue: { skinType: null, undertone: null, knownConditions: [] },
   },
+  goals: {
+    key: "goals",
+    label: "Goals",
+    description: "The outcomes the user wants AcneTrex to prioritize.",
+    isVersioned: true,
+    emptyValue: { goals: [] },
+  },
   acne_history: {
     key: "acne_history",
     label: "Acne History & Onset Timeline",

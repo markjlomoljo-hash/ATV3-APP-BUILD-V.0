@@ -13,6 +13,7 @@ export type ConfidenceLabel =
 export const PROFILE_SECTION_KEYS = [
   "identity",
   "skin_profile",
+  "goals",
   "acne_history",
   "severity_tendency",
   "barrier_sensitivity",
@@ -36,6 +37,7 @@ export const VERSIONED_SECTION_KEYS: ProfileSectionKey[] = [
   "lifestyle_baseline",
   "trigger_hypotheses_notes",
   "routine_inventory",
+  "goals",
 ];
 
 export interface ProfileSectionRecord {

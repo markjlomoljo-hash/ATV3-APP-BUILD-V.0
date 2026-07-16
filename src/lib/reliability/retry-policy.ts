@@ -21,6 +21,13 @@ export const interactiveMutationPolicy: RetryPolicy = {
   totalDeadlineMs: 12_000,
 };
 
+function secureRandomUnit(): number {
+  if (!globalThis.crypto?.getRandomValues) throw new Error("secure_random_unavailable");
+  const values = new Uint32Array(1);
+  globalThis.crypto.getRandomValues(values);
+  return values[0] / 0x1_0000_0000;
+}
+
 export function classifyRetry(status: number | undefined, error?: unknown): RetryReason | null {
   if (status === 408) return "timeout";
   if (status === 425 || status === 429) return "rate_limited";
@@ -39,7 +46,7 @@ export function retryDelayMs(attempt: number, policy: RetryPolicy, retryAfter?: 
     if (Number.isFinite(date)) return Math.min(Math.max(0, date - Date.now()), policy.maxDelayMs);
   }
   const ceiling = Math.min(policy.maxDelayMs, policy.baseDelayMs * 2 ** Math.max(0, attempt - 1));
-  return Math.floor(Math.random() * (ceiling + 1));
+  return Math.floor(secureRandomUnit() * (ceiling + 1));
 }
 
 export async function retryWithPolicy<T>(

@@ -119,6 +119,10 @@ async function buildRawBundle(userId: string): Promise<RawProfileBundle> {
       summary: f.summary,
       confidence: f.confidence,
     })),
+    // Citations are included only when persisted with the user's record.
+    // There is no governed citation store in this bundle yet, so the report
+    // compiler must render an explicit insufficient-data requirement.
+    evidenceCitations: [],
     dailyLogCount: logs.length,
     daysOfHistory,
   };

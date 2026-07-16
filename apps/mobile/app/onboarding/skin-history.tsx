@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import {
   View,
   Text,
@@ -14,7 +14,11 @@ import { OnboardingProgress } from "../../src/components/ui/OnboardingProgress";
 import { Colors, Spacing, Typography, BorderRadius } from "../../src/components/ui/theme";
 import { useAuthStore } from "../../src/stores/auth";
 import { upsertProfile } from "../../src/lib/profile-service";
-import { supabase } from "../../src/lib/supabase";
+import { apiMutation, createMutationOperation } from "../../src/lib/api";
+import {
+  ACNE_ONSET_OPTIONS,
+  type AcneOnsetValue,
+} from "../../src/lib/onboarding-contracts";
 
 const SKIN_TONES = [
   { value: "very_fair", label: "Very Fair", color: "#FDDBB4" },
@@ -23,15 +27,6 @@ const SKIN_TONES = [
   { value: "olive", label: "Olive", color: "#B87A50" },
   { value: "tan", label: "Tan", color: "#8B5E3C" },
   { value: "deep", label: "Deep", color: "#4A2C17" },
-];
-
-const ACNE_ONSET = [
-  { value: "childhood", label: "Childhood (before 12)" },
-  { value: "early_teen", label: "Early teens (12–14)" },
-  { value: "teen", label: "Teens (15–19)" },
-  { value: "early_adult", label: "Early adulthood (20–25)" },
-  { value: "adult", label: "Adulthood (26+)" },
-  { value: "unsure", label: "Not sure" },
 ];
 
 const SEX_OPTIONS = [
@@ -45,7 +40,8 @@ interface SkinHistoryData {
   displayName: string;
   skinTone: string;
   sex: string;
-  acneOnset: string;
+  acneOnset: AcneOnsetValue | "";
+  onsetDetail: string;
   currentSeverity: string;
 }
 
@@ -89,13 +85,17 @@ export default function SkinHistoryScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
   const [saving, setSaving] = useState(false);
+  const [autosaveState, setAutosaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const saveQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const saveRevision = useRef(0);
 
   const [data, setData] = useState<SkinHistoryData>({
     displayName: "",
     skinTone: "",
     sex: "",
     acneOnset: "",
+    onsetDetail: "",
     currentSeverity: "",
   });
 
@@ -105,8 +105,49 @@ export default function SkinHistoryScreen() {
     data.sex &&
     data.acneOnset;
 
+  const persistAcneHistory = (onset: AcneOnsetValue, detail: string) => {
+    const option = ACNE_ONSET_OPTIONS.find((candidate) => candidate.value === onset);
+    const revision = ++saveRevision.current;
+    setAutosaveState("saving");
+
+    const request = saveQueue.current.catch(() => undefined).then(() =>
+      apiMutation(
+        "PATCH",
+        "/api/profile/sections/acne_history",
+        createMutationOperation({
+          value: {
+            onset_pattern: onset,
+            onset_interpretation: option?.interpretation ?? "Known uncertainty",
+            onset_detail: detail.trim() || null,
+            current_severity: data.currentSeverity || "not_specified",
+          },
+          reason: "onboarding_skin_history_autosave",
+          includeInReports: true,
+        }),
+      ),
+    );
+
+    saveQueue.current = request.then(
+      () => {
+        if (saveRevision.current === revision) setAutosaveState("saved");
+      },
+      () => {
+        if (saveRevision.current === revision) setAutosaveState("error");
+      },
+    );
+    return request;
+  };
+
+  const selectOnset = (onset: AcneOnsetValue) => {
+    setData((current) => ({ ...current, acneOnset: onset }));
+    setError(null);
+    void persistAcneHistory(onset, data.onsetDetail).catch((cause) => {
+      setError(cause instanceof Error ? cause.message : "Autosave failed. Please try again.");
+    });
+  };
+
   const handleContinue = async () => {
-    if (!user || !isValid) return;
+    if (!user || !isValid || !data.acneOnset) return;
     setSaving(true);
     setError(null);
     try {
@@ -120,20 +161,7 @@ export default function SkinHistoryScreen() {
         timezone,
       });
 
-      // Save acne history section
-      await supabase.from("profile_sections").upsert(
-        {
-          user_id: user.id,
-          section_key: "acne_history",
-          value_json: {
-            onset: data.acneOnset,
-            current_severity: data.currentSeverity || "not_specified",
-          },
-          version: 1,
-          updated_by: "user",
-        },
-        { onConflict: "user_id,section_key" }
-      );
+      await persistAcneHistory(data.acneOnset, data.onsetDetail);
 
       router.push("/onboarding/goals");
     } catch (e) {
@@ -154,7 +182,7 @@ export default function SkinHistoryScreen() {
 
         <View style={styles.header}>
           <Text style={styles.eyebrow}>ABOUT YOU</Text>
-          <Text style={styles.title}>Your Skin Story</Text>
+          <Text style={styles.title}>Skin History</Text>
           <Text style={styles.subtitle}>
             This helps AcneTrex personalize your experience. You can update
             everything later in your profile.
@@ -210,17 +238,48 @@ export default function SkinHistoryScreen() {
 
         {/* Acne Onset */}
         <View style={styles.section}>
-          <Text style={styles.sectionLabel}>When did your acne start?</Text>
+          <Text style={styles.sectionLabel}>When did it start?</Text>
+          <Text style={styles.sectionHint}>
+            Clinical history helps us differentiate between hormonal, adult, adolescent,
+            sudden, persistent, and recurring patterns.
+          </Text>
           <View style={styles.optionList}>
-            {ACNE_ONSET.map((o) => (
+            {ACNE_ONSET_OPTIONS.map((o) => (
               <OptionButton
                 key={o.value}
                 label={o.label}
                 selected={data.acneOnset === o.value}
-                onPress={() => setData((d) => ({ ...d, acneOnset: o.value }))}
+                onPress={() => selectOnset(o.value)}
               />
             ))}
           </View>
+          {data.acneOnset && (
+            <>
+              <Text style={styles.interpretation}>
+                Historical pattern: {ACNE_ONSET_OPTIONS.find((o) => o.value === data.acneOnset)?.interpretation}
+              </Text>
+              <TextInput
+                style={[styles.textInput, styles.detailInput]}
+                placeholder="Optional timeline detail"
+                placeholderTextColor={Colors.textMuted}
+                value={data.onsetDetail}
+                onChangeText={(value) => setData((current) => ({ ...current, onsetDetail: value }))}
+                onBlur={() => {
+                  if (!data.acneOnset) return;
+                  void persistAcneHistory(data.acneOnset, data.onsetDetail).catch((cause) => {
+                    setError(cause instanceof Error ? cause.message : "Autosave failed. Please try again.");
+                  });
+                }}
+                multiline
+                maxLength={500}
+              />
+              <Text style={styles.autosaveText}>
+                {autosaveState === "saving" && "Saving…"}
+                {autosaveState === "saved" && "Saved"}
+                {autosaveState === "error" && "Not saved — retry before continuing"}
+              </Text>
+            </>
+          )}
         </View>
 
         {/* Current Severity */}
@@ -287,6 +346,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.textPrimary,
   },
+  detailInput: { minHeight: 88, height: "auto", marginTop: Spacing.sm, paddingVertical: Spacing.sm },
+  interpretation: { ...Typography.caption, color: Colors.textSecondary, marginTop: Spacing.sm },
+  autosaveText: { ...Typography.caption, color: Colors.textMuted, marginTop: 4, textAlign: "right" },
   optionGrid: {
     flexDirection: "row",
     flexWrap: "wrap",

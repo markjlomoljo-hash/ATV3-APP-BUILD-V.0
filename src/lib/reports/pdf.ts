@@ -1,7 +1,5 @@
 // Server-side PDF rendering for dermatologist-ready reports. Runs entirely
-// on Node (route handlers use the Node runtime, not Edge) so heavy layout
-// work never touches the client. Designed to be lifted into a background
-// worker unchanged — `renderReportPdf` is a pure function of `ReportData`.
+// on Node so report layout and sensitive record compilation stay off-device.
 import PDFDocument from "pdfkit";
 import { ReportData, ReportSection } from "./types";
 
@@ -9,9 +7,23 @@ const GREEN = "#1f8a5f";
 const INK = "#0f172a";
 const MUTED = "#64748b";
 const BORDER = "#e2e8f0";
+const PAGE_BACKGROUND = "#f3f5f4";
 const PAGE_MARGIN = 48;
 
+export const REPORT_SIGNATURE_LABELS = ["Clinician signature", "Date"] as const;
+
+function drawPageCard(doc: PDFKit.PDFDocument) {
+  doc
+    .save()
+    .rect(0, 0, doc.page.width, doc.page.height)
+    .fill(PAGE_BACKGROUND)
+    .roundedRect(20, 20, doc.page.width - 40, doc.page.height - 40, 12)
+    .fillAndStroke("#ffffff", BORDER)
+    .restore();
+}
+
 function drawSectionHeading(doc: PDFKit.PDFDocument, title: string) {
+  if (doc.y > doc.page.height - 105) doc.addPage();
   doc.x = PAGE_MARGIN;
   doc.moveDown(0.8);
   doc
@@ -20,7 +32,7 @@ function drawSectionHeading(doc: PDFKit.PDFDocument, title: string) {
     .font("Helvetica-Bold")
     .text(title.toUpperCase(), { characterSpacing: 0.6 });
   doc
-    .moveTo(doc.x, doc.y + 2)
+    .moveTo(PAGE_MARGIN, doc.y + 2)
     .lineTo(doc.page.width - PAGE_MARGIN, doc.y + 2)
     .strokeColor(BORDER)
     .lineWidth(1)
@@ -46,6 +58,7 @@ function drawSection(doc: PDFKit.PDFDocument, section: ReportSection) {
 
   if (section.rows) {
     for (const row of section.rows) {
+      if (doc.y > doc.page.height - 90) doc.addPage();
       const startY = doc.y;
       doc
         .fontSize(9.5)
@@ -67,12 +80,14 @@ function drawSection(doc: PDFKit.PDFDocument, section: ReportSection) {
     doc.moveDown(0.2);
     const colWidth = (doc.page.width - PAGE_MARGIN * 2) / section.table.headers.length;
     const headerY = doc.y;
-    section.table.headers.forEach((h, i) => {
+    section.table.headers.forEach((header, index) => {
       doc
         .fontSize(8.5)
         .fillColor(MUTED)
         .font("Helvetica-Bold")
-        .text(h.toUpperCase(), PAGE_MARGIN + i * colWidth, headerY, { width: colWidth - 6 });
+        .text(header.toUpperCase(), PAGE_MARGIN + index * colWidth, headerY, {
+          width: colWidth - 6,
+        });
     });
     doc.moveDown(0.4);
     doc
@@ -83,24 +98,23 @@ function drawSection(doc: PDFKit.PDFDocument, section: ReportSection) {
     doc.moveDown(0.3);
 
     for (const row of section.table.rows) {
+      if (doc.y > doc.page.height - 90) doc.addPage();
       const rowY = doc.y;
-      row.forEach((cell, i) => {
+      row.forEach((cell, index) => {
         doc
           .fontSize(8.5)
           .fillColor(INK)
           .font("Helvetica")
-          .text(cell || "—", PAGE_MARGIN + i * colWidth, rowY, { width: colWidth - 6 });
+          .text(cell || "—", PAGE_MARGIN + index * colWidth, rowY, { width: colWidth - 6 });
       });
       doc.moveDown(0.35);
-      if (doc.y > doc.page.height - 90) {
-        doc.addPage();
-      }
     }
   }
 
   if (section.notes) {
     doc.moveDown(0.2);
     for (const note of section.notes) {
+      if (doc.y > doc.page.height - 90) doc.addPage();
       doc
         .fontSize(9)
         .fillColor(MUTED)
@@ -110,10 +124,28 @@ function drawSection(doc: PDFKit.PDFDocument, section: ReportSection) {
     }
     doc.font("Helvetica").fillColor(INK);
   }
+}
 
-  if (doc.y > doc.page.height - 90) {
-    doc.addPage();
-  }
+function drawClinicianSignoff(doc: PDFKit.PDFDocument) {
+  if (doc.y > doc.page.height - 135) doc.addPage();
+  doc.moveDown(1.4);
+  const lineY = doc.y + 18;
+  doc
+    .moveTo(PAGE_MARGIN, lineY)
+    .lineTo(PAGE_MARGIN + 280, lineY)
+    .moveTo(doc.page.width - PAGE_MARGIN - 120, lineY)
+    .lineTo(doc.page.width - PAGE_MARGIN, lineY)
+    .strokeColor(MUTED)
+    .lineWidth(0.8)
+    .stroke();
+  doc
+    .font("Helvetica")
+    .fontSize(8)
+    .fillColor(MUTED)
+    .text(REPORT_SIGNATURE_LABELS[0], PAGE_MARGIN, lineY + 5)
+    .text(REPORT_SIGNATURE_LABELS[1], doc.page.width - PAGE_MARGIN - 120, lineY + 5, {
+      width: 120,
+    });
 }
 
 export async function renderReportPdf(report: ReportData): Promise<Buffer> {
@@ -123,23 +155,32 @@ export async function renderReportPdf(report: ReportData): Promise<Buffer> {
     doc.on("data", (chunk) => chunks.push(chunk as Buffer));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
+    doc.on("pageAdded", () => {
+      drawPageCard(doc);
+      doc.x = PAGE_MARGIN;
+      doc.y = PAGE_MARGIN;
+    });
 
-    // Header
-    doc
-      .rect(0, 0, doc.page.width, 6)
-      .fill(GREEN);
-    doc.fillColor(INK);
-    doc.moveDown(1.2);
+    drawPageCard(doc);
+
+    doc.rect(20, 20, doc.page.width - 40, 6).fill(GREEN);
     doc
       .fontSize(22)
       .font("Helvetica-Bold")
       .fillColor(INK)
-      .text("AcneTrex Skin Intelligence", PAGE_MARGIN, 40);
+      .text("AcneTrex Skin Intelligence", PAGE_MARGIN, 40, { width: 300 });
+    doc
+      .roundedRect(PAGE_MARGIN + 304, 42, 34, 18, 8)
+      .fill(GREEN)
+      .fillColor("#ffffff")
+      .fontSize(9)
+      .font("Helvetica-Bold")
+      .text("V3", PAGE_MARGIN + 304, 47, { width: 34, align: "center" });
     doc
       .fontSize(10)
       .font("Helvetica")
       .fillColor(GREEN)
-      .text("Clinical Reporting Services • Model V3.0", PAGE_MARGIN, 66);
+      .text("Dermatologist-Ready Clinical Report", PAGE_MARGIN, 70);
 
     doc
       .fontSize(8.5)
@@ -159,17 +200,17 @@ export async function renderReportPdf(report: ReportData): Promise<Buffer> {
         { width: 220, align: "right" },
       );
 
-    doc.moveDown(1.5);
     doc
-      .moveTo(PAGE_MARGIN, 100)
-      .lineTo(doc.page.width - PAGE_MARGIN, 100)
+      .moveTo(PAGE_MARGIN, 104)
+      .lineTo(doc.page.width - PAGE_MARGIN, 104)
       .strokeColor(GREEN)
       .lineWidth(2)
       .stroke();
-    doc.y = 116;
+    doc.y = 118;
 
     const sections: ReportSection[] = [
       report.patientSummary,
+      report.currentDiagnostics,
       report.acneHistory,
       report.skinBarrier,
       report.lesionTrends,
@@ -182,24 +223,23 @@ export async function renderReportPdf(report: ReportData): Promise<Buffer> {
       report.lifestyleContext,
       report.triggerHypotheses,
       report.forecastSummaries,
+      report.evidenceCitations,
       report.confidenceNotes,
       report.providerQuestions,
     ];
 
-    for (const section of sections) {
-      drawSection(doc, section);
-    }
+    for (const section of sections) drawSection(doc, section);
+    drawClinicianSignoff(doc);
 
-    doc.moveDown(1);
     doc
       .fontSize(7.5)
       .fillColor(MUTED)
       .font("Helvetica")
       .text(
-        "Generated by AcneTrex V3. This document is not a medical diagnosis and does not replace evaluation by a licensed dermatologist. Data reflects only what the user has explicitly recorded and consented to include. Sensitive scan imagery is included only with explicit user consent captured at report generation time.",
+        "Privacy: generated from user-consented AcneTrex records. Generated by AcneTrex V3. This document is not a medical diagnosis and does not replace evaluation by a licensed dermatologist. Sensitive scan imagery is included only with explicit report-time consent.",
         PAGE_MARGIN,
-        doc.page.height - 60,
-        { width: doc.page.width - PAGE_MARGIN * 2, align: "center" },
+        doc.page.height - 90,
+        { width: doc.page.width - PAGE_MARGIN * 2, height: 32, align: "center" },
       );
 
     doc.end();

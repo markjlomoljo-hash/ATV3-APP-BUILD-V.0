@@ -1,12 +1,17 @@
 import { useState } from "react";
-import { View, Text, StyleSheet, ScrollView, Pressable } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput } from "react-native";
 import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../../src/components/ui";
 import { OnboardingProgress } from "../../src/components/ui/OnboardingProgress";
 import { Colors, Spacing, Typography, BorderRadius } from "../../src/components/ui/theme";
 import { useAuthStore } from "../../src/stores/auth";
-import { supabase } from "../../src/lib/supabase";
+import { apiMutation, createMutationOperation } from "../../src/lib/api";
+import {
+  MEAL_FREQUENCY_OPTIONS,
+  SNACK_TENDENCY_OPTIONS,
+  SNACK_TYPE_OPTIONS,
+} from "../../src/lib/onboarding-contracts";
 
 const GOALS = [
   { value: "understand_triggers", label: "Understand my triggers", icon: "🔍" },
@@ -19,14 +24,6 @@ const GOALS = [
   { value: "manage_scarring", label: "Manage post-acne marks/scarring", icon: "🌿" },
 ];
 
-const MEAL_FREQUENCY = [
-  { value: "1", label: "1 meal/day" },
-  { value: "2", label: "2 meals/day" },
-  { value: "3", label: "3 meals/day" },
-  { value: "variable", label: "Variable" },
-  { value: "unknown", label: "Not sure" },
-];
-
 export default function GoalsScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -34,6 +31,9 @@ export default function GoalsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [selectedGoals, setSelectedGoals] = useState<string[]>([]);
   const [mealFrequency, setMealFrequency] = useState("");
+  const [snackTendency, setSnackTendency] = useState("");
+  const [snackTypes, setSnackTypes] = useState<string[]>([]);
+  const [customSnack, setCustomSnack] = useState("");
 
   const toggleGoal = (value: string) => {
     setSelectedGoals((prev) =>
@@ -41,34 +41,47 @@ export default function GoalsScreen() {
     );
   };
 
-  const isValid = selectedGoals.length >= 1 && mealFrequency;
+  const toggleSnackType = (value: string) => {
+    setSnackTypes((current) =>
+      current.includes(value) ? current.filter((type) => type !== value) : [...current, value],
+    );
+  };
+
+  const isValid = selectedGoals.length >= 1 && mealFrequency && snackTendency;
 
   const handleContinue = async () => {
     if (!user || !isValid) return;
     setSaving(true);
     setError(null);
     try {
-      await supabase.from("profile_sections").upsert(
-        [
-          {
-            user_id: user.id,
-            section_key: "goals",
-            value_json: { goals: selectedGoals },
-            version: 1,
-            updated_by: "user",
+      await apiMutation(
+        "PATCH",
+        "/api/profile/sections/goals",
+        createMutationOperation({
+          value: { goals: selectedGoals },
+          reason: "onboarding_goals",
+          includeInReports: true,
+        }),
+      );
+      await apiMutation(
+        "PATCH",
+        "/api/profile/sections/lifestyle_baseline",
+        createMutationOperation({
+          value: {
+            meal_frequency_baseline: mealFrequency,
+            expected_meal_count: ["1", "2", "3"].includes(mealFrequency)
+              ? Number(mealFrequency)
+              : null,
+            snack_tendency: snackTendency,
+            common_snack_types: snackTypes,
+            user_specific_snack: snackTypes.includes("user_specific")
+              ? customSnack.trim() || null
+              : null,
+            set_during_onboarding: true,
           },
-          {
-            user_id: user.id,
-            section_key: "meal_baseline",
-            value_json: {
-              usual_meals_per_day: mealFrequency,
-              set_during_onboarding: true,
-            },
-            version: 1,
-            updated_by: "user",
-          },
-        ],
-        { onConflict: "user_id,section_key" }
+          reason: "onboarding_lifestyle_baseline",
+          includeInReports: true,
+        }),
       );
       router.push("/onboarding/consent");
     } catch (e) {
@@ -135,14 +148,14 @@ export default function GoalsScreen() {
         {/* Meal Frequency */}
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>
-            How many meals do you usually eat per day?
+            How many meals do you usually eat in a day?
           </Text>
           <Text style={styles.sectionHint}>
             Used to calibrate the DermDiet food logging baseline. You can
             change this anytime.
           </Text>
           <View style={styles.mealGrid}>
-            {MEAL_FREQUENCY.map((m) => (
+            {MEAL_FREQUENCY_OPTIONS.map((m) => (
               <Pressable
                 key={m.value}
                 onPress={() => setMealFrequency(m.value)}
@@ -164,6 +177,67 @@ export default function GoalsScreen() {
               </Pressable>
             ))}
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>Do you usually snack between meals?</Text>
+          <View style={styles.mealGrid}>
+            {SNACK_TENDENCY_OPTIONS.map((option) => (
+              <Pressable
+                key={option.value}
+                onPress={() => setSnackTendency(option.value)}
+                style={[
+                  styles.mealOption,
+                  snackTendency === option.value && styles.mealOptionSelected,
+                ]}
+                accessibilityRole="radio"
+                accessibilityState={{ selected: snackTendency === option.value }}
+              >
+                <Text
+                  style={[
+                    styles.mealLabel,
+                    snackTendency === option.value && styles.mealLabelSelected,
+                  ]}
+                >
+                  {option.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionLabel}>
+            What snack types do you commonly have? <Text style={styles.hint}>(optional)</Text>
+          </Text>
+          <View style={styles.mealGrid}>
+            {SNACK_TYPE_OPTIONS.map((option) => {
+              const selected = snackTypes.includes(option.value);
+              return (
+                <Pressable
+                  key={option.value}
+                  onPress={() => toggleSnackType(option.value)}
+                  style={[styles.mealOption, selected && styles.mealOptionSelected]}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: selected }}
+                >
+                  <Text style={[styles.mealLabel, selected && styles.mealLabelSelected]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {snackTypes.includes("user_specific") && (
+            <TextInput
+              style={styles.textInput}
+              value={customSnack}
+              onChangeText={setCustomSnack}
+              placeholder="Describe your usual snack"
+              placeholderTextColor={Colors.textMuted}
+              maxLength={120}
+            />
+          )}
         </View>
 
         {error && (
@@ -236,6 +310,17 @@ const styles = StyleSheet.create({
   },
   mealLabel: { ...Typography.body, color: Colors.textSecondary },
   mealLabelSelected: { color: Colors.primary, fontWeight: "700" },
+  textInput: {
+    minHeight: 48,
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderWidth: 1.5,
+    borderColor: Colors.border,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    color: Colors.textPrimary,
+    ...Typography.body,
+  },
   errorBox: {
     backgroundColor: "#fee2e2",
     borderRadius: BorderRadius.md,

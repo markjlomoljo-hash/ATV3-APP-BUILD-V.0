@@ -56,6 +56,18 @@ const scinGovernanceSchemaMigrationPath = join(
   "migrations",
   "20260716090000_scin_governance_schema.sql",
 );
+const progressiveFoodLogMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260716103000_progressive_daily_food_logs.sql",
+);
+const sleepDermInputsMigrationPath = join(
+  process.cwd(),
+  "supabase",
+  "migrations",
+  "20260716113000_sleepderm_circadian_inputs.sql",
+);
 
 describe("Supabase migration contract", () => {
   it("defines persistent memory and ML lineage tables with RLS enabled", () => {
@@ -322,5 +334,31 @@ describe("SCIN governance schema", () => {
     expect(sql).toContain(
       "grant select, insert, update, delete on public.split_manifest, public.consent_review to service_role",
     );
+  });
+});
+
+describe("progressive daily food-log schema", () => {
+  it("enforces one dated parent with typed meal and snack sub-events", () => {
+    const sql = readFileSync(progressiveFoodLogMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("add column if not exists meal_events jsonb");
+    expect(sql).toContain("add column if not exists snack_events jsonb");
+    expect(sql).toContain("add column if not exists expected_meal_count integer");
+    expect(sql).toContain("add column if not exists completion_state text");
+    expect(sql).toContain("create unique index if not exists food_logs_user_date_uidx");
+    expect(sql).toContain("on public.food_logs(user_id, log_date)");
+  });
+});
+
+describe("SleepDerm circadian input schema", () => {
+  it("persists manual overrides and a sourced working target without derived claims", () => {
+    const sql = readFileSync(sleepDermInputsMigrationPath, "utf8").toLowerCase();
+
+    expect(sql).toContain("add column if not exists manual_duration_override integer");
+    expect(sql).toContain("add column if not exists manual_duration_reason text");
+    expect(sql).toContain("add column if not exists working_sleep_target numeric");
+    expect(sql).toContain("add column if not exists target_sleep_range jsonb");
+    expect(sql).toContain("add column if not exists target_source text");
+    expect(sql).not.toMatch(/insert\s+into/i);
   });
 });

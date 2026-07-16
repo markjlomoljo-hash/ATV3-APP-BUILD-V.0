@@ -8,6 +8,8 @@ interface OnboardingProgressProps {
 }
 
 export function OnboardingProgress({ current, total, label }: OnboardingProgressProps) {
+  const percentComplete = Math.round(((current + 1) / total) * 100);
+
   return (
     <View style={styles.container}>
       <View style={styles.dots}>
@@ -21,7 +23,7 @@ export function OnboardingProgress({ current, total, label }: OnboardingProgress
           />
         ))}
       </View>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={styles.label}>{label} · {percentComplete}% complete</Text>
     </View>
   );
 }

@@ -1,9 +1,15 @@
 /**
  * SleepDerm Service — sleep logging and deterministic analytics
  * Zero-fabrication: all calculations from real records with documented rules
- * Version: sleep-analytics-v1
+ * Version: sleep-analytics-v2
  */
-import { supabase } from './supabase';
+import { apiFetch, apiMutation, createMutationOperation } from './api';
+import {
+  computeSleepAnalytics as computeCircadianAnalytics,
+  type SleepAnalytics,
+} from './sleep-analytics';
+
+export type { SleepAnalytics } from './sleep-analytics';
 
 export type SleepLog = {
   id: string;
@@ -22,6 +28,10 @@ export type SleepLog = {
   schedule_context?: string | null;
   manual_duration_override?: number | null;
   manual_duration_reason?: string | null;
+  working_sleep_target?: number | null;
+  target_sleep_range?: [number, number] | null;
+  target_source?: 'age_default' | 'user_selected' | 'wearable_estimated' | 'clinician_entered' | null;
+  timezone?: string | null;
 };
 
 export type SleepDisturbance = {
@@ -37,7 +47,7 @@ export type SleepNap = {
   quality?: number;
 };
 
-export type SleepAnalytics = {
+export type SleepAnalyticsV1 = {
   // Computed fields — all from real records, rule version documented
   rule_version: 'sleep-analytics-v1';
   log_date: string;
@@ -74,18 +84,10 @@ export type SleepGoal = {
  * Fetch sleep log for a specific date
  */
 export async function fetchSleepForDate(date: string): Promise<SleepLog | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
-  const { data, error } = await supabase
-    .from('sleep_logs')
-    .select('*')
-    .eq('user_id', user.id)
-    .eq('log_date', date)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data as SleepLog | null;
+  const response = await apiFetch<{ ok: true; log: SleepLog | null }>(
+    `/api/logs/sleep?date=${encodeURIComponent(date)}`,
+  );
+  return response.log;
 }
 
 /**
@@ -95,42 +97,26 @@ export async function upsertSleepLog(
   date: string,
   input: Partial<Omit<SleepLog, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
 ): Promise<SleepLog> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
   const payload = {
-    user_id: user.id,
     log_date: date,
     ...input,
-    updated_at: new Date().toISOString(),
   };
-
-  const { data, error } = await supabase
-    .from('sleep_logs')
-    .upsert(payload, { onConflict: 'user_id,log_date' })
-    .select()
-    .single();
-
-  if (error) throw error;
-  return data as SleepLog;
+  const response = await apiMutation<{ ok: true; log: SleepLog }, typeof payload>(
+    'PATCH',
+    '/api/logs/sleep',
+    createMutationOperation(payload),
+  );
+  return response.log;
 }
 
 /**
  * Fetch sleep history (paginated)
  */
 export async function fetchSleepHistory(limit = 30, offset = 0): Promise<SleepLog[]> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
-
-  const { data, error } = await supabase
-    .from('sleep_logs')
-    .select('*')
-    .eq('user_id', user.id)
-    .order('log_date', { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (error) throw error;
-  return (data ?? []) as SleepLog[];
+  const response = await apiFetch<{ ok: true; logs: SleepLog[] }>(
+    `/api/logs/sleep?limit=${limit}&offset=${offset}`,
+  );
+  return response.logs;
 }
 
 /**
@@ -139,17 +125,17 @@ export async function fetchSleepHistory(limit = 30, offset = 0): Promise<SleepLo
  * Missing data is never interpreted as low risk.
  * Minimum 7 records required for debt/regularity calculations.
  */
-export function computeSleepAnalytics(
+export function computeSleepAnalyticsV1(
   logs: SleepLog[],
   targetHours: number | null,
   forDate: string
-): SleepAnalytics {
+): SleepAnalyticsV1 {
   const MIN_RECORDS = 7;
   const log = logs.find(l => l.log_date === forDate);
 
   // Duration calculation (handles midnight crossing)
   let durationMinutes: number | null = null;
-  let durationSource: SleepAnalytics['duration_source'] = 'insufficient_data';
+  let durationSource: SleepAnalyticsV1['duration_source'] = 'insufficient_data';
 
   if (log?.manual_duration_override != null) {
     durationMinutes = log.manual_duration_override;
@@ -181,7 +167,7 @@ export function computeSleepAnalytics(
   // Debt calculation (requires target and sufficient records)
   let dailyDebtHours: number | null = null;
   let cumulativeDebt7d: number | null = null;
-  let debtSource: SleepAnalytics['debt_source'] = 'insufficient_data';
+  let debtSource: SleepAnalyticsV1['debt_source'] = 'insufficient_data';
 
   if (!targetHours) {
     debtSource = 'no_target_configured';
@@ -211,7 +197,7 @@ export function computeSleepAnalytics(
   }
 
   // Confidence
-  let confidence: SleepAnalytics['confidence'] = 'insufficient_data';
+  let confidence: SleepAnalyticsV1['confidence'] = 'insufficient_data';
   if (durationSource === 'calculated' && daysLogged >= MIN_RECORDS) {
     confidence = 'high';
   } else if (durationSource === 'manual_override') {
@@ -237,6 +223,14 @@ export function computeSleepAnalytics(
     min_records_required: MIN_RECORDS,
     confidence,
   };
+}
+
+export function computeSleepAnalytics(
+  logs: SleepLog[],
+  targetHours: number | null,
+  forDate: string,
+): SleepAnalytics {
+  return computeCircadianAnalytics(logs, targetHours, forDate);
 }
 
 export const QUALITY_LABELS: Record<number, string> = {

@@ -48,6 +48,13 @@ const terminalSubmitErrors = new Set([
   "idempotency_key_reused_with_different_payload",
 ]);
 
+function secureRandomRatio(): number {
+  if (!globalThis.crypto?.getRandomValues) throw new Error("secure_random_unavailable");
+  const values = new Uint32Array(1);
+  globalThis.crypto.getRandomValues(values);
+  return values[0] / 0x1_0000_0000;
+}
+
 function safeErrorCode(error: unknown): string {
   const message = error instanceof Error ? error.message : "network_unavailable";
   return /^[a-z0-9_]{1,80}$/.test(message) ? message : "network_unavailable";
@@ -229,7 +236,7 @@ export async function replayMobileMlOperations(options: {
         outcomes.push({ localOperationId: operation.local_operation_id, status: "failed_terminal", errorCode });
         continue;
       }
-      const jitterRatio = Math.min(Math.max(options.random?.() ?? Math.random(), 0), 1);
+      const jitterRatio = Math.min(Math.max(options.random?.() ?? secureRandomRatio(), 0), 1);
       const retry = scheduleRetry(operation, {
         errorCode,
         now: now().toISOString(),

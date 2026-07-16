@@ -22,6 +22,11 @@ function getLocalDate(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 }
 
+function clockOnDate(date: string, clock: Date): Date {
+  const [year, month, day] = date.split('-').map(Number);
+  return new Date(year, month - 1, day, clock.getHours(), clock.getMinutes(), 0, 0);
+}
+
 export default function SleepScreen() {
   const [activeDate, setActiveDate] = useState(getLocalDate());
   const [log, setLog] = useState<SleepLog | null>(null);
@@ -37,8 +42,10 @@ export default function SleepScreen() {
   const [quality, setQuality] = useState<number | null>(null);
   const [notes, setNotes] = useState('');
   const [manualDuration, setManualDuration] = useState('');
+  const [manualDurationReason, setManualDurationReason] = useState('');
   const [useManualDuration, setUseManualDuration] = useState(false);
-  const [targetHours, setTargetHours] = useState<number | null>(8);
+  const [targetHours, setTargetHours] = useState<number | null>(null);
+  const [targetSource, setTargetSource] = useState<'user_selected' | null>(null);
 
   // Picker visibility
   const [showSleepPicker, setShowSleepPicker] = useState(false);
@@ -56,14 +63,20 @@ export default function SleepScreen() {
         if (data.manual_duration_override != null) {
           setUseManualDuration(true);
           setManualDuration(String(Math.round(data.manual_duration_override / 60 * 10) / 10));
+          setManualDurationReason(data.manual_duration_reason ?? '');
         }
+        setTargetHours(data.working_sleep_target ?? null);
+        setTargetSource(data.target_source === 'user_selected' ? 'user_selected' : null);
       } else {
         setSleepTime(null);
         setWakeTime(null);
         setQuality(null);
         setNotes('');
         setManualDuration('');
+        setManualDurationReason('');
         setUseManualDuration(false);
+        setTargetHours(null);
+        setTargetSource(null);
       }
     } catch (e) {
       console.error('Failed to load sleep log:', e);
@@ -93,19 +106,34 @@ export default function SleepScreen() {
       Alert.alert('Required', 'Please enter at least sleep time, wake time, or manual duration.');
       return;
     }
+    if (useManualDuration && !manualDurationReason.trim()) {
+      Alert.alert('Reason required', 'Explain why you are overriding the calculated duration.');
+      return;
+    }
     setSaving(true);
     try {
       const manualMins = useManualDuration && manualDuration
         ? Math.round(parseFloat(manualDuration) * 60)
         : null;
+      const wakeTimestamp = wakeTime ? clockOnDate(activeDate, wakeTime) : null;
+      let sleepTimestamp = sleepTime ? clockOnDate(activeDate, sleepTime) : null;
+      if (sleepTimestamp && wakeTimestamp && sleepTimestamp >= wakeTimestamp) {
+        sleepTimestamp.setDate(sleepTimestamp.getDate() - 1);
+      }
 
       const saved = await upsertSleepLog(activeDate, {
-        sleep_time: sleepTime?.toISOString() ?? null,
-        wake_time: wakeTime?.toISOString() ?? null,
+        sleep_time: sleepTimestamp?.toISOString() ?? null,
+        wake_time: wakeTimestamp?.toISOString() ?? null,
         quality,
         notes: notes || null,
         manual_duration_override: manualMins,
-        manual_duration_reason: manualMins != null ? 'user_manual_entry' : null,
+        manual_duration_reason: manualMins != null ? manualDurationReason.trim() : null,
+        working_sleep_target: targetHours,
+        target_sleep_range: targetHours != null
+          ? [Math.max(4, targetHours - 0.5), Math.min(14, targetHours + 0.5)]
+          : null,
+        target_source: targetHours != null ? targetSource : null,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       setLog(saved);
       const h = await fetchSleepHistory(30, 0);
@@ -221,8 +249,47 @@ export default function SleepScreen() {
                     <Text style={styles.analyticsLabel}>7-Day Debt</Text>
                   </View>
                 </View>
+                {analytics.readiness === 'sufficient_data' ? (
+                  <>
+                    <View style={styles.analyticsRow}>
+                      <View style={styles.analyticsStat}>
+                        <Text style={styles.analyticsValue}>
+                          {analytics.circadian_alignment_score ?? '—'}
+                        </Text>
+                        <Text style={styles.analyticsLabel}>Circadian alignment</Text>
+                      </View>
+                      <View style={styles.analyticsStat}>
+                        <Text style={styles.analyticsCategory}>
+                          {analytics.nocturnal_recovery_opportunity}
+                        </Text>
+                        <Text style={styles.analyticsLabel}>Recovery opportunity estimate</Text>
+                      </View>
+                      <View style={styles.analyticsStat}>
+                        <Text style={styles.analyticsValue}>
+                          {analytics.onset_regularity_minutes ?? '—'}m
+                        </Text>
+                        <Text style={styles.analyticsLabel}>Bedtime regularity</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.analyticsDetail}>
+                      Pattern: {analytics.sleep_pattern} · Confidence: {analytics.confidence}
+                    </Text>
+                    {analytics.score_factors.length > 0 && (
+                      <Text style={styles.analyticsDetail}>
+                        Main score factors: {analytics.score_factors.join(', ')}
+                      </Text>
+                    )}
+                  </>
+                ) : (
+                  <Text style={styles.analyticsWarning}>
+                    Circadian alignment and nocturnal recovery opportunity are unavailable until 7 valid records exist.
+                  </Text>
+                )}
+                {analytics.missing_data_notes.map((note) => (
+                  <Text key={note} style={styles.analyticsDetail}>Missing data: {note}</Text>
+                ))}
                 <Text style={styles.analyticsDisclaimer}>
-                  Debt calculations require a target. These are observational records only — no causal claims are made between sleep and skin outcomes.
+                  Recovery is an opportunity estimate, not proof that skin repair occurred. These are observational records only — no causal claims are made between sleep and skin outcomes.
                 </Text>
               </View>
             )}
@@ -270,14 +337,23 @@ export default function SleepScreen() {
                 <Text style={styles.checkLabel}>Enter duration manually (hours)</Text>
               </View>
               {useManualDuration && (
-                <TextInput
-                  style={styles.inputField}
-                  value={manualDuration}
-                  onChangeText={setManualDuration}
-                  keyboardType="decimal-pad"
-                  placeholder="e.g. 7.5"
-                  accessibilityLabel="Manual sleep duration in hours"
-                />
+                <>
+                  <TextInput
+                    style={styles.inputField}
+                    value={manualDuration}
+                    onChangeText={setManualDuration}
+                    keyboardType="decimal-pad"
+                    placeholder="e.g. 7.5"
+                    accessibilityLabel="Manual sleep duration in hours"
+                  />
+                  <TextInput
+                    style={styles.inputField}
+                    value={manualDurationReason}
+                    onChangeText={setManualDurationReason}
+                    placeholder="Why are you overriding the calculated duration?"
+                    accessibilityLabel="Manual duration override reason"
+                  />
+                </>
               )}
             </View>
 
@@ -311,7 +387,7 @@ export default function SleepScreen() {
                   <TouchableOpacity
                     key={h}
                     style={[styles.targetButton, targetHours === h && styles.targetButtonActive]}
-                    onPress={() => setTargetHours(h)}
+                    onPress={() => { setTargetHours(h); setTargetSource('user_selected'); }}
                     accessibilityLabel={`${h} hours target`}
                   >
                     <Text style={[styles.targetButtonText, targetHours === h && styles.targetButtonTextActive]}>{h}h</Text>
@@ -383,7 +459,9 @@ const styles = StyleSheet.create({
   analyticsRow: { flexDirection: 'row', justifyContent: 'space-around', marginBottom: Spacing.sm },
   analyticsStat: { alignItems: 'center' },
   analyticsValue: { fontSize: 22, fontWeight: '700', color: Colors.primary },
+  analyticsCategory: { fontSize: 14, fontWeight: '700', color: Colors.primary, textAlign: 'center' },
   analyticsLabel: { fontSize: 11, color: Colors.textMuted },
+  analyticsDetail: { fontSize: 11, color: Colors.textSecondary, marginBottom: 4 },
   analyticsDisclaimer: { fontSize: 11, color: Colors.textMuted, fontStyle: 'italic', lineHeight: 16 },
   section: {
     marginHorizontal: Spacing.md, marginBottom: Spacing.md,

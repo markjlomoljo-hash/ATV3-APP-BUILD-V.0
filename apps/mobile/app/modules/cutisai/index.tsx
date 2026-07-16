@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
+import * as Crypto from 'expo-crypto';
 import { supabase } from '../../../src/lib/supabase';
 import { Colors, Spacing, Typography, BorderRadius } from '../../../src/components/ui/theme';
 import { Button, Card } from '../../../src/components/ui';
@@ -54,7 +55,7 @@ function getAccessToken(): Promise<string | null> {
 }
 
 function generateIdempotencyKey(): string {
-  return `cutisai-msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `cutisai-msg-${Crypto.randomUUID()}`;
 }
 
 function stateMessage(state: ScreenState): string {

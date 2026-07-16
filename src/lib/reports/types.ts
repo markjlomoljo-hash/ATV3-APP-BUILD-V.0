@@ -20,6 +20,7 @@ export interface ReportData {
   secureRecordStatus: "verified_user_records" | "no_records_found";
   inclusionOptions: ReportInclusionOptions;
   patientSummary: ReportSection;
+  currentDiagnostics: ReportSection;
   acneHistory: ReportSection;
   skinBarrier: ReportSection;
   lesionTrends: ReportSection;
@@ -32,6 +33,7 @@ export interface ReportData {
   lifestyleContext: ReportSection;
   triggerHypotheses: ReportSection;
   forecastSummaries: ReportSection;
+  evidenceCitations: ReportSection;
   confidenceNotes: ReportSection;
   providerQuestions: ReportSection;
 }
@@ -75,6 +77,12 @@ export interface RawProfileBundle {
     status: string;
     summary: string | null;
     confidence: string | null;
+  }>;
+  evidenceCitations: Array<{
+    title: string;
+    source: string;
+    url: string | null;
+    accessedAt: string | null;
   }>;
   dailyLogCount: number;
   daysOfHistory: number;

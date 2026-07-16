@@ -1,5 +1,13 @@
 import { supabase } from "./supabase";
 import { randomUUID } from "expo-crypto";
+import {
+  fetchFoodHistory,
+  newMealEvent,
+  newSnackEvent,
+  saveMealEvent,
+  saveSnackEvent,
+} from "./food-service";
+import { upsertSleepLog as saveSleepDermLog } from "./sleep-service";
 
 // ─── Types matching actual DB schema ─────────────────────────────────────────
 
@@ -150,20 +158,35 @@ export async function fetchRecentFoodLogs(
   userId: string,
   days = 7
 ): Promise<FoodLog[]> {
-  const since = new Date();
-  since.setDate(since.getDate() - days);
-  const sinceStr = since.toISOString().split("T")[0];
-
-  const { data, error } = await supabase
-    .from("food_logs")
-    .select("*")
-    .eq("user_id", userId)
-    .gte("log_date", sinceStr)
-    .order("log_date", { ascending: false })
-    .limit(100);
-
-  if (error) throw new Error(`food_logs_fetch_failed: ${error.message}`);
-  return (data ?? []) as FoodLog[];
+  const dailyLogs = await fetchFoodHistory(days);
+  return dailyLogs.flatMap((daily) => [
+    ...daily.mealEvents.map((event): FoodLog => ({
+      id: event.id,
+      user_id: userId,
+      log_date: daily.logDate,
+      meal_type: event.type,
+      is_baseline: Boolean(event.isBaseline),
+      items: { description: event.items.map((item) => item.name).join(", ") },
+      categories: { tags: event.tags },
+      completed: true,
+      notes: event.notes,
+      created_at: event.time,
+      updated_at: daily.updatedAt ?? event.time,
+    })),
+    ...daily.snackEvents.map((event): FoodLog => ({
+      id: event.id,
+      user_id: userId,
+      log_date: daily.logDate,
+      meal_type: "snack",
+      is_baseline: false,
+      items: { description: event.description },
+      categories: { tags: event.tags },
+      completed: true,
+      notes: event.notes,
+      created_at: event.time,
+      updated_at: daily.updatedAt ?? event.time,
+    })),
+  ]);
 }
 
 // ─── Fetch recent treatment checkins ─────────────────────────────────────────
@@ -191,7 +214,7 @@ export async function fetchRecentTreatmentCheckins(
 // ─── Log sleep ────────────────────────────────────────────────────────────────
 
 export async function logSleep(
-  userId: string,
+  _userId: string,
   data: {
     quality: number;
     hours?: number;
@@ -200,49 +223,17 @@ export async function logSleep(
 ): Promise<SleepLog> {
   const today = new Date().toISOString().split("T")[0];
 
-  // Check for existing sleep log today — update if exists
-  const { data: existing } = await supabase
-    .from("sleep_logs")
-    .select("id")
-    .eq("user_id", userId)
-    .eq("log_date", today)
-    .single();
-
-  if (existing) {
-    const { data: updated, error } = await supabase
-      .from("sleep_logs")
-      .update({
-        quality: data.quality,
-        notes: data.notes ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", existing.id)
-      .select()
-      .single();
-    if (error) throw new Error(`sleep_log_update_failed: ${error.message}`);
-    return updated as SleepLog;
-  }
-
-  const { data: created, error } = await supabase
-    .from("sleep_logs")
-    .insert({
-      id: randomUUID(),
-      user_id: userId,
-      log_date: today,
-      quality: data.quality,
-      notes: data.notes ?? null,
-    })
-    .select()
-    .single();
-
-  if (error) throw new Error(`sleep_log_insert_failed: ${error.message}`);
-  return created as SleepLog;
+  const saved = await saveSleepDermLog(today, {
+    quality: data.quality,
+    notes: data.notes?.trim() || null,
+  });
+  return saved as unknown as SleepLog;
 }
 
 // ─── Log food ─────────────────────────────────────────────────────────────────
 
 export async function logFood(
-  userId: string,
+  _userId: string,
   data: {
     meal_type: string;
     description: string;
@@ -251,23 +242,53 @@ export async function logFood(
 ): Promise<FoodLog> {
   const today = new Date().toISOString().split("T")[0];
 
-  const { data: created, error } = await supabase
-    .from("food_logs")
-    .insert({
-      id: randomUUID(),
-      user_id: userId,
+  if (data.meal_type === "snack") {
+    const event = newSnackEvent({
+      time: new Date().toISOString(),
+      description: data.description.trim(),
+      photoStorageRef: null,
+      portionEstimate: null,
+      tags: [],
+      confidenceLevel: "certain",
+      notes: data.notes?.trim() || null,
+    });
+    await saveSnackEvent(today, event);
+    return {
+      id: event.id,
+      user_id: _userId,
       log_date: today,
-      meal_type: data.meal_type,
+      meal_type: "snack",
       is_baseline: false,
-      items: { description: data.description },
+      items: { description: event.description },
+      categories: {},
       completed: true,
-      notes: data.notes ?? null,
-    })
-    .select()
-    .single();
+      notes: event.notes,
+      created_at: event.time,
+      updated_at: event.time,
+    };
+  }
 
-  if (error) throw new Error(`food_log_insert_failed: ${error.message}`);
-  return created as FoodLog;
+  const event = newMealEvent({
+    type: data.meal_type,
+    time: new Date().toISOString(),
+    items: [{ name: data.description.trim() }],
+    tags: [],
+    notes: data.notes?.trim() || null,
+  });
+  await saveMealEvent(today, event);
+  return {
+    id: event.id,
+    user_id: _userId,
+    log_date: today,
+    meal_type: event.type,
+    is_baseline: false,
+    items: { description: event.items[0]?.name ?? "" },
+    categories: {},
+    completed: true,
+    notes: event.notes,
+    created_at: event.time,
+    updated_at: event.time,
+  };
 }
 
 // ─── Log stress ───────────────────────────────────────────────────────────────

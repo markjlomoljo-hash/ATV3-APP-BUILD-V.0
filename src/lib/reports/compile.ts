@@ -38,6 +38,48 @@ function insufficient(title: string, note: string): ReportSection {
   return { title, insufficientData: true, insufficientDataNote: note };
 }
 
+const ONSET_LABELS: Readonly<Record<string, string>> = {
+  acute_recent_onset: "Within the last 6 months",
+  subacute_recent_onset: "6–12 months ago",
+  persistent_recent_history: "1–2 years ago",
+  multi_year_persistent: "3–5 years ago",
+  long_term_persistent: "More than 5 years ago",
+  adolescent_persistent: "Since early adolescence",
+  childhood_onset_history: "Since childhood",
+  adult_onset: "Adult-onset after age 18",
+  product_temporal_association: "Started after a product/routine change",
+  medication_temporal_association: "Started after medication/treatment change",
+  lifestyle_environment_temporal_association: "Started after lifestyle/environment change",
+  episodic_relapsing: "Comes and goes in episodes",
+  unknown_onset: "Not sure",
+};
+
+const MEAL_FREQUENCY_LABELS: Readonly<Record<string, string>> = {
+  "1": "1 meal per day",
+  "2": "2 meals per day",
+  "3": "3 meals per day",
+  varies: "It varies a lot",
+  not_sure: "Not sure",
+  prefer_not_to_answer: "Prefer not to answer",
+};
+
+function humanizeKey(key: string): string {
+  const text = key.replace(/_/g, " ").trim();
+  return text.length > 0 ? text[0].toUpperCase() + text.slice(1) : key;
+}
+
+function displayPersistedValue(value: unknown): string {
+  if (!hasContent(value)) return "Not provided";
+  if (Array.isArray(value)) return value.map(displayPersistedValue).join(", ");
+  if (typeof value === "object" && value !== null) {
+    return Object.entries(value as Record<string, unknown>)
+      .map(([key, child]) => `${humanizeKey(key)}: ${displayPersistedValue(child)}`)
+      .join("; ");
+  }
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  return String(value);
+}
+
 export function compileReportData(
   bundle: RawProfileBundle,
   inclusionOptions: ReportInclusionOptions,
@@ -69,17 +111,44 @@ export function compileReportData(
     ],
   };
 
+  // Never infer clinical diagnostic cards from profile answers or lesion
+  // counts. These values require validated, governed persisted outputs.
+  const currentDiagnostics = insufficient(
+    "Current Diagnostics Baseline",
+    "A completed FaceAtlas scan with validated CHI, barrier integrity, inflammatory and non-inflammatory lesion, oiliness, confidence, and validation fields is required. These governed diagnostic metrics are not present in the current persisted record schema.",
+  );
+
   // --- Acne history -----------------------------------------------------
   const acneHistory = sectionValue(bundle, "acne_history");
+  const structuredOnset = typeof acneHistory.onset_pattern === "string"
+    ? acneHistory.onset_pattern
+    : null;
+  const onsetRows = structuredOnset
+    ? [
+        {
+          label: "When did it start?",
+          value: ONSET_LABELS[structuredOnset] ?? structuredOnset,
+        },
+        { label: "Structured onset", value: structuredOnset },
+        {
+          label: "Historical interpretation",
+          value: displayPersistedValue(acneHistory.onset_interpretation),
+        },
+        {
+          label: "Additional detail",
+          value: displayPersistedValue(acneHistory.onset_detail),
+        },
+      ]
+    : [
+        { label: "Onset age", value: displayPersistedValue(acneHistory.onsetAge) },
+        { label: "Prior severity", value: displayPersistedValue(acneHistory.priorSeverity) },
+        { label: "Pattern notes", value: displayPersistedValue(acneHistory.patternNotes) },
+      ];
   const acneHistorySection: ReportSection = hasContent(acneHistory)
     ? {
         title: "Acne History & Onset Timeline",
         insufficientData: false,
-        rows: [
-          { label: "Onset age", value: String(acneHistory.onsetAge ?? "Not provided") },
-          { label: "Prior severity", value: String(acneHistory.priorSeverity ?? "Not provided") },
-          { label: "Pattern notes", value: String(acneHistory.patternNotes ?? "None") },
-        ],
+        rows: onsetRows,
       }
     : insufficient(
         "Acne History & Onset Timeline",
@@ -270,8 +339,11 @@ export function compileReportData(
         title: "Lifestyle Context (Sleep, Stress, Diet, Cycle, Climate)",
         insufficientData: false,
         rows: Object.entries(lifestyle).map(([k, v]) => ({
-          label: k,
-          value: hasContent(v) ? String(v) : "Not provided",
+          label: humanizeKey(k),
+          value:
+            k === "meal_frequency_baseline" && typeof v === "string"
+              ? (MEAL_FREQUENCY_LABELS[v] ?? v)
+              : displayPersistedValue(v),
         })),
       }
     : insufficient(
@@ -324,6 +396,26 @@ export function compileReportData(
           "No forecasts are available yet. Forecasting requires sustained daily logging.",
         );
 
+  const evidenceCitations: ReportSection =
+    bundle.evidenceCitations.length > 0
+      ? {
+          title: "Evidence & Citations",
+          insufficientData: false,
+          table: {
+            headers: ["Evidence", "Source", "URL", "Accessed"],
+            rows: bundle.evidenceCitations.map((citation) => [
+              citation.title,
+              citation.source,
+              citation.url ?? "Not recorded",
+              citation.accessedAt?.slice(0, 10) ?? "Not recorded",
+            ]),
+          },
+        }
+      : insufficient(
+          "Evidence & Citations",
+          "At least one governed, persisted citation linked to a report finding is required. No persisted citation records are available, so no evidence source is asserted.",
+        );
+
   // --- Confidence notes ------------------------------------------------
   const confidenceNotes: ReportSection = {
     title: "Confidence & Data Sufficiency Notes",
@@ -360,6 +452,7 @@ export function compileReportData(
     secureRecordStatus: anyRealData ? "verified_user_records" : "no_records_found",
     inclusionOptions,
     patientSummary,
+    currentDiagnostics,
     acneHistory: includeSection("acne_history") ? acneHistorySection : insufficient("Acne History & Onset Timeline", "Excluded from this report by user selection."),
     skinBarrier: includeSection("barrier_sensitivity") ? skinBarrier : insufficient("Skin Type, Sensitivity & Barrier Symptoms", "Excluded from this report by user selection."),
     lesionTrends,
@@ -372,6 +465,7 @@ export function compileReportData(
     lifestyleContext: includeSection("lifestyle_baseline") ? lifestyleContext : insufficient("Lifestyle Context (Sleep, Stress, Diet, Cycle, Climate)", "Excluded from this report by user selection."),
     triggerHypotheses,
     forecastSummaries,
+    evidenceCitations,
     confidenceNotes,
     providerQuestions,
   };

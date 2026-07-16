@@ -306,10 +306,7 @@ export async function fetchRoutineLogsForDate(date: string): Promise<RoutineLog[
 // HELPERS
 // ============================================================
 export async function generateEventId(): Promise<string> {
-  return await Crypto.digestStringAsync(
-    Crypto.CryptoDigestAlgorithm.SHA256,
-    `${Date.now()}-${Math.random()}`
-  );
+  return Crypto.randomUUID();
 }
 
 export const ACTIVITY_TYPES = [
