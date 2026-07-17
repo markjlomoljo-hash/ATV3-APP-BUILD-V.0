@@ -61,3 +61,9 @@ def dispatch_deterministic(
 ) -> dict[str, Any] | None:
     engine = ENGINES.get((module, task))
     return engine(inputs) if engine else None
+
+# CNN skin analysis engine (added for AcneTrex V3 mobile)
+from .skin_cnn import analyze_skin_image
+
+# Register the new engine
+ENGINES[("skin_cnn", "image_severity_analysis")] = lambda inputs: analyze_skin_image(inputs)
