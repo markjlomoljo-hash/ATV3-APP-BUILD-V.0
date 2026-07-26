@@ -23,6 +23,16 @@ export function SupabaseSignInForm({ nextPath }: { nextPath?: string }) {
 
   const destination = safeNextPath(nextPath ?? null);
 
+  if (session.status === "loading") {
+    // Session state is not known yet; hold a neutral placeholder instead of
+    // flashing the interactive form at someone who is already signed in.
+    return (
+      <section aria-busy="true" className="rounded-lg border border-slate-200 bg-white p-5">
+        <p className="text-sm text-slate-500">Checking app session...</p>
+      </section>
+    );
+  }
+
   if (session.status === "not_configured") {
     return <SupabaseAuthNotConfigured />;
   }

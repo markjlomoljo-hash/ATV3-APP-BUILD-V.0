@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const calendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
+export const calendarDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((value) => {
   const [year, month, day] = value.split("-").map(Number);
   if (month < 1 || month > 12 || day < 1) return false;
   const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
@@ -134,6 +134,13 @@ export const cutisAiMessageSchema = z.object({
   requestedTools: z.array(z.enum(["memory", "evidence", "faceatlas", "forecast", "skin_twin", "reports"])).default([]),
 });
 
+// A plan step is the unit the Task Board generates daily tasks from. The
+// cadence is explicit (am | pm | both); no cadence is ever inferred.
+export const treatmentPlanStepSchema = z.object({
+  name: z.string().trim().min(1).max(200),
+  timeOfDay: z.enum(["am", "pm", "both"]),
+});
+
 export const treatmentPlanDraftSchema = z.object({
   name: z.string().min(1).max(120),
   activeIngredient: z.string().max(120).optional(),
@@ -141,6 +148,7 @@ export const treatmentPlanDraftSchema = z.object({
   reviewDate: calendarDateSchema.optional(),
   providerDirected: z.boolean().default(false),
   instructions: z.string().max(2000).optional(),
+  steps: z.array(treatmentPlanStepSchema).max(20).optional(),
 });
 
 export const reportRequestDraftSchema = z.object({

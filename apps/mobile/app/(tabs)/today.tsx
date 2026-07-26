@@ -17,6 +17,7 @@ import {
   fetchTodayLogs,
   fetchLoggingStreak,
   TodaySummary,
+  TodayLogSource,
   StreakSummary,
 } from "../../src/lib/daily-logs-service";
 import {
@@ -33,54 +34,95 @@ interface LogModule {
   title: string;
   subtitle: string;
   logged: boolean;
+  /** False when this source's read failed — status is unknown, not "missing". */
+  statusKnown: boolean;
   route: string;
 }
 
 function getModules(summary: TodaySummary | undefined): LogModule[] {
+  const unavailable = new Set<TodayLogSource>(summary?.unavailableSources ?? []);
+  const subtitleFor = (
+    source: TodayLogSource,
+    logged: boolean,
+    loggedText: string,
+    promptText: string
+  ) =>
+    unavailable.has(source)
+      ? "Status unavailable — couldn't load"
+      : logged
+        ? loggedText
+        : promptText;
+
   return [
     {
       key: "sleep",
       icon: "😴",
       title: "SleepDerm",
-      subtitle: summary?.sleepLogged ? "Sleep logged" : "Log last night's sleep",
+      subtitle: subtitleFor(
+        "sleep",
+        summary?.sleepLogged ?? false,
+        "Sleep logged",
+        "Log last night's sleep"
+      ),
       logged: summary?.sleepLogged ?? false,
+      statusKnown: !unavailable.has("sleep"),
       route: "/(tabs)/logs",
     },
     {
       key: "food",
       icon: "🥗",
       title: "DermDiet",
-      subtitle: summary?.foodLogged ? "Meals logged" : "Log today's meals",
+      subtitle: subtitleFor(
+        "food",
+        summary?.foodLogged ?? false,
+        "Meals logged",
+        "Log today's meals"
+      ),
       logged: summary?.foodLogged ?? false,
+      statusKnown: !unavailable.has("food"),
       route: "/(tabs)/logs",
     },
     {
       key: "stress",
       icon: "😤",
       title: "Stress Level",
-      subtitle: summary?.stressLogged ? "Stress logged" : "Log today's stress",
+      subtitle: subtitleFor(
+        "stress",
+        summary?.stressLogged ?? false,
+        "Stress logged",
+        "Log today's stress"
+      ),
       logged: summary?.stressLogged ?? false,
+      statusKnown: !unavailable.has("stress"),
       route: "/(tabs)/logs",
     },
     {
       key: "skin_state",
       icon: "🪞",
       title: "Skin State",
-      subtitle: summary?.skinStateLogged
-        ? "Skin state logged"
-        : "Log how your skin looks today",
+      subtitle: subtitleFor(
+        "skin_state",
+        summary?.skinStateLogged ?? false,
+        "Skin state logged",
+        "Log how your skin looks today"
+      ),
       logged: summary?.skinStateLogged ?? false,
+      statusKnown: !unavailable.has("skin_state"),
       route: "/(tabs)/logs",
     },
     {
       key: "treatment",
       icon: "💊",
       title: "Treatment",
-      subtitle: summary?.treatmentCheckedIn
-        ? "Checked in"
-        : "Check in on your treatment",
+      subtitle: subtitleFor(
+        "treatment",
+        summary?.treatmentCheckedIn ?? false,
+        "Checked in",
+        "Check in on your treatment plan"
+      ),
       logged: summary?.treatmentCheckedIn ?? false,
-      route: "/(tabs)/logs",
+      statusKnown: !unavailable.has("treatment"),
+      route: "/treatment",
     },
     {
       key: "faceatlas",
@@ -88,6 +130,7 @@ function getModules(summary: TodaySummary | undefined): LogModule[] {
       title: "FaceAtlas",
       subtitle: "Capture a skin scan",
       logged: false,
+      statusKnown: true,
       route: "/(tabs)/faceatlas",
     },
   ];
@@ -105,7 +148,7 @@ function LogCard({
       onPress={onPress}
       style={({ pressed }) => [
         styles.logCard,
-        module.logged && styles.logCardLogged,
+        module.logged && module.statusKnown && styles.logCardLogged,
         pressed && { opacity: 0.85 },
       ]}
       accessibilityRole="button"
@@ -118,10 +161,12 @@ function LogCard({
           <Text style={styles.logCardSubtitle}>{module.subtitle}</Text>
         </View>
       </View>
-      {module.logged ? (
+      {module.logged && module.statusKnown ? (
         <View style={styles.loggedBadge}>
           <Text style={styles.loggedText}>✓</Text>
         </View>
+      ) : !module.statusKnown ? (
+        <Text style={styles.unknownMark}>?</Text>
       ) : (
         <Text style={styles.logArrow}>›</Text>
       )}
@@ -129,10 +174,19 @@ function LogCard({
   );
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  sleep: "sleep",
+  food: "food",
+  stress: "stress",
+  treatment: "treatment",
+  skin_state: "skin state",
+};
+
 function ProgressCard({ summary }: { summary: TodaySummary | undefined }) {
   const count = summary?.logsCount ?? 0;
   const total = 5; // sleep, food, stress, treatment, skin state
   const pct = Math.min(count / total, 1);
+  const unavailable = summary?.unavailableSources ?? [];
 
   return (
     <Card style={styles.progressCard}>
@@ -156,6 +210,14 @@ function ProgressCard({ summary }: { summary: TodaySummary | undefined }) {
           ? "Almost there — great data day!"
           : "Excellent! Full data day for maximum insights."}
       </Text>
+      {unavailable.length > 0 && (
+        <Text style={styles.progressWarning}>
+          Couldn&apos;t load{" "}
+          {unavailable.map((source) => SOURCE_LABELS[source] ?? source).join(", ")}{" "}
+          status — shown as unknown (?), not as missing, and excluded from the
+          count above. Pull to refresh to retry.
+        </Text>
+      )}
     </Card>
   );
 }
@@ -366,6 +428,12 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   progressHint: { ...Typography.caption, color: Colors.textSecondary },
+  progressWarning: {
+    ...Typography.caption,
+    color: Colors.warning,
+    lineHeight: 18,
+    marginTop: Spacing.sm,
+  },
   streakCard: { marginBottom: Spacing.lg },
   streakRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
   streakEmoji: { fontSize: 28 },
@@ -419,6 +487,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   loggedText: { color: "#fff", fontSize: 14, fontWeight: "700" },
+  unknownMark: { fontSize: 18, color: Colors.warning, fontWeight: "700" },
   logArrow: { fontSize: 22, color: Colors.textMuted, fontWeight: "300" },
   insightsTeaser: { marginBottom: Spacing.lg },
   insightsTeaserRow: {

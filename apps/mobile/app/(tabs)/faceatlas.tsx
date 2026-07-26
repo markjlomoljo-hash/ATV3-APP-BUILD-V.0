@@ -11,16 +11,14 @@ import {
   type FaceAtlasScanSummary,
   type FaceScanRecord,
 } from "../../src/lib/faceatlas-service";
-
-function statusBadgeColors(status: string): { color: string; textColor: string } {
-  if (status === "complete") {
-    return { color: Colors.primaryLight, textColor: Colors.primary };
-  }
-  return { color: "#fef3c7", textColor: "#92400e" };
-}
+import {
+  confidenceBadge,
+  mergeScanTimeline,
+  statusBadge,
+} from "../../src/lib/faceatlas-history";
 
 function CaptureRow({ scan }: { scan: FaceScanRecord }) {
-  const badge = statusBadgeColors(scan.status);
+  const badge = statusBadge(scan.status);
   // Speak only from known server state: a null storage_path means the scan
   // record references no image — it does NOT prove no image exists (mobile
   // uploads land in the private bucket without a registration contract), so
@@ -58,7 +56,9 @@ function CaptureRow({ scan }: { scan: FaceScanRecord }) {
 }
 
 function SummaryRow({ scan }: { scan: FaceAtlasScanSummary }) {
-  const badge = statusBadgeColors(scan.confidence === "insufficient_data" ? "pending" : "complete");
+  // Explicit confidence-vocabulary mapping — an unknown confidence value
+  // renders neutral, never green (see faceatlas-history.ts).
+  const badge = confidenceBadge(scan.confidence);
   return (
     <Card style={styles.scanCard}>
       <View style={styles.scanRow}>
@@ -125,6 +125,7 @@ export default function FaceAtlasScreen() {
 
   const isLoading = loadingCaptures || loadingSummaries;
   const isEmpty = !isLoading && captures.length === 0 && summaries.length === 0;
+  const timeline = mergeScanTimeline(captures, summaries);
   const startCapture = () => router.push("/faceatlas/capture" as never);
 
   return (
@@ -143,7 +144,7 @@ export default function FaceAtlasScreen() {
           style={{ marginBottom: Spacing.lg }}
         />
 
-        {/* Scan history */}
+        {/* Scan history — one dated timeline across both scan tables */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Scan History</Text>
           {isLoading && <Text style={styles.loadingText}>Loading scans...</Text>}
@@ -162,27 +163,31 @@ export default function FaceAtlasScreen() {
           {isEmpty && (
             <EmptyState
               title="No scans yet"
-              message="Run a guided capture to record your first FaceAtlas scan. New scans start as pending_upload until server-side processing completes."
+              message="Run a guided capture to record your first FaceAtlas scan. Capture runs on-device quality checks on photo metadata only and saves scan records with the honest status pending_upload — automated lesion analysis is not active yet, so no analysis results will appear until server-side processing ships."
               action={{ label: "Start guided capture", onPress: startCapture }}
             />
           )}
-          {captures.map((scan) => (
-            <CaptureRow key={scan.id} scan={scan} />
-          ))}
-          {summaries.map((scan) => (
-            <SummaryRow key={scan.id} scan={scan} />
-          ))}
+          {timeline.map((entry) =>
+            entry.kind === "capture" ? (
+              <CaptureRow key={`capture-${entry.scan.id}`} scan={entry.scan} />
+            ) : (
+              <SummaryRow key={`summary-${entry.scan.id}`} scan={entry.scan} />
+            )
+          )}
         </View>
 
         {/* Info card */}
         <Card style={styles.infoCard}>
           <Text style={styles.infoTitle}>🔒 Privacy-First Design</Text>
           <Text style={styles.infoText}>
-            Raw face images are stored privately in your personal storage bucket
-            and only if you have given raw-image consent. They are never shared
-            without your explicit consent. You can withdraw consent at any time
-            in Profile → Privacy &amp; Consent, which stops future uploads.
-            In-app deletion of already-stored images is not available yet; you
+            Photos are uploaded to your private storage bucket only when your
+            raw-image retention consent is recorded; without it, photos never
+            leave this device and only scan records (metadata) are created.
+            Today the pipeline stores captures — it does not run automated
+            lesion analysis, and scan records honestly stay pending_upload
+            until server-side processing exists. Withdrawing consent in
+            Profile → Privacy &amp; Consent stops future uploads; in-app
+            deletion of already-stored images is not available yet, and you
             can request account deletion from the Profile tab.
           </Text>
         </Card>

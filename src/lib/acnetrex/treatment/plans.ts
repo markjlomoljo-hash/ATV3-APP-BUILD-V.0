@@ -63,6 +63,9 @@ export async function createTreatmentPlan(userId: string, input: PlanInput) {
         activeIngredient: input.activeIngredient ?? null,
         reviewDate: input.reviewDate ?? null,
         providerDirected: true,
+        // Steps are the only source the Task Board generates tasks from; an
+        // empty list honestly generates nothing (no invented routines).
+        steps: input.steps ?? [],
       },
       status: "active",
       startedAt: new Date(`${input.startDate}T00:00:00.000Z`),

@@ -17,14 +17,20 @@
       "width": 1280,
       "height": 720,
       "bytes": 480000
+    },
+    {
+      "angle": null,
+      "width": 960,
+      "height": 540,
+      "bytes": 300000
     }
   ],
   "expected": {
     "state": "partial",
     "redness_index": 0.033,
     "texture_contrast_index": 0.35,
-    "metadata_completeness": 0.667,
+    "metadata_completeness": 0.556,
     "zones_with_metadata": ["front"],
-    "zones_missing_metadata": ["chin_lower"]
+    "zones_missing_metadata": ["chin_lower", "unknown"]
   }
 }

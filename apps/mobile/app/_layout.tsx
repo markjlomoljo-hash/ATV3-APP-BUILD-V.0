@@ -13,6 +13,7 @@ import { useProfileStore } from "../src/stores/profile";
 import { fetchProfile } from "../src/lib/profile-service";
 import { replayPendingOutboxEvents } from "../src/lib/local-outbox";
 import { replayQueuedMlJobs } from "../src/lib/ml";
+import { syncScheduledReminders } from "../src/lib/notifications";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -92,11 +93,12 @@ function AuthGate() {
  * actually succeeded.
  */
 function OfflineReplayGate() {
-  const { status } = useAuthStore();
+  const { status, user } = useAuthStore();
   const queryClient = useQueryClient();
 
   useEffect(() => {
     if (status !== "authenticated") return;
+    const userId = user?.id;
 
     const replay = () => {
       void replayPendingOutboxEvents()
@@ -119,6 +121,10 @@ function OfflineReplayGate() {
         })
         .catch(() => undefined);
       void replayQueuedMlJobs().catch(() => undefined);
+      // Reconcile local reminders against real state (consents, streak,
+      // active plan). No-op unless the user enabled reminders; never
+      // requests notification permission.
+      if (userId) void syncScheduledReminders(userId).catch(() => undefined);
     };
 
     // Once on becoming authenticated, then on every return to foreground.
@@ -127,7 +133,7 @@ function OfflineReplayGate() {
       if (state === "active") replay();
     });
     return () => subscription.remove();
-  }, [status, queryClient]);
+  }, [status, user?.id, queryClient]);
 
   return null;
 }

@@ -6,7 +6,11 @@ import { processMlAnalysisBatch } from "@/lib/acnetrex/ml-analysis-worker";
 
 export const dynamic = "force-dynamic";
 
-const workerRequestSchema = z.object({ maxJobs: z.number().int().min(1).max(10).default(1) });
+const MAX_WORKER_BATCH_JOBS = 10;
+
+const workerRequestSchema = z.object({
+  maxJobs: z.number().int().min(1).max(MAX_WORKER_BATCH_JOBS).default(1),
+});
 
 function secretMatches(expected: string, received: string | null): boolean {
   if (!received) return false;
@@ -47,8 +51,14 @@ async function runWorker(request: Request, maxJobs: number) {
   }
 }
 
+/**
+ * Vercel crons fire GET with no body, so the daily backstop cannot pass a
+ * `maxJobs` payload. Drain the same bounded batch ceiling the POST contract
+ * allows instead of a single job; the batch still stops early once the queue
+ * is idle, and auth plus the `{ ok, outcomes }` response shape are unchanged.
+ */
 export async function GET(request: Request) {
-  return runWorker(request, 1);
+  return runWorker(request, MAX_WORKER_BATCH_JOBS);
 }
 
 export async function POST(request: Request) {

@@ -89,8 +89,16 @@ export async function createAndProcessExport(
     });
 
     return { exportRequestId: request.id, status: "completed" };
-  } catch {
-    await db.update(exportRequests).set({ status: "failed" }).where(eq(exportRequests.id, request.id));
+  } catch (error) {
+    // Persist the honest failure reason alongside the failed status. The
+    // export_requests.failure_reason column exists in both the drizzle schema
+    // (src/db/schema.ts) and the live Supabase schema (phase7 migration), so
+    // dropping the message here would silently discard real diagnostic data.
+    const message = error instanceof Error ? error.message : "Unknown export generation error";
+    await db
+      .update(exportRequests)
+      .set({ status: "failed", failureReason: message })
+      .where(eq(exportRequests.id, request.id));
     return { exportRequestId: request.id, status: "failed" };
   }
 }

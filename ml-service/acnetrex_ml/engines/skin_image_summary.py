@@ -89,7 +89,10 @@ def summarize_skin_image_metadata(inputs: dict[str, Any]) -> dict[str, Any]:
     zone_summaries: list[dict[str, Any]] = []
     completeness_values: list[float] = []
     for item in entries:
-        angle = str(item.get("angle", "unknown"))
+        # Parity with the TS twin (`image.angle ?? "unknown"`): a JSON-null
+        # angle is treated exactly like a missing one, never rendered "None".
+        raw_angle = item.get("angle")
+        angle = "unknown" if raw_angle is None else str(raw_angle)
         fields_present = sorted(
             field for field in EXPECTED_METADATA_FIELDS if item.get(field) is not None
         )

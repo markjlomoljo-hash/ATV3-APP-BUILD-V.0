@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { AcneTrexModule } from "@/lib/acnetrex/modules/module-registry";
-import { ACNETREX_MODULES, modulesByCategory } from "@/lib/acnetrex/modules/module-registry";
+import { ACNETREX_MODULES, moduleStatusProbe, modulesByCategory } from "@/lib/acnetrex/modules/module-registry";
 import { buildModuleReadinessIssues } from "@/lib/acnetrex/modules/readiness";
 import { buildModuleWorkflow } from "@/lib/acnetrex/services/module-service";
+import type { DailyLogKindSlug } from "@/lib/acnetrex/daily-logs/kinds";
 import {
   ModuleActionCard,
   ModuleFormSection,
@@ -12,11 +13,26 @@ import {
 } from "@/components/acnetrex/ModuleLayout";
 import { HonestStatePanel, MedicalSafetyNotice, StatusBadge } from "@/components/acnetrex/StatusPanels";
 import { CutisAiConversationPanel } from "@/components/acnetrex/CutisAiConversationPanel";
+import { DailyLogPanel } from "@/components/acnetrex/DailyLogPanel";
 import { FaceAtlasCapturePanel } from "@/components/acnetrex/FaceAtlasCapturePanel";
+import { ModuleLiveStatusPanel } from "@/components/acnetrex/ModuleLiveStatusPanel";
 import { SkinTwinScenarioPanel } from "@/components/acnetrex/SkinTwinScenarioPanel";
 import { ReportWorkflowPanel } from "@/components/acnetrex/ReportWorkflowPanel";
 import { TreatmentWorkflowPanel } from "@/components/acnetrex/TreatmentWorkflowPanel";
 import { TaskWorkflowPanel } from "@/components/acnetrex/TaskWorkflowPanel";
+
+/** Modules served by the canonical daily-log form panel (module id -> kind). */
+const dailyLogKindByModuleId: Partial<Record<string, DailyLogKindSlug>> = {
+  sleepderm: "sleep",
+  dermdiet: "food",
+  stress: "stress",
+  activity: "activity",
+  hydration: "hydration",
+  cycle: "cycle",
+  contact: "contact",
+  routine: "routine",
+  "skin-state": "skin-state",
+};
 
 function ModuleCard({ module }: { module: AcneTrexModule }) {
   return (
@@ -91,6 +107,8 @@ export function DashboardHome() {
 export function ModulePage({ module }: { module: AcneTrexModule }) {
   const issues = buildModuleReadinessIssues(module);
   const workflow = buildModuleWorkflow(module);
+  const dailyLogKind = dailyLogKindByModuleId[module.id];
+  const probePath = moduleStatusProbe(module.id);
   const related = ACNETREX_MODULES.filter(
     (candidate) => candidate.category === module.category && candidate.id !== module.id,
   ).slice(0, 4);
@@ -120,7 +138,9 @@ export function ModulePage({ module }: { module: AcneTrexModule }) {
           <section className="grid gap-4">
             <MedicalSafetyNotice />
 
-            {module.id === "cutisai" ? (
+            {dailyLogKind ? (
+              <DailyLogPanel kind={dailyLogKind} />
+            ) : module.id === "cutisai" ? (
               <CutisAiConversationPanel />
             ) : module.id.startsWith("face-atlas") ? (
               <FaceAtlasCapturePanel />
@@ -148,17 +168,22 @@ export function ModulePage({ module }: { module: AcneTrexModule }) {
               </>
             )}
 
+            <ModuleLiveStatusPanel probePath={probePath} />
+
             <ModuleReadinessPanel checks={workflow.integrationChecks} />
 
             <ModuleReadinessPanel title="Local capability contract" checks={workflow.capabilityCards} />
 
-            <ModuleHistoryPanel title={workflow.historyTitle} emptyState={workflow.historyEmptyState} />
+            {dailyLogKind ? null : (
+              <ModuleHistoryPanel title={workflow.historyTitle} emptyState={workflow.historyEmptyState} />
+            )}
 
             <HonestStatePanel status={module.serviceStatus} title="Service boundary">
               <p>
-                This module is present, typed, and routed. It will use its service adapter and persistence contract when
-                live credentials are available. Until then, the app must show this explicit state instead of a fake
-                success result.
+                This module is present, typed, and routed. The registry itself claims no live status
+                {probePath
+                  ? "; the live service status panel above derives the real state from this module's probe endpoint."
+                  : " and this module has no live probe yet, so it stays explicitly not instrumented."}
               </p>
             </HonestStatePanel>
 

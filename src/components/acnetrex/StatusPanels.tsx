@@ -2,6 +2,7 @@ import type { ModuleReadiness } from "@/lib/acnetrex/module-result";
 
 const labels: Record<ModuleReadiness, string> = {
   ready: "Ready",
+  not_instrumented: "Not instrumented",
   insufficient_data: "Insufficient data",
   not_configured: "Not configured",
   auth_required: "Auth required",
@@ -20,6 +21,7 @@ const labels: Record<ModuleReadiness, string> = {
 
 const classes: Record<ModuleReadiness, string> = {
   ready: "border-emerald-200 bg-emerald-50 text-emerald-800",
+  not_instrumented: "border-slate-200 bg-slate-100 text-slate-700",
   insufficient_data: "border-amber-200 bg-amber-50 text-amber-900",
   not_configured: "border-slate-200 bg-slate-100 text-slate-700",
   auth_required: "border-sky-200 bg-sky-50 text-sky-800",

@@ -8,6 +8,9 @@ import {
   listCutisAiConversations,
   recordCutisAiMessage,
 } from "@/lib/acnetrex/memory/conversations";
+import { enqueueCutisAiReplyJob } from "@/lib/acnetrex/cutisai/jobs";
+import { resolveCutisAiProvider } from "@/lib/acnetrex/cutisai/provider";
+import { kickCutisAiWorker } from "@/lib/acnetrex/cutisai/worker-kick";
 import { executeIdempotent } from "@/lib/reliability/idempotency";
 import { classifyDatabaseFailure } from "@/lib/acnetrex/services/database-error-classifier";
 import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
@@ -54,6 +57,10 @@ export async function POST(request: Request) {
 
   try {
     getDb();
+    // Provider resolution is env-gated: CUTISAI_LLM_PROVIDER unset selects the
+    // deterministic evidence tier; a requested-but-unconfigured LLM tier fails
+    // closed here so no reply job is queued that could never be honored.
+    const providerResolution = await resolveCutisAiProvider();
     const result = await executeIdempotent({
       actorId: auth.userId,
       scope: "cutisai.conversations",
@@ -63,16 +70,31 @@ export async function POST(request: Request) {
       payload: parsed.data,
       execute: async (client) => {
         const recorded = await recordCutisAiMessage(client, auth.userId, parsed.data);
+        if (providerResolution.ok) {
+          await enqueueCutisAiReplyJob(client, {
+            userId: auth.userId,
+            conversationId: recorded.conversation.id,
+            messageId: recorded.message.id,
+            idempotencyKey: idempotencyKey.data,
+          });
+        }
         const reference = {
           ok: true,
           conversation: recorded.conversation,
           message: recorded.message,
-          assistant: {
-            status: "not_configured",
-            error: "assistant_generation_not_configured",
-            runtimeMode: "not_configured",
-            evidence: "evidence_unavailable",
-          },
+          assistant: providerResolution.ok
+            ? {
+                status: "queued",
+                provider: providerResolution.provider.id,
+                runtimeMode: providerResolution.provider.runtimeMode,
+                evidencePolicy: "user_records_and_curated_reference_only",
+              }
+            : {
+                status: "not_configured",
+                error: providerResolution.error,
+                runtimeMode: "not_configured",
+                evidence: "evidence_unavailable",
+              },
         };
         return {
           status: 201,
@@ -83,6 +105,7 @@ export async function POST(request: Request) {
       },
     });
 
+    if (providerResolution.ok) kickCutisAiWorker("enqueue");
     return NextResponse.json({ ...result.reference, replayed: result.replayed }, { status: result.status });
   } catch (error) {
     if (error instanceof CutisAiConsentRequiredError) return errorResponse("consent_required", 403);

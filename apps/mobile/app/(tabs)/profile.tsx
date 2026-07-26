@@ -19,6 +19,7 @@ import {
   upsertConsents,
 } from "../../src/lib/profile-service";
 import { supabase } from "../../src/lib/supabase";
+import { cancelAllReminders } from "../../src/lib/notifications";
 import { Button, Card, Divider } from "../../src/components/ui";
 import {
   Colors,
@@ -116,6 +117,14 @@ export default function ProfileScreen() {
         style: "destructive",
         onPress: async () => {
           setSigningOut(true);
+          // Cancel every locally scheduled reminder BEFORE the session goes
+          // away: reminder titles/bodies carry health-adjacent content (plan
+          // title, step/product names), and once signed out the notifications
+          // settings screen sits behind the AuthGate, so anything left
+          // scheduled would keep firing with no in-app way to stop it.
+          // Best-effort (local-only API, needs no auth): a notification-API
+          // failure must not trap the user in a signed-in state.
+          await cancelAllReminders().catch(() => undefined);
           await supabase.auth.signOut();
           queryClient.clear();
           resetAuth();
@@ -228,6 +237,23 @@ export default function ProfileScreen() {
         {/* Notifications */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Notifications</Text>
+          <Card style={{ gap: 0, marginBottom: Spacing.sm }}>
+            <Pressable
+              style={styles.aboutRow}
+              onPress={() => router.push("/notifications" as never)}
+              accessibilityRole="button"
+              accessibilityLabel="Open reminder settings"
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={styles.aboutValue}>Reminders</Text>
+                <Text style={styles.reminderDesc}>
+                  Local, on-device reminders — daily log, streak risk, and
+                  treatment AM/PM. Gated by the consents below.
+                </Text>
+              </View>
+              <Text style={styles.aboutLink}>Open →</Text>
+            </Pressable>
+          </Card>
           <Card style={{ gap: 0 }}>
             <ConsentRow
               title="Product Analysis Alerts"
@@ -411,6 +437,12 @@ const styles = StyleSheet.create({
   aboutLabel: { ...Typography.body, color: Colors.textSecondary },
   aboutValue: { ...Typography.bodyMedium, color: Colors.textPrimary },
   aboutLink: { ...Typography.bodyMedium, color: Colors.primary },
+  reminderDesc: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 16,
+  },
   disclaimer: {
     backgroundColor: Colors.gray100,
     borderRadius: BorderRadius.md,

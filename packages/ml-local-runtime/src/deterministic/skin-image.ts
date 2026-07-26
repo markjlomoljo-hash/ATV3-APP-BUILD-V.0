@@ -11,7 +11,8 @@ export const SKIN_IMAGE_EXPECTED_METADATA_FIELDS = [
 ] as const;
 
 export interface SkinImageCaptureMetadata {
-  angle?: string;
+  /** JSON payloads may carry an explicit null; both null and absent render "unknown". */
+  angle?: string | null;
   width?: number;
   height?: number;
   bytes?: number;

@@ -47,6 +47,13 @@ export function useSupabaseSession(): SupabaseSessionState {
         const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
           apply(session);
         });
+        // The component may unmount while getSession() is awaited, in which
+        // case cleanup already ran with `subscription` undefined. Tear the
+        // just-created listener down immediately instead of leaking it.
+        if (!active) {
+          listener.subscription.unsubscribe();
+          return;
+        }
         subscription = listener.subscription;
       } catch {
         // The browser client refuses to initialize without valid public env.

@@ -15,7 +15,7 @@ export const treatmentTaskCompletionSchema = z.object({ skipped: z.boolean() });
 type TaskInput = z.infer<typeof treatmentTaskRequestSchema>;
 type CompletionInput = z.infer<typeof treatmentTaskCompletionSchema>;
 
-function mapTask(row: typeof treatmentTasks.$inferSelect) {
+export function mapTreatmentTask(row: typeof treatmentTasks.$inferSelect) {
   return {
     id: row.id,
     planId: row.planId,
@@ -50,7 +50,7 @@ export async function createTreatmentTask(userId: string, input: TaskInput) {
       skipped: false,
     })
     .returning();
-  return mapTask(row);
+  return mapTreatmentTask(row);
 }
 
 export async function listTreatmentTasks(userId: string, planId?: string) {
@@ -63,7 +63,7 @@ export async function listTreatmentTasks(userId: string, planId?: string) {
     .from(treatmentTasks)
     .where(where)
     .orderBy(asc(treatmentTasks.dueAt), desc(treatmentTasks.createdAt));
-  return rows.map(mapTask);
+  return rows.map(mapTreatmentTask);
 }
 
 export async function completeTreatmentTask(userId: string, taskId: string, input: CompletionInput) {
@@ -77,5 +77,5 @@ export async function completeTreatmentTask(userId: string, taskId: string, inpu
     .where(and(eq(treatmentTasks.id, taskId), eq(treatmentTasks.userId, userId)))
     .returning();
   if (!row) throw new Error("treatment_task_not_found");
-  return mapTask(row);
+  return mapTreatmentTask(row);
 }

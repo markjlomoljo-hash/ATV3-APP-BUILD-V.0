@@ -135,4 +135,19 @@ describe("runBoundedMlWorkerPass", () => {
     expect(outcomes).toHaveLength(2);
     expect(worker).toHaveBeenCalledTimes(2);
   });
+
+  it.each([
+    { raw: "0", expectedJobs: 1, label: "zero clamps up to the minimum of one job" },
+    { raw: "-4", expectedJobs: 1, label: "negative values clamp up to the minimum of one job" },
+    { raw: "9999", expectedJobs: 5, label: "huge values clamp down to the batch ceiling of five" },
+    { raw: "3.9", expectedJobs: 3, label: "fractional values floor to a whole job count" },
+    { raw: "0.4", expectedJobs: 1, label: "sub-one fractions floor then clamp up to one job" },
+  ])("clamps out-of-range ML_WORKER_KICK_MAX_JOBS: $label", async ({ raw, expectedJobs }) => {
+    vi.stubEnv("ML_WORKER_KICK_MAX_JOBS", raw);
+    worker.mockResolvedValue({ status: "completed", jobId: "job-1", outboxId: "outbox-1" });
+
+    const outcomes = await runBoundedMlWorkerPass({ source: "enqueue" });
+    expect(outcomes).toHaveLength(expectedJobs);
+    expect(worker).toHaveBeenCalledTimes(expectedJobs);
+  });
 });

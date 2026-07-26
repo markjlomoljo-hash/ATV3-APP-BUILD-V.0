@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
 import { useAuthStore } from "../../src/stores/auth";
@@ -20,13 +21,19 @@ import {
   logSleep,
   logFood,
   logStress,
-  logTreatmentCheckin,
   logSkinState,
   SleepLog,
   FoodLog,
   TreatmentCheckin,
-  WriteOutcome,
 } from "../../src/lib/daily-logs-service";
+import {
+  PLAN_CHECKIN_STATUSES,
+  activePlanFrom,
+  createPlanCheckin,
+  fetchTreatmentPlans,
+  type PlanCheckinStatus,
+  type TreatmentPlan,
+} from "../../src/lib/treatment-service";
 import {
   getLocalOutboxSummary,
   replayPendingOutboxEvents,
@@ -102,10 +109,22 @@ interface QuickLogModalProps {
   ) => void;
   onSaveFood: (meal: string, desc: string, notes: string) => void;
   onSaveStress: (level: number, notes: string) => void;
-  onSaveTreatment: (status: "done" | "skipped" | "partial", irritation: number | undefined, notes: string) => void;
+  onSaveTreatment: (status: PlanCheckinStatus, irritation: number | undefined, notes: string) => void;
   onSaveSkin: (severity: SkinStateSeverity, notes: string) => void;
+  /** Real active plan check-ins are recorded against; null when none exists. */
+  treatmentPlan: TreatmentPlan | null;
+  treatmentPlanLoading: boolean;
+  onOpenTreatment: () => void;
   saving: boolean;
 }
+
+const TREATMENT_STATUS_LABELS: Record<PlanCheckinStatus, string> = {
+  used: "✓ Used as planned",
+  partial: "~ Partially used",
+  skipped: "✗ Skipped",
+  delayed: "⏱ Delayed",
+  stopped: "⛔ Stopped",
+};
 
 function QuickLogModal({
   visible,
@@ -116,6 +135,9 @@ function QuickLogModal({
   onSaveStress,
   onSaveTreatment,
   onSaveSkin,
+  treatmentPlan,
+  treatmentPlanLoading,
+  onOpenTreatment,
   saving,
 }: QuickLogModalProps) {
   const [sleepQuality, setSleepQuality] = useState(0);
@@ -124,7 +146,7 @@ function QuickLogModal({
   const [mealType, setMealType] = useState("");
   const [mealDesc, setMealDesc] = useState("");
   const [stressLevel, setStressLevel] = useState(0);
-  const [treatmentStatus, setTreatmentStatus] = useState<"done" | "skipped" | "partial" | "">("");
+  const [treatmentStatus, setTreatmentStatus] = useState<PlanCheckinStatus | "">("");
   const [irritation, setIrritation] = useState("");
   const [skinSeverity, setSkinSeverity] = useState<SkinStateSeverity | "">("");
   const [notes, setNotes] = useState("");
@@ -151,6 +173,7 @@ function QuickLogModal({
       if (!stressLevel) { Alert.alert("Please select a stress level."); return; }
       onSaveStress(stressLevel, notes);
     } else if (logType === "treatment") {
+      if (!treatmentPlan) { Alert.alert("No active plan", "Record a treatment plan first — check-ins are saved against a real plan."); return; }
       if (!treatmentStatus) { Alert.alert("Please select treatment status."); return; }
       const irritationNum = irritation ? parseInt(irritation, 10) : undefined;
       onSaveTreatment(treatmentStatus, irritationNum, notes);
@@ -172,6 +195,13 @@ function QuickLogModal({
     setSkinSeverity("");
     setNotes("");
   };
+
+  // Reset on every open. Modal's onDismiss never fires on Android, so a
+  // dismiss-time reset left stale selections behind after a successful save
+  // there; resetting when the modal becomes visible covers both platforms.
+  useEffect(() => {
+    if (visible) reset();
+  }, [visible, logType]);
 
   return (
     <Modal
@@ -295,33 +325,55 @@ function QuickLogModal({
             </View>
           )}
 
-          {/* Treatment form */}
+          {/* Treatment form — plan-aware: check-ins are recorded against the
+              real active plan through the backend contract (plan_id is
+              validated and written server-side). */}
           {logType === "treatment" && (
             <View style={styles.modalSection}>
-              <Text style={styles.modalLabel}>Did you apply/take your treatment?</Text>
-              {(["done", "partial", "skipped"] as const).map((s) => (
-                <Pressable
-                  key={s}
-                  onPress={() => setTreatmentStatus(s)}
-                  style={[styles.option, treatmentStatus === s && styles.optionSelected]}
-                >
-                  <Text style={[styles.optionText, treatmentStatus === s && styles.optionTextSelected]}>
-                    {s === "done" ? "✓ Done" : s === "partial" ? "~ Partially done" : "✗ Skipped"}
+              {treatmentPlanLoading && (
+                <Text style={styles.modalHint}>Loading your treatment plan...</Text>
+              )}
+              {!treatmentPlanLoading && !treatmentPlan && (
+                <>
+                  <Text style={styles.modalLabel}>No active treatment plan</Text>
+                  <Text style={styles.modalHint}>
+                    Check-ins are saved against a real plan so adherence can be
+                    computed from real history. Record your provider-directed
+                    plan first.
                   </Text>
-                </Pressable>
-              ))}
-              <Text style={[styles.modalLabel, { marginTop: Spacing.md }]}>
-                Skin irritation (0–10, optional)
-              </Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="e.g. 3"
-                keyboardType="number-pad"
-                value={irritation}
-                onChangeText={setIrritation}
-                placeholderTextColor={Colors.textMuted}
-                maxLength={2}
-              />
+                  <Button title="Open Treatment" onPress={onOpenTreatment} />
+                </>
+              )}
+              {treatmentPlan && (
+                <>
+                  <Text style={styles.modalLabel}>
+                    How did today&apos;s plan go? ({treatmentPlan.title})
+                  </Text>
+                  {PLAN_CHECKIN_STATUSES.map((s) => (
+                    <Pressable
+                      key={s}
+                      onPress={() => setTreatmentStatus(s)}
+                      style={[styles.option, treatmentStatus === s && styles.optionSelected]}
+                    >
+                      <Text style={[styles.optionText, treatmentStatus === s && styles.optionTextSelected]}>
+                        {TREATMENT_STATUS_LABELS[s]}
+                      </Text>
+                    </Pressable>
+                  ))}
+                  <Text style={[styles.modalLabel, { marginTop: Spacing.md }]}>
+                    Skin irritation (0–10, optional)
+                  </Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="e.g. 3"
+                    keyboardType="number-pad"
+                    value={irritation}
+                    onChangeText={setIrritation}
+                    placeholderTextColor={Colors.textMuted}
+                    maxLength={2}
+                  />
+                </>
+              )}
             </View>
           )}
 
@@ -430,12 +482,22 @@ function FoodLogItem({ log }: { log: FoodLog }) {
 }
 
 function TreatmentItem({ log }: { log: TreatmentCheckin }) {
+  // Server vocabulary: used | partial | skipped | delayed | stopped
+  // ("done" appears only in legacy device-queued rows).
   const statusIcon =
-    log.status === "done" ? "✓" : log.status === "partial" ? "~" : "✗";
-  const statusColor =
-    log.status === "done"
-      ? Colors.success
+    log.status === "used" || log.status === "done"
+      ? "✓"
       : log.status === "partial"
+        ? "~"
+        : log.status === "delayed"
+          ? "⏱"
+          : log.status === "stopped"
+            ? "⛔"
+            : "✗";
+  const statusColor =
+    log.status === "used" || log.status === "done"
+      ? Colors.success
+      : log.status === "partial" || log.status === "delayed"
       ? Colors.warning
       : Colors.error;
   return (
@@ -461,6 +523,7 @@ function TreatmentItem({ log }: { log: TreatmentCheckin }) {
 
 export default function LogsScreen() {
   const { user } = useAuthStore();
+  const router = useRouter();
   const queryClient = useQueryClient();
   const [modalVisible, setModalVisible] = useState(false);
   const [activeLogType, setActiveLogType] = useState<LogType | "">("");
@@ -470,6 +533,14 @@ export default function LogsScreen() {
     queryFn: () => fetchRecentSleepLogs(user!.id, 7),
     enabled: !!user,
   });
+
+  // Real plans back the plan-aware treatment check-in flow.
+  const { data: treatmentPlans = [], isLoading: plansLoading } = useQuery({
+    queryKey: ["treatment-plans", user?.id],
+    queryFn: () => fetchTreatmentPlans(user!.id),
+    enabled: !!user,
+  });
+  const activeTreatmentPlan = activePlanFrom(treatmentPlans);
 
   const { data: foodLogs = [], isLoading: foodLoading } = useQuery({
     queryKey: ["food-logs", user?.id],
@@ -497,7 +568,7 @@ export default function LogsScreen() {
   const isLoading = sleepLoading || foodLoading || treatmentLoading;
 
   const afterWrite = (
-    outcome: WriteOutcome<unknown>,
+    outcome: { status: "saved" | "queued_offline" },
     keys: (string | undefined)[][]
   ) => {
     for (const key of keys) queryClient.invalidateQueries({ queryKey: key });
@@ -516,7 +587,7 @@ export default function LogsScreen() {
       quality: number;
       sleep_time?: string;
       wake_time?: string;
-      notes: string;
+      notes?: string;
     }) => logSleep(user!.id, args),
     onSuccess: (outcome) =>
       afterWrite(outcome, [["sleep-logs", user?.id], ["today-logs", user?.id]]),
@@ -538,12 +609,32 @@ export default function LogsScreen() {
     onError: (e) => Alert.alert("Save Failed", e instanceof Error ? e.message : "Please try again."),
   });
 
+  // Plan-aware check-in through the backend contract (writes real plan_id).
   const { mutate: saveTreatment, isPending: savingTreatment } = useMutation({
-    mutationFn: (args: { status: "done" | "skipped" | "partial"; irritation?: number; notes: string }) =>
-      logTreatmentCheckin(user!.id, args),
+    mutationFn: (args: { status: PlanCheckinStatus; irritation?: number; notes?: string }) =>
+      createPlanCheckin({
+        planId: activeTreatmentPlan!.id,
+        status: args.status,
+        irritation: args.irritation,
+        notes: args.notes,
+      }),
     onSuccess: (outcome) =>
-      afterWrite(outcome, [["treatment-checkins", user?.id], ["today-logs", user?.id]]),
-    onError: (e) => Alert.alert("Save Failed", e instanceof Error ? e.message : "Please try again."),
+      afterWrite(outcome, [
+        ["treatment-checkins", user?.id],
+        ["plan-checkins", user?.id],
+        ["today-logs", user?.id],
+      ]),
+    onError: (e) => {
+      const message = e instanceof Error ? e.message : "unknown_error";
+      Alert.alert(
+        "Save Failed",
+        message === "api_not_configured"
+          ? "The cloud API is not configured (EXPO_PUBLIC_API_BASE_URL is unset), so check-ins cannot be recorded. Nothing was saved."
+          : message === "auth_required"
+            ? "Your session expired — sign in again to record check-ins. Nothing was saved."
+            : `${message}. Nothing was saved.`
+      );
+    },
   });
 
   const { mutate: saveSkin, isPending: savingSkin } = useMutation({
@@ -748,12 +839,20 @@ export default function LogsScreen() {
         logType={activeLogType}
         onClose={() => setModalVisible(false)}
         onSaveSleep={(q, bed, wake, n) =>
-          saveSleep({ quality: q, sleep_time: bed, wake_time: wake, notes: n })
+          // Notes only when actually typed — an absent value preserves notes
+          // saved earlier today instead of clobbering them (see logSleep).
+          saveSleep({ quality: q, sleep_time: bed, wake_time: wake, notes: n || undefined })
         }
         onSaveFood={(m, d, n) => saveFood({ meal_type: m, description: d, notes: n })}
         onSaveStress={(l, n) => saveStress({ stress_level: l, notes: n })}
-        onSaveTreatment={(s, ir, n) => saveTreatment({ status: s, irritation: ir ?? undefined, notes: n })}
+        onSaveTreatment={(s, ir, n) => saveTreatment({ status: s, irritation: ir ?? undefined, notes: n || undefined })}
         onSaveSkin={(sev, n) => saveSkin({ severity: sev, notes: n || undefined })}
+        treatmentPlan={activeTreatmentPlan}
+        treatmentPlanLoading={plansLoading}
+        onOpenTreatment={() => {
+          setModalVisible(false);
+          router.push("/treatment" as never);
+        }}
         saving={saving}
       />
     </SafeAreaView>

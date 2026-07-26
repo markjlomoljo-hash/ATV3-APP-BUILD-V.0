@@ -1,0 +1,9 @@
+{
+  "//": "Typechecks the test files the app tsconfig excludes (**/*.test.ts). Run via `npm run typecheck:tests`, which `npm run typecheck` includes. Tests execute under the repo-root vitest (bunx vitest run apps/mobile/...); vitest types resolve from the repo-root node_modules.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*.test.ts", "src/**/__tests__/**/*.ts"],
+  "exclude": ["node_modules"]
+}

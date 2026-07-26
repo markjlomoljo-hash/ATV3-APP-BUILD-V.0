@@ -1,5 +1,6 @@
 export type ModuleReadiness =
   | "ready"
+  | "not_instrumented"
   | "insufficient_data"
   | "not_configured"
   | "auth_required"

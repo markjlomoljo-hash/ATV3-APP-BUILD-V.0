@@ -15,6 +15,15 @@ vi.mock("@/db", () => ({
   getDb: vi.fn(),
   DatabaseConfigurationError: class DatabaseConfigurationError extends Error {},
 }));
+vi.mock("@/lib/acnetrex/cutisai/jobs", () => ({
+  enqueueCutisAiReplyJob: vi.fn(),
+}));
+vi.mock("@/lib/acnetrex/cutisai/provider", () => ({
+  resolveCutisAiProvider: vi.fn(),
+}));
+vi.mock("@/lib/acnetrex/cutisai/worker-kick", () => ({
+  kickCutisAiWorker: vi.fn(),
+}));
 
 import { GET, POST } from "./route";
 import { DatabaseConfigurationError, getDb } from "@/db";
@@ -23,6 +32,9 @@ import {
   listCutisAiConversations,
   recordCutisAiMessage,
 } from "@/lib/acnetrex/memory/conversations";
+import { enqueueCutisAiReplyJob } from "@/lib/acnetrex/cutisai/jobs";
+import { resolveCutisAiProvider } from "@/lib/acnetrex/cutisai/provider";
+import { kickCutisAiWorker } from "@/lib/acnetrex/cutisai/worker-kick";
 import { executeIdempotent } from "@/lib/reliability/idempotency";
 import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
 
@@ -31,6 +43,9 @@ const database = vi.mocked(getDb);
 const list = vi.mocked(listCutisAiConversations);
 const record = vi.mocked(recordCutisAiMessage);
 const idempotent = vi.mocked(executeIdempotent);
+const enqueueReply = vi.mocked(enqueueCutisAiReplyJob);
+const resolveProvider = vi.mocked(resolveCutisAiProvider);
+const kickWorker = vi.mocked(kickCutisAiWorker);
 
 const userId = "00000000-0000-0000-0000-000000000001";
 const conversationId = "11111111-1111-4111-8111-111111111111";
@@ -49,6 +64,14 @@ describe("CutisAI conversation routes", () => {
     vi.clearAllMocks();
     auth.mockResolvedValue({ ok: true, userId });
     database.mockReturnValue({} as ReturnType<typeof getDb>);
+    resolveProvider.mockResolvedValue({
+      ok: true,
+      provider: {
+        id: "deterministic",
+        runtimeMode: "deterministic_local",
+        generate: vi.fn(),
+      },
+    });
   });
 
   it("requires authenticated access before listing conversations", async () => {
@@ -108,7 +131,7 @@ describe("CutisAI conversation routes", () => {
     expect(await response.json()).toEqual({ ok: false, error: "database_unavailable" });
   });
 
-  it("persists only a validated user message and returns an honest assistant state", async () => {
+  it("persists a validated user message, queues a durable reply job, and kicks the worker", async () => {
     record.mockResolvedValue({
       conversation: {
         id: conversationId,
@@ -148,7 +171,12 @@ describe("CutisAI conversation routes", () => {
       ok: true,
       conversation: { id: conversationId },
       message: { role: "user" },
-      assistant: { status: "not_configured", evidence: "evidence_unavailable" },
+      assistant: {
+        status: "queued",
+        provider: "deterministic",
+        runtimeMode: "deterministic_local",
+        evidencePolicy: "user_records_and_curated_reference_only",
+      },
       replayed: false,
     });
     expect(record).toHaveBeenCalledWith(
@@ -156,6 +184,67 @@ describe("CutisAI conversation routes", () => {
       userId,
       expect.objectContaining({ message: "What should I log today?" }),
     );
+    expect(enqueueReply).toHaveBeenCalledWith(expect.anything(), {
+      userId,
+      conversationId,
+      messageId,
+      idempotencyKey: "cutisai-message-key-01",
+    });
+    expect(kickWorker).toHaveBeenCalledWith("enqueue");
+  });
+
+  it("fails closed without queueing a reply when an unavailable LLM provider is requested", async () => {
+    resolveProvider.mockResolvedValue({
+      ok: false,
+      error: "llm_provider_not_configured",
+      requested: "external-llm",
+    });
+    record.mockResolvedValue({
+      conversation: {
+        id: conversationId,
+        title: "What should I log today?",
+        status: "active",
+        consentScope: "personal_memory",
+        lastMessageAt: "2026-07-13T00:00:00.000Z",
+        createdAt: "2026-07-13T00:00:00.000Z",
+        updatedAt: "2026-07-13T00:00:00.000Z",
+      },
+      message: {
+        id: messageId,
+        conversationId,
+        role: "user",
+        content: "What should I log today?",
+        requestedTools: [],
+        runtimeMode: null,
+        modelName: null,
+        modelVersion: null,
+        evidenceRefs: [],
+        createdAt: "2026-07-13T00:00:00.000Z",
+      },
+    });
+    idempotent.mockImplementation(async (options) => {
+      const result = await options.execute({} as never);
+      return { ...result, replayed: false };
+    });
+
+    const response = await POST(
+      request(
+        { message: "What should I log today?", requestedTools: [] },
+        { "idempotency-key": "cutisai-message-key-06" },
+      ),
+    );
+    expect(response.status).toBe(201);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      assistant: {
+        status: "not_configured",
+        error: "llm_provider_not_configured",
+        runtimeMode: "not_configured",
+        evidence: "evidence_unavailable",
+      },
+    });
+    expect(enqueueReply).not.toHaveBeenCalled();
+    expect(kickWorker).not.toHaveBeenCalled();
   });
 
   it("returns database_unavailable rather than acknowledging a write", async () => {

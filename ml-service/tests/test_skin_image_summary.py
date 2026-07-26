@@ -105,6 +105,23 @@ def test_mixed_metadata_coverage_reports_partial_state() -> None:
     assert result["zones_missing_metadata"] == ["chin_lower"]
 
 
+def test_json_null_angles_render_unknown_like_the_ts_twin() -> None:
+    result = summarize_skin_image_metadata(
+        {
+            "images": [
+                {"angle": None, "width": 960, "height": 540},
+                {"width": 960, "height": 540},
+            ]
+        }
+    )
+
+    assert [zone["angle"] for zone in result["zone_summaries"]] == [
+        "unknown",
+        "unknown",
+    ]
+    assert result["zones_missing_metadata"] == ["unknown"]
+
+
 def test_non_array_images_are_rejected() -> None:
     with pytest.raises(ValueError, match="images must be an array"):
         summarize_skin_image_metadata({"images": "not-a-list"})

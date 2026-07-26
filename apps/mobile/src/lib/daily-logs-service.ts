@@ -7,6 +7,7 @@ import {
   replayPendingOutboxEvents,
 } from "./local-outbox";
 import { isNetworkAvailable, isNetworkError } from "./network";
+import { isCompletedCheckinStatus } from "./treatment-protocol";
 import type { SkinStateSeverity } from "./contracts";
 
 // ─── Write outcome contract ──────────────────────────────────────────────────
@@ -80,7 +81,12 @@ export interface TreatmentCheckin {
   plan_id: string | null;
   user_id: string;
   checkin_date: string;
-  status: string; // done, skipped, partial
+  /**
+   * Server vocabulary (treatmentCheckinRequestSchema): used | partial |
+   * skipped | delayed | stopped. Legacy rows written by the pre-plan direct
+   * insert path may still carry "done".
+   */
+  status: string;
   irritation: number | null; // 0-10
   notes: string | null;
   created_at: string;
@@ -115,6 +121,13 @@ export interface SkinStateLog {
   updated_at: string;
 }
 
+export type TodayLogSource =
+  | "sleep"
+  | "food"
+  | "stress"
+  | "treatment"
+  | "skin_state";
+
 export interface TodaySummary {
   date: string;
   skinStateLogged: boolean;
@@ -123,6 +136,13 @@ export interface TodaySummary {
   treatmentCheckedIn: boolean;
   stressLogged: boolean;
   logsCount: number;
+  /**
+   * Sources whose read failed this pass. Their *Logged flags above are
+   * UNKNOWN — the UI must render them as unavailable, never as "not logged".
+   * A partial read is surfaced instead of being silently swallowed into
+   * false negatives.
+   */
+  unavailableSources: TodayLogSource[];
 }
 
 // ─── Fetch today summary ──────────────────────────────────────────────────────
@@ -167,14 +187,25 @@ export async function fetchTodayLogs(userId: string): Promise<TodaySummary> {
         .limit(1),
     ]);
 
-  const dailyLog = dailyResult.data?.[0] as DailyLog | undefined;
-  const sleepLogged = (sleepResult.data?.length ?? 0) > 0;
-  const foodLogged = (foodResult.data?.length ?? 0) > 0;
-  const treatmentCheckedIn = (treatmentResult.data?.length ?? 0) > 0;
-  const stressLogged = !!dailyLog?.stress_level;
-  const skinStateLogged = (skinResult.data?.length ?? 0) > 0;
+  // Per-query errors are surfaced, not swallowed: a failed read means the
+  // source's state is unknown, and rendering it as "not logged" would be a
+  // fabricated negative.
+  const unavailableSources: TodayLogSource[] = [];
+  if (dailyResult.error) unavailableSources.push("stress");
+  if (sleepResult.error) unavailableSources.push("sleep");
+  if (foodResult.error) unavailableSources.push("food");
+  if (treatmentResult.error) unavailableSources.push("treatment");
+  if (skinResult.error) unavailableSources.push("skin_state");
 
-  // Count total logged items for today
+  const dailyLog = dailyResult.data?.[0] as DailyLog | undefined;
+  const sleepLogged = !sleepResult.error && (sleepResult.data?.length ?? 0) > 0;
+  const foodLogged = !foodResult.error && (foodResult.data?.length ?? 0) > 0;
+  const treatmentCheckedIn =
+    !treatmentResult.error && (treatmentResult.data?.length ?? 0) > 0;
+  const stressLogged = !dailyResult.error && !!dailyLog?.stress_level;
+  const skinStateLogged = !skinResult.error && (skinResult.data?.length ?? 0) > 0;
+
+  // Count total logged items for today (only sources that actually loaded)
   let count = 0;
   if (sleepLogged) count++;
   if (foodLogged) count++;
@@ -190,6 +221,7 @@ export async function fetchTodayLogs(userId: string): Promise<TodaySummary> {
     treatmentCheckedIn,
     stressLogged,
     logsCount: count,
+    unavailableSources,
   };
 }
 
@@ -279,10 +311,12 @@ export async function logSleep(
     log_date: today,
     quality: data.quality,
     // Only written when actually provided — a quality-only quick log must
-    // never erase real times the user logged earlier today.
+    // never erase real times or notes the user logged earlier today. (The
+    // offline payload follows the same rule: replay-as-update spreads only
+    // the keys present here, so absent fields stay preserved.)
     ...(data.sleep_time ? { sleep_time: data.sleep_time } : {}),
     ...(data.wake_time ? { wake_time: data.wake_time } : {}),
-    notes: data.notes ?? null,
+    ...(data.notes !== undefined ? { notes: data.notes } : {}),
   };
   const dedupKey = `${userId}:sleep_log.created:${today}`;
 
@@ -317,7 +351,9 @@ export async function logSleep(
         quality: data.quality,
         ...(data.sleep_time ? { sleep_time: data.sleep_time } : {}),
         ...(data.wake_time ? { wake_time: data.wake_time } : {}),
-        notes: data.notes ?? null,
+        // Re-logging without notes must preserve notes saved earlier today,
+        // not clobber them with null.
+        ...(data.notes !== undefined ? { notes: data.notes } : {}),
         updated_at: new Date().toISOString(),
       })
       .eq("id", existingId)
@@ -482,6 +518,14 @@ export async function logStress(
 
 // ─── Log treatment checkin ────────────────────────────────────────────────────
 
+/**
+ * @deprecated Phase 2: check-ins are plan-aware and go through the backend
+ * contract (treatment-service createPlanCheckin), which validates plan
+ * ownership and writes the NOT NULL plan_id the live schema requires. This
+ * direct-insert path writes no plan_id and is no longer used by any screen;
+ * it remains only so previously queued offline events keep their replay
+ * handler (local-outbox "treatment_checkin.created").
+ */
 export async function logTreatmentCheckin(
   userId: string,
   data: {
@@ -719,12 +763,17 @@ export async function fetchInsightsData(
         sleepLogs.filter((l) => l.quality !== null).length
       : null;
 
-  const doneTreatments = treatmentCheckins.filter(
-    (c) => c.status === "done"
+  // Completed applications per the ONE shared adherence rule
+  // (treatment-protocol.isCompletedCheckinStatus): "used" from the server
+  // check-in vocabulary plus legacy "done" rows. Counting anything else —
+  // or only the legacy value — would fabricate a wrong adherence ratio for
+  // real history.
+  const completedTreatments = treatmentCheckins.filter((c) =>
+    isCompletedCheckinStatus(c.status)
   ).length;
   const treatmentAdherence =
     treatmentCheckins.length > 0
-      ? doneTreatments / treatmentCheckins.length
+      ? completedTreatments / treatmentCheckins.length
       : null;
 
   const totalLogs = sleepLogs.length + foodLogs.length + treatmentCheckins.length;

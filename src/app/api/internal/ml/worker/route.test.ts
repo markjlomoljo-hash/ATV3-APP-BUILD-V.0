@@ -62,7 +62,7 @@ describe("GET /api/internal/ml/worker", () => {
     vi.clearAllMocks();
   });
 
-  it("supports a Vercel Cron-style bearer secret", async () => {
+  it("supports a Vercel Cron-style bearer secret and drains the full bounded batch", async () => {
     vi.stubEnv("ACNETREX_ML_WORKER_ENABLED", "true");
     vi.stubEnv("ACNETREX_ML_WORKER_SECRET", "worker-secret");
     vi.stubEnv("CRON_SECRET", "cron-secret");
@@ -74,6 +74,22 @@ describe("GET /api/internal/ml/worker", () => {
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true, outcomes: [{ status: "idle" }] });
-    expect(processBatch).toHaveBeenCalledWith({ maxJobs: 1, workerId: undefined });
+    // Crons cannot send a JSON body, so the GET backstop uses the POST
+    // contract's batch ceiling instead of a single job per daily firing.
+    expect(processBatch).toHaveBeenCalledWith({ maxJobs: 10, workerId: undefined });
+  });
+
+  it("still requires cron or worker authentication", async () => {
+    vi.stubEnv("ACNETREX_ML_WORKER_ENABLED", "true");
+    vi.stubEnv("ACNETREX_ML_WORKER_SECRET", "worker-secret");
+    vi.stubEnv("CRON_SECRET", "cron-secret");
+    const response = await GET(
+      new Request("https://example.test/api/internal/ml/worker", {
+        headers: { authorization: "Bearer wrong-secret" },
+      }),
+    );
+    expect(response.status).toBe(401);
+    expect(await response.json()).toEqual({ ok: false, error: "worker_auth_required" });
+    expect(processBatch).not.toHaveBeenCalled();
   });
 });

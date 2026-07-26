@@ -104,7 +104,7 @@ describe("deterministic local engines", () => {
       readFileSync(resolve("packages/ml-local-runtime/tests/fixtures/skin-image-parity.json"), "utf8"),
     ) as {
       images: Array<{
-        angle: string;
+        angle: string | null;
         width?: number;
         height?: number;
         bytes?: number;
@@ -152,6 +152,16 @@ describe("deterministic local engines", () => {
     expect(metadataFree.zonesMissingMetadata).toEqual(["front"]);
     expect(metadataFree.zoneSummaries[0]?.rednessIndex).toBeNull();
     expect(metadataFree.limitations[1]).toMatch(/no skin condition is detected, graded, classified, or assessed/i);
+  });
+
+  it("labels JSON-null and absent skin image angles as unknown, matching the Python twin", () => {
+    const result = summarizeSkinImageMetadata([
+      { angle: null, width: 960, height: 540 },
+      { width: 960, height: 540 },
+    ]);
+
+    expect(result.zoneSummaries.map((zone) => zone.angle)).toEqual(["unknown", "unknown"]);
+    expect(result.zonesMissingMetadata).toEqual(["unknown"]);
   });
 
   it("checks five-angle capture metadata without claiming lesion detection", () => {

@@ -75,6 +75,7 @@ vi.mock("../local-outbox", () => ({
 import {
   logSleep,
   logSkinState,
+  fetchInsightsData,
   fetchLoggingStreak,
   fetchTodayLogs,
 } from "../daily-logs-service";
@@ -294,6 +295,45 @@ describe("logSleep bed/wake times (SleepDerm input path)", () => {
     expect(updates).not.toHaveProperty("wake_time");
   });
 
+  it("preserves saved notes when re-logging without notes", async () => {
+    state.setHandler((call) => {
+      if (call.table === "sleep_logs" && call.ops.some(([op]) => op === "select")) {
+        return { data: [{ id: "existing-1" }], error: null };
+      }
+      return { data: { id: "existing-1" }, error: null };
+    });
+
+    await logSleep(USER, { quality: 4 });
+
+    const updateCall = state.supabaseCalls.find(
+      (c) => c.table === "sleep_logs" && c.ops.some(([op]) => op === "update")
+    );
+    const [updates] = updateCall!.ops.find(([op]) => op === "update")![1] as [
+      Record<string, unknown>
+    ];
+    // A notes-less re-log must not clobber notes saved earlier today.
+    expect(updates).not.toHaveProperty("notes");
+  });
+
+  it("still writes notes when the user actually typed them", async () => {
+    state.setHandler((call) => {
+      if (call.table === "sleep_logs" && call.ops.some(([op]) => op === "select")) {
+        return { data: [{ id: "existing-1" }], error: null };
+      }
+      return { data: { id: "existing-1" }, error: null };
+    });
+
+    await logSleep(USER, { quality: 4, notes: "slept badly" });
+
+    const updateCall = state.supabaseCalls.find(
+      (c) => c.table === "sleep_logs" && c.ops.some(([op]) => op === "update")
+    );
+    const [updates] = updateCall!.ops.find(([op]) => op === "update")![1] as [
+      Record<string, unknown>
+    ];
+    expect(updates.notes).toBe("slept badly");
+  });
+
   it("keeps times in the offline payload so replay persists them", async () => {
     state.network.online = false;
 
@@ -341,6 +381,45 @@ describe("fetchTodayLogs", () => {
   it("reports nothing logged when nothing exists", async () => {
     const summary = await fetchTodayLogs(USER);
     expect(summary.skinStateLogged).toBe(false);
+    expect(summary.logsCount).toBe(0);
+    expect(summary.unavailableSources).toEqual([]);
+  });
+
+  it("surfaces per-query failures as unavailable sources, not false negatives", async () => {
+    state.setHandler((call) => {
+      if (call.table === "sleep_logs") {
+        return { data: null, error: { message: "TypeError: Network request failed" } };
+      }
+      if (call.table === "treatment_checkins") {
+        return { data: null, error: { message: "permission denied" } };
+      }
+      if (call.table === "food_logs") return { data: [{ id: "food-1" }], error: null };
+      return { data: [], error: null };
+    });
+
+    const summary = await fetchTodayLogs(USER);
+
+    // Failed sources are reported by name so the UI renders "unknown",
+    // never a fabricated "not logged".
+    expect(summary.unavailableSources.sort()).toEqual(["sleep", "treatment"]);
+    expect(summary.sleepLogged).toBe(false);
+    expect(summary.treatmentCheckedIn).toBe(false);
+    // Sources that loaded still count honestly.
+    expect(summary.foodLogged).toBe(true);
+    expect(summary.logsCount).toBe(1);
+  });
+
+  it("reports every source unavailable when all reads fail", async () => {
+    state.setHandler(() => ({
+      data: null,
+      error: { message: "TypeError: Network request failed" },
+    }));
+
+    const summary = await fetchTodayLogs(USER);
+
+    expect(summary.unavailableSources.sort()).toEqual(
+      ["food", "skin_state", "sleep", "stress", "treatment"]
+    );
     expect(summary.logsCount).toBe(0);
   });
 });
@@ -427,5 +506,60 @@ describe("fetchLoggingStreak", () => {
     });
 
     await expect(fetchLoggingStreak(USER)).rejects.toThrow("streak_fetch_failed");
+  });
+});
+
+describe("fetchInsightsData treatment adherence", () => {
+  it('counts the server vocabulary — an all-"used" history is 100%, never 0%', async () => {
+    // Regression: the old filter only accepted the legacy "done" status, so
+    // real plan-aware check-ins ("used") produced a fabricated 0% adherence.
+    state.setHandler((call) => {
+      if (call.table === "treatment_checkins") {
+        return {
+          data: Array.from({ length: 10 }, (_, i) => ({
+            id: `checkin-${i}`,
+            status: "used",
+            checkin_date: dateStringDaysAgo(i),
+          })),
+          error: null,
+        };
+      }
+      return { data: [], error: null };
+    });
+
+    const summary = await fetchInsightsData(USER, 30);
+
+    expect(summary.treatmentAdherence).toBe(1);
+  });
+
+  it("applies the ONE shared rule: used + legacy done complete; partial/skipped/delayed/stopped do not", async () => {
+    state.setHandler((call) => {
+      if (call.table === "treatment_checkins") {
+        return {
+          data: [
+            { id: "c1", status: "used", checkin_date: dateStringDaysAgo(0) },
+            { id: "c2", status: "used", checkin_date: dateStringDaysAgo(1) },
+            { id: "c3", status: "done", checkin_date: dateStringDaysAgo(2) }, // legacy row
+            { id: "c4", status: "partial", checkin_date: dateStringDaysAgo(3) },
+            { id: "c5", status: "skipped", checkin_date: dateStringDaysAgo(4) },
+            { id: "c6", status: "delayed", checkin_date: dateStringDaysAgo(5) },
+            { id: "c7", status: "stopped", checkin_date: dateStringDaysAgo(6) },
+            { id: "c8", status: "used", checkin_date: dateStringDaysAgo(7) },
+          ],
+          error: null,
+        };
+      }
+      return { data: [], error: null };
+    });
+
+    const summary = await fetchInsightsData(USER, 30);
+
+    // 4 completed applications (3 used + 1 legacy done) out of 8 check-ins.
+    expect(summary.treatmentAdherence).toBe(0.5);
+  });
+
+  it("reports null adherence — not a fabricated 0 — when no check-ins exist", async () => {
+    const summary = await fetchInsightsData(USER, 30);
+    expect(summary.treatmentAdherence).toBeNull();
   });
 });

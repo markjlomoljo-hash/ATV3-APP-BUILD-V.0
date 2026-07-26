@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "../../src/stores/auth";
 import {
@@ -12,6 +13,8 @@ import {
   type SleepAnalysisOutcome,
   type CloudSubmissionState,
 } from "../../src/lib/sleep-analysis";
+import { buildInsightWithUncertainty } from "../../src/lib/insight-uncertainty";
+import type { UncertaintyMarker } from "../../src/lib/contracts";
 import { Button, Card, EmptyState } from "../../src/components/ui";
 import {
   Colors,
@@ -21,6 +24,60 @@ import {
 } from "../../src/components/ui/theme";
 
 const MIN_LOGS_FOR_INSIGHTS = 5;
+const INSIGHTS_WINDOW_DAYS = 30;
+// Same threshold the render gate below already applies to the sleep pattern.
+const SLEEP_INSIGHT_MIN_LOGS = 3;
+// A week of daily check-ins before the adherence ratio counts as reliable.
+const ADHERENCE_MIN_CHECKINS = 7;
+
+// ─── Uncertainty marker rendering (contracts.ts UncertaintyMarker) ───────────
+
+const CONFIDENCE_COLORS: Record<UncertaintyMarker["confidence"], string> = {
+  high: Colors.success,
+  medium: Colors.warning,
+  low: Colors.textMuted,
+};
+
+/**
+ * Renders the InsightWithUncertainty contract fields for an insight card:
+ * confidence pill, basis, real data-point coverage, and the coverage-derived
+ * caveat — replacing the old static caveat sentence.
+ */
+function UncertaintyRow({
+  marker,
+  dataPointCount,
+  minDataPointsRequired,
+}: {
+  marker: UncertaintyMarker;
+  dataPointCount: number;
+  minDataPointsRequired: number;
+}) {
+  return (
+    <View style={styles.uncertaintyRow}>
+      <View style={styles.uncertaintyBadges}>
+        <View
+          style={[
+            styles.confidencePill,
+            { borderColor: CONFIDENCE_COLORS[marker.confidence] },
+          ]}
+        >
+          <Text
+            style={[
+              styles.confidencePillText,
+              { color: CONFIDENCE_COLORS[marker.confidence] },
+            ]}
+          >
+            {marker.confidence} confidence
+          </Text>
+        </View>
+        <Text style={styles.uncertaintyMeta}>
+          {marker.basis} · {dataPointCount}/{minDataPointsRequired} data points
+        </Text>
+      </View>
+      {marker.caveat && <Text style={styles.uncertaintyCaveat}>{marker.caveat}</Text>}
+    </View>
+  );
+}
 
 function SleepQualityBar({ quality, date }: { quality: number; date: string }) {
   const colors: Record<number, string> = {
@@ -56,7 +113,13 @@ function SleepQualityBar({ quality, date }: { quality: number; date: string }) {
   );
 }
 
-function AdherenceCard({ rate }: { rate: number }) {
+function AdherenceCard({
+  rate,
+  checkinCount,
+}: {
+  rate: number;
+  checkinCount: number;
+}) {
   const pct = Math.round(rate * 100);
   const label =
     pct >= 90
@@ -75,6 +138,15 @@ function AdherenceCard({ rate }: { rate: number }) {
       ? Colors.warning
       : Colors.error;
 
+  // Marker derived from real coverage: how many check-ins actually back the
+  // ratio, against the documented minimum for a reliable pattern.
+  const insight = buildInsightWithUncertainty(rate, {
+    dataPointCount: checkinCount,
+    minDataPointsRequired: ADHERENCE_MIN_CHECKINS,
+    windowDays: INSIGHTS_WINDOW_DAYS,
+    dataPointLabel: "treatment check-ins",
+  });
+
   return (
     <Card style={styles.adherenceCard}>
       <Text style={styles.adherenceTitle}>💊 Treatment Adherence</Text>
@@ -90,16 +162,19 @@ function AdherenceCard({ rate }: { rate: number }) {
           ]}
         />
       </View>
-      <Text style={styles.adherenceHint}>
-        Based on your treatment check-ins over the last 30 days.
-      </Text>
+      <UncertaintyRow
+        marker={insight.uncertainty}
+        dataPointCount={insight.dataPointCount}
+        minDataPointsRequired={insight.minDataPointsRequired}
+      />
     </Card>
   );
 }
 
 function SleepInsightCard({ summary }: { summary: InsightsSummary }) {
   const { avgSleepQuality, sleepLogs } = summary;
-  if (!avgSleepQuality || sleepLogs.length < 3) return null;
+  const ratedLogs = sleepLogs.filter((l) => l.quality !== null);
+  if (!avgSleepQuality || ratedLogs.length < SLEEP_INSIGHT_MIN_LOGS) return null;
 
   const qualityLabel =
     avgSleepQuality >= 4.5
@@ -110,8 +185,16 @@ function SleepInsightCard({ summary }: { summary: InsightsSummary }) {
       ? "Fair"
       : "Poor";
 
-  const poorNights = sleepLogs.filter((l) => (l.quality ?? 3) <= 2).length;
-  const poorPct = Math.round((poorNights / sleepLogs.length) * 100);
+  const poorNights = ratedLogs.filter((l) => (l.quality ?? 3) <= 2).length;
+  const poorPct = Math.round((poorNights / ratedLogs.length) * 100);
+
+  // Marker derived from the real number of rated sleep logs in the window.
+  const insight = buildInsightWithUncertainty(avgSleepQuality, {
+    dataPointCount: ratedLogs.length,
+    minDataPointsRequired: SLEEP_INSIGHT_MIN_LOGS,
+    windowDays: INSIGHTS_WINDOW_DAYS,
+    dataPointLabel: "rated sleep logs",
+  });
 
   return (
     <Card style={styles.insightCard}>
@@ -125,10 +208,11 @@ function SleepInsightCard({ summary }: { summary: InsightsSummary }) {
           ? ` ${poorPct}% of nights were poor or very poor — poor sleep is a known acne trigger.`
           : " Keep maintaining consistent sleep quality."}
       </Text>
-      <Text style={styles.insightCaveat}>
-        This is an observational pattern from your data, not a medical
-        conclusion.
-      </Text>
+      <UncertaintyRow
+        marker={insight.uncertainty}
+        dataPointCount={insight.dataPointCount}
+        minDataPointsRequired={insight.minDataPointsRequired}
+      />
     </Card>
   );
 }
@@ -299,12 +383,38 @@ function SleepDermCard({ userId }: { userId: string }) {
   );
 }
 
+function ToolLink({
+  icon,
+  title,
+  description,
+  onPress,
+}: {
+  icon: string;
+  title: string;
+  description: string;
+  onPress: () => void;
+}) {
+  return (
+    <Card style={styles.toolCard} onPress={onPress}>
+      <View style={styles.toolRow}>
+        <Text style={styles.toolIcon}>{icon}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.toolTitle}>{title}</Text>
+          <Text style={styles.toolDesc}>{description}</Text>
+        </View>
+        <Text style={styles.toolArrow}>›</Text>
+      </View>
+    </Card>
+  );
+}
+
 export default function InsightsScreen() {
   const { user } = useAuthStore();
+  const router = useRouter();
 
   const { data: summary, isLoading } = useQuery({
     queryKey: ["insights-data", user?.id],
-    queryFn: () => fetchInsightsData(user!.id, 30),
+    queryFn: () => fetchInsightsData(user!.id, INSIGHTS_WINDOW_DAYS),
     enabled: !!user,
   });
 
@@ -321,6 +431,28 @@ export default function InsightsScreen() {
           <Text style={styles.subtitle}>
             Patterns derived from your personal logs. No fabricated scores.
           </Text>
+        </View>
+
+        {/* Tools — each opens its own honest, readiness-gated screen. */}
+        <View style={styles.section}>
+          <ToolLink
+            icon="📅"
+            title="ClearPath 7-day view"
+            description="Forecast readiness from your real outcome history — no invented forecasts."
+            onPress={() => router.push("/clearpath" as never)}
+          />
+          <ToolLink
+            icon="🧪"
+            title="FormulaLens"
+            description="Deterministic on-device ingredient review from a pasted ingredient list."
+            onPress={() => router.push("/formula-lens" as never)}
+          />
+          <ToolLink
+            icon="💊"
+            title="Treatment protocol"
+            description="Your recorded AM/PM regimen, plan check-ins, and adherence from real history."
+            onPress={() => router.push("/treatment" as never)}
+          />
         </View>
 
         {/* SleepDerm deterministic analysis — always available; fails closed
@@ -345,7 +477,10 @@ export default function InsightsScreen() {
 
             {/* Treatment adherence */}
             {summary.treatmentAdherence !== null && (
-              <AdherenceCard rate={summary.treatmentAdherence} />
+              <AdherenceCard
+                rate={summary.treatmentAdherence}
+                checkinCount={summary.treatmentCheckins.length}
+              />
             )}
 
             {/* Sleep quality trend */}
@@ -485,11 +620,38 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     marginBottom: 8,
   },
-  insightCaveat: {
-    ...Typography.caption,
-    color: Colors.primary,
-    fontStyle: "italic",
+  uncertaintyRow: { marginTop: 4, gap: 4 },
+  uncertaintyBadges: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.sm,
+    flexWrap: "wrap",
   },
+  confidencePill: {
+    borderWidth: 1.5,
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+  },
+  confidencePillText: { fontSize: 11, fontWeight: "700" },
+  uncertaintyMeta: { ...Typography.caption, color: Colors.textMuted },
+  uncertaintyCaveat: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    fontStyle: "italic",
+    lineHeight: 16,
+  },
+  toolCard: { marginBottom: Spacing.sm },
+  toolRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  toolIcon: { fontSize: 24 },
+  toolTitle: { ...Typography.bodyMedium, color: Colors.textPrimary },
+  toolDesc: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  toolArrow: { fontSize: 22, color: Colors.textMuted, fontWeight: "300" },
   adherenceCard: { marginBottom: Spacing.lg },
   adherenceTitle: {
     ...Typography.bodyMedium,
@@ -512,7 +674,6 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.sm,
   },
   progressFill: { height: "100%", borderRadius: BorderRadius.full },
-  adherenceHint: { ...Typography.caption, color: Colors.textSecondary },
   section: { marginBottom: Spacing.lg },
   sectionTitle: {
     ...Typography.title3,
