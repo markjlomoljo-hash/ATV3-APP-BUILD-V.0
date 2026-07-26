@@ -2,7 +2,7 @@
 
 ## Scope and decision rule
 
-Searches were performed on 2026-07-13 and rechecked on 2026-07-14 (Asia/Manila) using authoritative registries, original publisher repositories, and official documentation. No access control was bypassed. Code, model weights, and data are independently licensed: a permissive code license does not grant rights to bundled weights or training data.
+Searches were performed on 2026-07-13, rechecked on 2026-07-14, and extended with a targeted individual-inspection pass on 2026-07-26 (Asia/Manila) using authoritative registries, original publisher repositories, and official documentation. No access control was bypassed. Code, model weights, and data are independently licensed: a permissive code license does not grant rights to bundled weights or training data.
 
 An item passes only when maintenance/versioning, commercial and redistribution rights, original provenance, human-image consent/privacy, label quality, identity-safe evaluation feasibility, supply-chain integrity, and target-runtime feasibility are all supported by evidence. Missing or unclear permission is not permission.
 
@@ -18,6 +18,20 @@ An item passes only when maintenance/versioning, commercial and redistribution r
 | Q06 | 2026-07-14 | DermNet official dataset page | licensed AI dataset | 1 | 1 | 0 | 1 | 0 | Paid custom rights, consent, DPA, split keys, and redistribution scope require owner/legal review | https://dermnetnz.org/dermatology-image-dataset |
 | Q07 | 2026-07-13 | TorchVision official release/docs | MobileNetV3, EfficientNet | 2 architectures | 2 | 2 evaluation-only | 0 | 0 | Architecture definitions accepted with `weights=None`; upstream weights remain separate legal review | https://github.com/pytorch/vision |
 | Q08 | 2026-07-13 | Official runtime/framework sources | MediaPipe, ONNX Runtime RN, scikit-learn | 3 | 3 | 3 evaluation-only | 0 | 0 | Smallest maintained stack identified; adoption still requires task-specific parity/performance gates | https://github.com/google-ai-edge/mediapipe |
+| Q09 | 2026-07-26 | Hugging Face Models | google/derm-foundation model card + HAI-DEF terms | 1 | 1 | 0 | 1 | 0 | HAI-DEF commercial-with-conditions terms (Health Regulatory Authorization for clinical/severity claims; medical-device manufacturer clause; no-diagnosis) require counsel review; provenance documented (US/Colombia/Australia) | https://huggingface.co/google/derm-foundation |
+| Q10 | 2026-07-26 | Hugging Face Models | individual inspection: imfarzanansari/skintelligent-acne; naamalia23/acne-severity-classification; Hemg/Acne-classification | 3 | 3 | 0 | 0 | 3 | Permissive weight licences with undisclosed training data; one card self-reports 97.96% accuracy after 2 epochs, a leakage red flag | https://huggingface.co/models |
+| Q11 | 2026-07-26 | Hugging Face Datasets | individual inspection: ManuelHettich/acne04; huynhnhu213/acne; RahulPil/Dermi_Acne_Dataset; Neperl/skin-disease-acne-rosacea-normal; UniqueData bags | 5 | 5 | 0 | 0 | 5 | Inherited academic-only terms, uploader-asserted or missing licences, or cc-by-nc-nd-4.0 restrictions; none passes the production gate | https://huggingface.co/datasets |
+| Q12 | 2026-07-26 | scikit-learn 1.9.0 official docs | CalibratedClassifierCV | 1 | 1 | 1 | 0 | 0 | BSD-3 code accepted for calibrated-head pipeline scaffolding; production training remains dataset-gated | https://scikit-learn.org/stable/modules/generated/sklearn.calibration.CalibratedClassifierCV.html |
+
+## 2026-07-26 recheck findings
+
+The 2026-07-26 pass individually inspected the specific Hugging Face candidates named above instead of relying on aggregate search screening, so future runs should not re-litigate them; per-item dispositions and evidence live in the candidate registers and `rejected-resources.md`.
+
+- `google/derm-foundation` (gated, BiT-M ResNet101x3, 6144-dim embeddings) is the best licence-plus-provenance combination found to date and advances to `needs_legal_review`: HAI-DEF terms allow commercial use with conditions, but the Health Regulatory Authorization requirement for clinical/severity claims, the medical-device manufacturer clause, and the no-diagnosis restriction need counsel sign-off before any download or use. Access requires an HF account that accepted the HAI-DEF terms plus an owner-supplied `HF_TOKEN` environment variable.
+- The three inspected acne models remain `rejected_for_production` on provenance grounds (undisclosed training data; one implausible self-reported metric); they are permitted only as research/baseline references.
+- The five inspected acne dataset uploads all fail the production gate (inherited academic-only ACNE04 terms, uploader-asserted apache-2.0 with no provenance chain, missing licences, or cc-by-nc-nd-4.0).
+- scikit-learn 1.9.0 `CalibratedClassifierCV` (BSD-3) is accepted now for the calibrated-head pipeline scaffold; torchvision MobileNetV3-Small/EfficientNet-B0 architecture definitions stay usable with `weights=None`, and ImageNet weights stay `needs_legal_review`.
+- The decided predictive paths (Path A: derm-foundation frozen embeddings + calibrated sklearn head on a rights-cleared dataset; Path B: interim research-only torchvision baseline on ACNE04 academic terms, non-shippable) are recorded in `docs/ml/ARCHITECTURE_DECISION.md` and `docs/ml/TRAINING_AND_PROMOTION.md`.
 
 ## Results by task
 
@@ -34,6 +48,8 @@ An item passes only when maintenance/versioning, commercial and redistribution r
 Search stopped after all returned Hugging Face candidates and the commonly cited original acne sources were screened without any candidate passing the independent licence/provenance/consent gate. Further mirror enumeration would not cure missing original rights.
 
 There are **zero datasets accepted for predictive or vision training** and **zero pretrained acne weights accepted**. Deterministic engines, contracts, annotation design, readiness states, static-knowledge review, and training entrypoints may proceed. No clinical model metrics may be claimed.
+
+Addendum 2026-07-26: this conclusion is unchanged after the targeted recheck. One gated backbone (`google/derm-foundation`) advanced to `needs_legal_review`; nothing was accepted for production training or inference, and the training gate continues to exit `training_blocked/no_approved_training_dataset`.
 
 ## Limitations
 

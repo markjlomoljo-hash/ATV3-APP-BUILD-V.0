@@ -9,25 +9,24 @@ Complete deployment instructions for Vercel (frontend), Supabase (database), and
 Before deploying, verify the build passes locally.
 
 ### Prerequisites
-- Node.js 18+ (or use `bun`)
+- Bun installed (`bun` is the canonical package manager — `vercel.json` pins
+  `bun install --frozen-lockfile` and `bun run build`; the lockfile is `bun.lock`)
 - `git` with authentication configured
-- `npm` or `bun` installed
 
 ### Commands
 
 ```bash
-# Install dependencies
-npm install
-# or: bun install
+# Install dependencies (matches the Vercel install command)
+bun install --frozen-lockfile
 
 # Run type check (catch TypeScript errors early)
-npm run typecheck
+bun run typecheck
 
 # Build the app
-npm run build
+bun run build
 
 # Run linter
-npm run lint
+bun run lint
 ```
 
 **If any step fails, stop and fix errors before proceeding.**
@@ -38,32 +37,66 @@ npm run lint
 
 ### Prerequisites
 - Vercel account
-- `vercel` CLI installed: `npm i -g vercel`
+- `vercel` CLI installed: `bun add -g vercel`
 - GitHub credentials (already authenticated)
 
 ### Environment Setup
 
-In Vercel dashboard or via CLI, set these Production variables:
+In Vercel dashboard or via CLI, set these Production (and Preview) variables.
+The authoritative name list is `.env.example`; secret values go only in
+Vercel's encrypted env store — never in this file or in commits.
 
 ```bash
-# Database
-DATABASE_URL=postgresql://...  # Supabase pooled connection URL
-NEXT_PUBLIC_SUPABASE_URL=https://alobmstvqutteypusmuo.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=sb_publishable_2az_6ia5xm-1meOvew-jauw_Q_YM1bDj
+# Clerk web authentication and RBAC
+NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=<publishable key>
+CLERK_SECRET_KEY=<secret>
+ACNETREX_OWNER_CLERK_USER_ID=<server-side owner user ID>
+NEXT_PUBLIC_CLERK_SIGN_IN_URL=/sign-in
+NEXT_PUBLIC_CLERK_SIGN_UP_URL=/sign-up
+NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/
+NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/
 
-# ML API (Cloud Run)
+# Database (Supabase transaction pooler + TLS)
+DATABASE_URL=<secret: Supabase pooled connection URL>
+SUPABASE_DB_CA_CERT=<server-only PEM from Supabase Dashboard SSL settings>
+
+# Sessions
+SESSION_SIGNING_SECRET=<secret: at least 32 random characters>
+WEB_COMPATIBILITY_API_ENABLED=false
+
+# Supabase public/browser config
+NEXT_PUBLIC_SUPABASE_URL=https://alobmstvqutteypusmuo.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<Supabase publishable key>
+NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=<Supabase publishable key>
+
+# Supabase server-only mirrors + private report/export storage
+SUPABASE_URL=https://alobmstvqutteypusmuo.supabase.co
+SUPABASE_PUBLISHABLE_KEY=<Supabase publishable key>
+SUPABASE_SERVICE_ROLE_KEY=<secret>
+ACNETREX_STORAGE_BACKEND=supabase
+
+# ML API (Cloud Run) + durable worker + cron
 ACNETREX_ML_API_URL=https://mlatv-pudz4xjzxa-ew.a.run.app
 NEXT_PUBLIC_ACNETREX_ML_API_URL=https://mlatv-pudz4xjzxa-ew.a.run.app
+ACNETREX_ML_SHARED_SECRET=<secret: must match Cloud Run>
+ML_PROXY_ENABLED=false
+ACNETREX_ML_WORKER_ENABLED=true
+ACNETREX_ML_WORKER_SECRET=<secret>
+CRON_SECRET=<secret: used by the vercel.json daily cron>
+ML_WORKER_TIMEOUT_MS=15000
+ML_WORKER_KICK_MAX_JOBS=2
+ML_WORKER_KICK_BUDGET_MS=8000
 
 # Vertex AI
 VERTEX_AI_PROJECT_ID=project-09bedce3-3c99-4a2b-aad
+VERTEX_AI_LOCATION=us-central1
 VERTEX_AI_ENDPOINT_ID=5976620302904328192
 ```
 
 ### Deploy Command
 
 ```bash
-# From repository root (feat/phase7-profile-reports branch)
+# From repository root (main branch — promotion chain: feature -> dev -> staging -> main)
 
 # First time only: link to Vercel project
 vercel link --project atv-3-app-build-v-0
@@ -97,7 +130,7 @@ curl https://atv-3-app-build-v-0.vercel.app/api/health
 
 ### Prerequisites
 - Supabase account (project: `alobmstvqutteypusmuo`)
-- `supabase` CLI installed: `npm i -g supabase`
+- `supabase` CLI installed: `bun add -g supabase`
 - GCP credentials (if using Cloud SQL)
 
 ### Get Database Credentials
@@ -195,27 +228,19 @@ gcloud config set project project-09bedce3-3c99-4a2b-aad
 
 ### Deploy ML Service
 
-From the repository root:
+From the repository root (the canonical path is Cloud Build with the pinned
+substitutions in `cloudbuild.yaml` — image build, push, and `mlatv` deploy in
+`europe-west1` with env vars and Secret Manager references):
 
 ```bash
-# Navigate to ML service
-cd ml-service
+gcloud builds submit --config cloudbuild.yaml
 
-# Deploy to Cloud Run
-gcloud run deploy mlatv \
-  --source . \
-  --region europe-west1 \
-  --allow-unauthenticated \
-  --set-env-vars \
-    VERTEX_AI_PROJECT_ID=project-09bedce3-3c99-4a2b-aad,\
-    VERTEX_AI_LOCATION=us-central1,\
-    VERTEX_AI_ENDPOINT_ID=5976620302904328192,\
-    CORS_ORIGINS=https://atv-3-app-build-v-0.vercel.app,\
-    CORS_ORIGIN_REGEX=https://.*\.vercel\.app
-
-# Expected output:
+# Expected: build + push + deploy succeed
 # Service URL: https://mlatv-pudz4xjzxa-ew.a.run.app
 ```
+
+Note: the service reads only `CORS_ORIGINS` (comma-separated exact origins).
+There is no `CORS_ORIGIN_REGEX` support in the code — do not set it.
 
 ### Verification
 
@@ -225,17 +250,18 @@ curl -i https://mlatv-pudz4xjzxa-ew.a.run.app/
 
 # Expected: 200 OK, JSON response with service metadata
 
-# Test health endpoint
-curl -i https://mlatv-pudz4xjzxa-ew.a.run.app/health
+# Test health endpoints
+curl -i https://mlatv-pudz4xjzxa-ew.a.run.app/health/live
+curl -i https://mlatv-pudz4xjzxa-ew.a.run.app/health/ready
 
-# Expected: 200 OK, includes Vertex AI endpoint status
+# Expected: 200 OK; /health/ready reports artifact integrity, registry,
+# and persistence ready with vertex=verification_required
 
-# Test CORS preflight
-curl -i -X OPTIONS https://mlatv-pudz4xjzxa-ew.a.run.app/predict \
-  -H "Origin: https://atv-3-app-build-v-0.vercel.app" \
-  -H "Access-Control-Request-Method: POST"
+# Test authentication gate (no credentials supplied)
+curl -i -X POST https://mlatv-pudz4xjzxa-ew.a.run.app/v1/predict \
+  -H "Content-Type: application/json" -d '{}'
 
-# Expected: 200 OK, includes CORS headers
+# Expected: 401 auth_required — inference endpoints are authenticated
 
 # Test prediction (if Vertex AI model is deployed)
 curl -X POST https://mlatv-pudz4xjzxa-ew.a.run.app/predict \
@@ -296,7 +322,7 @@ fetch('/api/ml/predict', {
 
 ```bash
 # Dashboard: https://vercel.com/dashboard
-# Confirm: feat/phase7-profile-reports branch deployed
+# Confirm: main branch deployed (promotion chain: feature -> dev -> staging -> main)
 # Confirm: All env vars set
 # Confirm: Build successful
 ```
@@ -376,9 +402,9 @@ If deployment fails:
 # See previous commits
 git log --oneline | head -10
 
-# Revert to known good commit
+# Revert to known good commit (on the branch being promoted)
 git revert <bad-commit-hash>
-git push origin feat/phase7-profile-reports
+git push origin <branch>
 ```
 
 ### Vercel Rollback
@@ -404,9 +430,9 @@ gcloud run services update-traffic mlatv --to-revisions REVISION_NAME=100 --regi
 
 ## Post-Deployment Checklist
 
-- [ ] Local build passes: `npm run build`
+- [ ] Local build passes: `bun run build`
 - [ ] Vercel deployment green: `vercel --prod`
-- [ ] Vercel env vars set (DATABASE_URL, ML URLs)
+- [ ] Vercel env vars set per the Environment Setup section above (DATABASE_URL + SUPABASE_DB_CA_CERT, Supabase URL/publishable key, Clerk keys + owner bootstrap, ACNETREX_ML_API_URL + shared secret, worker flags/secrets, CRON_SECRET, ACNETREX_STORAGE_BACKEND)
 - [ ] Supabase migrations applied: `supabase db push`
 - [ ] Supabase tables exist: `supabase db list`
 - [ ] Cloud Run deployed: `gcloud run services list --region=europe-west1`

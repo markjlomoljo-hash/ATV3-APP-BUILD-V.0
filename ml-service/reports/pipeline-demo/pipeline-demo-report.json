@@ -1,0 +1,190 @@
+{
+  "report_version": "1.0.0",
+  "generated_at": "2026-07-26T15:06:46.760580+00:00",
+  "task": "acne_severity",
+  "dataset_class": "synthetic_demo",
+  "demo_only": true,
+  "not_for_clinical_use": true,
+  "disclaimer": "DEMO ONLY \u2014 not a clinical model; production training remains gated",
+  "dataset": {
+    "name": "synthetic-demo-acne-severity",
+    "version": "0.0.0-demo",
+    "licence": {
+      "licence_status": "synthetic_demo_only",
+      "consent_status": "not_applicable_synthetic_data",
+      "provenance": "generated in-repo by acnetrex_ml.pipeline.synthetic; contains no real patient data and grants no training rights"
+    },
+    "labels": [
+      "severity_0",
+      "severity_1",
+      "severity_2"
+    ],
+    "n_samples": 72,
+    "n_groups": 12
+  },
+  "backbone": {
+    "name": "deterministic-demo-seed1234",
+    "embedding_dim": 64,
+    "demo_only": true,
+    "production_approved": false
+  },
+  "head": {
+    "estimator": "logistic_regression",
+    "c": 1.0,
+    "max_iter": 2000,
+    "calibration_method": "sigmoid",
+    "calibration_cv": 3,
+    "abstention_threshold": 0.5,
+    "seed": 1234
+  },
+  "splits": {
+    "seed": 1234,
+    "val_fraction": 0.2,
+    "test_fraction": 0.2,
+    "train": {
+      "n_samples": 36,
+      "n_groups": 6
+    },
+    "val": {
+      "n_samples": 18,
+      "n_groups": 3
+    },
+    "test": {
+      "n_samples": 18,
+      "n_groups": 3
+    },
+    "group_leakage_detected": false
+  },
+  "metrics": {
+    "val": {
+      "n_samples": 18,
+      "accuracy": 0.833333,
+      "per_class_f1": {
+        "severity_0": 0.888889,
+        "severity_1": 0.5,
+        "severity_2": 0.857143
+      },
+      "reliability": {
+        "points": [
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6,
+            "mean_confidence": 0.583251,
+            "empirical_accuracy": 0.0,
+            "count": 1
+          },
+          {
+            "bin_lower": 0.6,
+            "bin_upper": 0.7,
+            "mean_confidence": 0.664503,
+            "empirical_accuracy": 0.833333,
+            "count": 6
+          },
+          {
+            "bin_lower": 0.7,
+            "bin_upper": 0.8,
+            "mean_confidence": 0.75211,
+            "empirical_accuracy": 0.9,
+            "count": 10
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "mean_confidence": 0.943708,
+            "empirical_accuracy": 1.0,
+            "count": 1
+          }
+        ],
+        "ece": 0.173968,
+        "n_bins": 10
+      },
+      "abstention": {
+        "threshold": 0.5,
+        "abstention_rate": 0.0,
+        "coverage": 1.0,
+        "n_answered": 18,
+        "accuracy_on_answered": 0.833333
+      }
+    },
+    "test": {
+      "n_samples": 18,
+      "accuracy": 0.777778,
+      "per_class_f1": {
+        "severity_0": 0.933333,
+        "severity_1": 0.5,
+        "severity_2": 0.769231
+      },
+      "reliability": {
+        "points": [
+          {
+            "bin_lower": 0.3,
+            "bin_upper": 0.4,
+            "mean_confidence": 0.396636,
+            "empirical_accuracy": 0.0,
+            "count": 2
+          },
+          {
+            "bin_lower": 0.4,
+            "bin_upper": 0.5,
+            "mean_confidence": 0.456872,
+            "empirical_accuracy": 1.0,
+            "count": 1
+          },
+          {
+            "bin_lower": 0.5,
+            "bin_upper": 0.6,
+            "mean_confidence": 0.540311,
+            "empirical_accuracy": 1.0,
+            "count": 3
+          },
+          {
+            "bin_lower": 0.6,
+            "bin_upper": 0.7,
+            "mean_confidence": 0.685132,
+            "empirical_accuracy": 0.5,
+            "count": 2
+          },
+          {
+            "bin_lower": 0.7,
+            "bin_upper": 0.8,
+            "mean_confidence": 0.753405,
+            "empirical_accuracy": 0.833333,
+            "count": 6
+          },
+          {
+            "bin_lower": 0.8,
+            "bin_upper": 0.9,
+            "mean_confidence": 0.87757,
+            "empirical_accuracy": 1.0,
+            "count": 3
+          },
+          {
+            "bin_lower": 0.9,
+            "bin_upper": 1.0,
+            "mean_confidence": 0.92207,
+            "empirical_accuracy": 1.0,
+            "count": 1
+          }
+        ],
+        "ece": 0.222807,
+        "n_bins": 10
+      },
+      "abstention": {
+        "threshold": 0.5,
+        "abstention_rate": 0.166667,
+        "coverage": 0.833333,
+        "n_answered": 15,
+        "accuracy_on_answered": 0.866667
+      }
+    }
+  },
+  "gate": {
+    "module": "acnetrex_ml.training.gate",
+    "consulted": false,
+    "plan": null
+  },
+  "registry_writes": "none",
+  "artifacts": {
+    "embedding_cache": "embeddings-deterministic-demo-seed1234-synthetic-demo-acne-severity-0.0.0-demo.npz"
+  }
+}

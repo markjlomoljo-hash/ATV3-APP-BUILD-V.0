@@ -1,0 +1,15 @@
+# Optional predictive-pipeline extras — NOT production service dependencies.
+# The FastAPI service (requirements.txt) must keep running without these;
+# acnetrex_ml.pipeline imports them behind guards and the test suite skips
+# pipeline tests when they are absent (pytest.importorskip).
+#
+#   pip install -r ml-service/requirements-pipeline.txt
+numpy>=1.26,<3
+scikit-learn>=1.4,<2
+
+# Optional: gated Hugging Face backbone support (derm-foundation).
+# Downloads additionally require the owner-supplied HF_TOKEN env var AND
+# ACNETREX_ACCEPT_DERM_FOUNDATION_TERMS=1 (explicit terms acceptance);
+# inference on the upstream TF SavedModel further requires tensorflow,
+# which is intentionally not pinned here.
+huggingface_hub>=0.23
