@@ -4,34 +4,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../../src/components/ui";
 import { OnboardingProgress } from "../../src/components/ui/OnboardingProgress";
 import { Colors, Spacing, Typography, BorderRadius } from "../../src/components/ui/theme";
+import { PRIVACY_EDUCATION_POINTS } from "../../src/lib/legal-content";
 
-const points = [
-  {
-    icon: "🩺",
-    title: "Not a Medical Device",
-    text: "AcneTrex helps you track and understand your skin. It does not diagnose disease, replace a dermatologist, or provide prescriptions.",
-  },
-  {
-    icon: "🔒",
-    title: "Your Data Is Private",
-    text: "Your skin data is private and user-owned. Raw face images are stored separately and controlled entirely by you.",
-  },
-  {
-    icon: "🤝",
-    title: "You Control Sharing",
-    text: "Anonymous learning and research participation are opt-in only. You can revoke consent at any time from your profile.",
-  },
-  {
-    icon: "⚠️",
-    title: "Seek Professional Care",
-    text: "For severe acne, allergic reactions, or medication concerns, please consult a qualified dermatologist.",
-  },
-  {
-    icon: "🧪",
-    title: "Honest Uncertainty",
-    text: "When data is insufficient, AcneTrex says so. We never fabricate scores, trends, or insights.",
-  },
-];
+const points = PRIVACY_EDUCATION_POINTS;
 
 export default function PrivacyEducationScreen() {
   const router = useRouter();

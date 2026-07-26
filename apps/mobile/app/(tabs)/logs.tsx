@@ -21,10 +21,18 @@ import {
   logFood,
   logStress,
   logTreatmentCheckin,
+  logSkinState,
   SleepLog,
   FoodLog,
   TreatmentCheckin,
+  WriteOutcome,
 } from "../../src/lib/daily-logs-service";
+import {
+  getLocalOutboxSummary,
+  replayPendingOutboxEvents,
+  retryFailedLocalOutboxEvents,
+} from "../../src/lib/local-outbox";
+import type { SkinStateSeverity } from "../../src/lib/contracts";
 import { Button, Card, EmptyState } from "../../src/components/ui";
 import {
   Colors,
@@ -33,13 +41,21 @@ import {
   BorderRadius,
 } from "../../src/components/ui/theme";
 
-type LogType = "sleep" | "food" | "stress" | "treatment";
+type LogType = "sleep" | "food" | "stress" | "treatment" | "skin";
 
 const LOG_TYPES = [
   { type: "sleep" as LogType, icon: "😴", label: "Sleep" },
   { type: "food" as LogType, icon: "🥗", label: "Food / Meals" },
   { type: "stress" as LogType, icon: "😤", label: "Stress" },
   { type: "treatment" as LogType, icon: "💊", label: "Treatment" },
+  { type: "skin" as LogType, icon: "🪞", label: "Skin State" },
+];
+
+const SKIN_STATE_OPTIONS: { value: SkinStateSeverity; label: string }[] = [
+  { value: "clear", label: "Clear — no active breakouts" },
+  { value: "mild", label: "Mild — a few small spots" },
+  { value: "moderate", label: "Moderate — several active breakouts" },
+  { value: "severe", label: "Severe — widespread or painful" },
 ];
 
 const SLEEP_QUALITY_OPTIONS = [
@@ -49,6 +65,13 @@ const SLEEP_QUALITY_OPTIONS = [
   { value: 2, label: "Poor" },
   { value: 1, label: "Very poor" },
 ];
+
+/** Normalize "H:MM" / "HH:MM" (24h) to "HH:MM"; null when not parseable. */
+function normalizeClockTime(value: string): string | null {
+  const match = /^([01]?\d|2[0-3]):([0-5]\d)$/.exec(value.trim());
+  if (!match) return null;
+  return `${match[1].padStart(2, "0")}:${match[2]}`;
+}
 
 const MEAL_TYPES = [
   { value: "breakfast", label: "Breakfast" },
@@ -71,10 +94,16 @@ interface QuickLogModalProps {
   visible: boolean;
   logType: LogType | "";
   onClose: () => void;
-  onSaveSleep: (q: number, notes: string) => void;
+  onSaveSleep: (
+    q: number,
+    bedTime: string | undefined,
+    wakeTime: string | undefined,
+    notes: string
+  ) => void;
   onSaveFood: (meal: string, desc: string, notes: string) => void;
   onSaveStress: (level: number, notes: string) => void;
   onSaveTreatment: (status: "done" | "skipped" | "partial", irritation: number | undefined, notes: string) => void;
+  onSaveSkin: (severity: SkinStateSeverity, notes: string) => void;
   saving: boolean;
 }
 
@@ -86,14 +115,18 @@ function QuickLogModal({
   onSaveFood,
   onSaveStress,
   onSaveTreatment,
+  onSaveSkin,
   saving,
 }: QuickLogModalProps) {
   const [sleepQuality, setSleepQuality] = useState(0);
+  const [bedTime, setBedTime] = useState("");
+  const [wakeTime, setWakeTime] = useState("");
   const [mealType, setMealType] = useState("");
   const [mealDesc, setMealDesc] = useState("");
   const [stressLevel, setStressLevel] = useState(0);
   const [treatmentStatus, setTreatmentStatus] = useState<"done" | "skipped" | "partial" | "">("");
   const [irritation, setIrritation] = useState("");
+  const [skinSeverity, setSkinSeverity] = useState<SkinStateSeverity | "">("");
   const [notes, setNotes] = useState("");
 
   const typeInfo = LOG_TYPES.find((t) => t.type === logType);
@@ -101,7 +134,16 @@ function QuickLogModal({
   const handleSave = () => {
     if (logType === "sleep") {
       if (!sleepQuality) { Alert.alert("Please select sleep quality."); return; }
-      onSaveSleep(sleepQuality, notes);
+      const bed = bedTime.trim() ? normalizeClockTime(bedTime) : undefined;
+      const wake = wakeTime.trim() ? normalizeClockTime(wakeTime) : undefined;
+      if (bed === null || wake === null) {
+        Alert.alert(
+          "Check the times",
+          "Enter bed and wake times as 24-hour HH:MM (e.g. 23:30), or leave them blank."
+        );
+        return;
+      }
+      onSaveSleep(sleepQuality, bed, wake, notes);
     } else if (logType === "food") {
       if (!mealType || !mealDesc.trim()) { Alert.alert("Please select meal type and describe what you ate."); return; }
       onSaveFood(mealType, mealDesc.trim(), notes);
@@ -112,16 +154,22 @@ function QuickLogModal({
       if (!treatmentStatus) { Alert.alert("Please select treatment status."); return; }
       const irritationNum = irritation ? parseInt(irritation, 10) : undefined;
       onSaveTreatment(treatmentStatus, irritationNum, notes);
+    } else if (logType === "skin") {
+      if (!skinSeverity) { Alert.alert("Please select how your skin looks today."); return; }
+      onSaveSkin(skinSeverity, notes);
     }
   };
 
   const reset = () => {
     setSleepQuality(0);
+    setBedTime("");
+    setWakeTime("");
     setMealType("");
     setMealDesc("");
     setStressLevel(0);
     setTreatmentStatus("");
     setIrritation("");
+    setSkinSeverity("");
     setNotes("");
   };
 
@@ -164,6 +212,38 @@ function QuickLogModal({
                   </Text>
                 </Pressable>
               ))}
+              <Text style={[styles.modalLabel, { marginTop: Spacing.md }]}>
+                Bed & wake time (optional)
+              </Text>
+              <Text style={styles.modalHint}>
+                24-hour HH:MM. Logging both times on 2+ nights unlocks the
+                on-device SleepDerm analysis — it only ever uses times you
+                actually logged.
+              </Text>
+              <View style={styles.timeRow}>
+                <TextInput
+                  style={[styles.textInput, styles.timeInput]}
+                  placeholder="Bed, e.g. 23:30"
+                  value={bedTime}
+                  onChangeText={setBedTime}
+                  placeholderTextColor={Colors.textMuted}
+                  maxLength={5}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="Bed time (24-hour HH:MM)"
+                />
+                <TextInput
+                  style={[styles.textInput, styles.timeInput]}
+                  placeholder="Wake, e.g. 07:00"
+                  value={wakeTime}
+                  onChangeText={setWakeTime}
+                  placeholderTextColor={Colors.textMuted}
+                  maxLength={5}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  accessibilityLabel="Wake time (24-hour HH:MM)"
+                />
+              </View>
             </View>
           )}
 
@@ -245,6 +325,24 @@ function QuickLogModal({
             </View>
           )}
 
+          {/* Skin state form */}
+          {logType === "skin" && (
+            <View style={styles.modalSection}>
+              <Text style={styles.modalLabel}>How does your skin look today?</Text>
+              {SKIN_STATE_OPTIONS.map((o) => (
+                <Pressable
+                  key={o.value}
+                  onPress={() => setSkinSeverity(o.value)}
+                  style={[styles.option, skinSeverity === o.value && styles.optionSelected]}
+                >
+                  <Text style={[styles.optionText, skinSeverity === o.value && styles.optionTextSelected]}>
+                    {o.label}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+
           {/* Notes */}
           <View style={styles.modalSection}>
             <Text style={styles.modalLabel}>Notes (optional)</Text>
@@ -284,6 +382,11 @@ function SleepLogItem({ log }: { log: SleepLog }) {
     2: "Poor",
     1: "Very poor",
   };
+  // DB time columns may return "HH:MM:SS" — display the clock part only.
+  const times =
+    log.sleep_time && log.wake_time
+      ? ` · ${log.sleep_time.slice(0, 5)} → ${log.wake_time.slice(0, 5)}`
+      : "";
   return (
     <View style={styles.logItem}>
       <Text style={styles.logItemIcon}>😴</Text>
@@ -291,6 +394,7 @@ function SleepLogItem({ log }: { log: SleepLog }) {
         <Text style={styles.logItemTitle}>Sleep</Text>
         <Text style={styles.logItemSummary}>
           Quality: {log.quality ? qualityLabels[log.quality] ?? log.quality : "Logged"}
+          {times}
         </Text>
         {log.notes && <Text style={styles.logItemNotes}>{log.notes}</Text>}
       </View>
@@ -379,52 +483,116 @@ export default function LogsScreen() {
     enabled: !!user,
   });
 
+  // Honest offline indicator: real counts of writes queued on this device,
+  // including terminally-failed ones — a failed write never silently
+  // disappears from the banner as if it had synced.
+  const { data: outboxSummary } = useQuery({
+    queryKey: ["outbox-status"],
+    queryFn: getLocalOutboxSummary,
+    refetchOnWindowFocus: true,
+  });
+  const pendingSyncCount = outboxSummary?.pending ?? 0;
+  const failedSyncCount = outboxSummary?.failed ?? 0;
+
   const isLoading = sleepLoading || foodLoading || treatmentLoading;
 
+  const afterWrite = (
+    outcome: WriteOutcome<unknown>,
+    keys: (string | undefined)[][]
+  ) => {
+    for (const key of keys) queryClient.invalidateQueries({ queryKey: key });
+    queryClient.invalidateQueries({ queryKey: ["outbox-status"] });
+    setModalVisible(false);
+    if (outcome.status === "queued_offline") {
+      Alert.alert(
+        "Saved on Device",
+        "You're offline, so this log is stored securely on your device and will sync automatically when you're back online."
+      );
+    }
+  };
+
   const { mutate: saveSleep, isPending: savingSleep } = useMutation({
-    mutationFn: (args: { quality: number; notes: string }) =>
-      logSleep(user!.id, args),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["sleep-logs", user?.id] });
-      queryClient.invalidateQueries({ queryKey: ["today-logs", user?.id] });
-      setModalVisible(false);
-    },
+    mutationFn: (args: {
+      quality: number;
+      sleep_time?: string;
+      wake_time?: string;
+      notes: string;
+    }) => logSleep(user!.id, args),
+    onSuccess: (outcome) =>
+      afterWrite(outcome, [["sleep-logs", user?.id], ["today-logs", user?.id]]),
     onError: (e) => Alert.alert("Save Failed", e instanceof Error ? e.message : "Please try again."),
   });
 
   const { mutate: saveFood, isPending: savingFood } = useMutation({
     mutationFn: (args: { meal_type: string; description: string; notes: string }) =>
       logFood(user!.id, args),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["food-logs", user?.id] });
-      queryClient.invalidateQueries({ queryKey: ["today-logs", user?.id] });
-      setModalVisible(false);
-    },
+    onSuccess: (outcome) =>
+      afterWrite(outcome, [["food-logs", user?.id], ["today-logs", user?.id]]),
     onError: (e) => Alert.alert("Save Failed", e instanceof Error ? e.message : "Please try again."),
   });
 
   const { mutate: saveStress, isPending: savingStress } = useMutation({
     mutationFn: (args: { stress_level: number; notes: string }) =>
       logStress(user!.id, args),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["today-logs", user?.id] });
-      setModalVisible(false);
-    },
+    onSuccess: (outcome) => afterWrite(outcome, [["today-logs", user?.id]]),
     onError: (e) => Alert.alert("Save Failed", e instanceof Error ? e.message : "Please try again."),
   });
 
   const { mutate: saveTreatment, isPending: savingTreatment } = useMutation({
     mutationFn: (args: { status: "done" | "skipped" | "partial"; irritation?: number; notes: string }) =>
       logTreatmentCheckin(user!.id, args),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["treatment-checkins", user?.id] });
-      queryClient.invalidateQueries({ queryKey: ["today-logs", user?.id] });
-      setModalVisible(false);
-    },
+    onSuccess: (outcome) =>
+      afterWrite(outcome, [["treatment-checkins", user?.id], ["today-logs", user?.id]]),
     onError: (e) => Alert.alert("Save Failed", e instanceof Error ? e.message : "Please try again."),
   });
 
-  const saving = savingSleep || savingFood || savingStress || savingTreatment;
+  const { mutate: saveSkin, isPending: savingSkin } = useMutation({
+    mutationFn: (args: { severity: SkinStateSeverity; notes?: string }) =>
+      logSkinState(user!.id, args),
+    onSuccess: (outcome) =>
+      afterWrite(outcome, [["today-logs", user?.id], ["logging-streak", user?.id]]),
+    onError: (e) => Alert.alert("Save Failed", e instanceof Error ? e.message : "Please try again."),
+  });
+
+  const { mutate: syncNow, isPending: syncing } = useMutation({
+    mutationFn: replayPendingOutboxEvents,
+    onSuccess: (result) => {
+      queryClient.invalidateQueries();
+      if (result.failed > 0) {
+        Alert.alert(
+          "Some Logs Could Not Sync",
+          `${result.failed} log${result.failed === 1 ? "" : "s"} hit a non-network error and will not retry automatically. ${result.failed === 1 ? "It is" : "They are"} still stored on this device — use Retry Failed to try again.`
+        );
+      } else if (result.remaining > 0) {
+        Alert.alert(
+          "Sync Incomplete",
+          `${result.replayed} log${result.replayed === 1 ? "" : "s"} synced, ${result.remaining} still waiting. They will retry automatically.`
+        );
+      }
+    },
+  });
+
+  // User-initiated recovery for terminally-failed events: reset them to
+  // pending and immediately attempt a real replay. Honest outcome reporting —
+  // if the cause persists, the failure is re-surfaced, never hidden.
+  const { mutate: retryFailed, isPending: retryingFailed } = useMutation({
+    mutationFn: async () => {
+      await retryFailedLocalOutboxEvents();
+      return replayPendingOutboxEvents();
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries();
+      if (result.failed > 0 || result.remaining > 0) {
+        const stuck = result.failed + result.remaining;
+        Alert.alert(
+          "Sync Still Incomplete",
+          `${result.replayed} log${result.replayed === 1 ? "" : "s"} synced, ${stuck} still could not. ${stuck === 1 ? "It remains" : "They remain"} stored on this device.`
+        );
+      }
+    },
+  });
+
+  const saving = savingSleep || savingFood || savingStress || savingTreatment || savingSkin;
 
   const openLog = (type: LogType) => {
     setActiveLogType(type);
@@ -443,6 +611,53 @@ export default function LogsScreen() {
           <Text style={styles.title}>Daily Logs</Text>
           <Text style={styles.subtitle}>Track what affects your skin.</Text>
         </View>
+
+        {/* Offline sync status — shown while device-queued logs exist,
+            including terminally-failed ones (those never vanish silently). */}
+        {(pendingSyncCount > 0 || failedSyncCount > 0) && (
+          <Card style={styles.syncBanner}>
+            {pendingSyncCount > 0 && (
+              <Text style={styles.syncBannerText}>
+                {pendingSyncCount} log{pendingSyncCount === 1 ? "" : "s"} saved on
+                this device {pendingSyncCount === 1 ? "is" : "are"} waiting to sync.
+              </Text>
+            )}
+            {failedSyncCount > 0 && (
+              <Text
+                style={[
+                  styles.syncBannerErrorText,
+                  pendingSyncCount > 0 && { marginTop: Spacing.sm },
+                ]}
+              >
+                {failedSyncCount} log{failedSyncCount === 1 ? "" : "s"} could not
+                sync
+                {outboxSummary?.lastFailureErrorCode
+                  ? ` (last error: ${outboxSummary.lastFailureErrorCode})`
+                  : ""}
+                . {failedSyncCount === 1 ? "It is" : "They are"} still stored on
+                this device but will not retry automatically.
+              </Text>
+            )}
+            {pendingSyncCount > 0 && (
+              <Button
+                title={syncing ? "Syncing..." : "Sync Now"}
+                onPress={() => syncNow()}
+                variant="secondary"
+                loading={syncing}
+                style={{ marginTop: Spacing.sm, height: 44 }}
+              />
+            )}
+            {failedSyncCount > 0 && (
+              <Button
+                title={retryingFailed ? "Retrying..." : "Retry Failed"}
+                onPress={() => retryFailed()}
+                variant="secondary"
+                loading={retryingFailed}
+                style={{ marginTop: Spacing.sm, height: 44 }}
+              />
+            )}
+          </Card>
+        )}
 
         {/* Quick log buttons */}
         <View style={styles.quickLogSection}>
@@ -532,10 +747,13 @@ export default function LogsScreen() {
         visible={modalVisible}
         logType={activeLogType}
         onClose={() => setModalVisible(false)}
-        onSaveSleep={(q, n) => saveSleep({ quality: q, notes: n })}
+        onSaveSleep={(q, bed, wake, n) =>
+          saveSleep({ quality: q, sleep_time: bed, wake_time: wake, notes: n })
+        }
         onSaveFood={(m, d, n) => saveFood({ meal_type: m, description: d, notes: n })}
         onSaveStress={(l, n) => saveStress({ stress_level: l, notes: n })}
         onSaveTreatment={(s, ir, n) => saveTreatment({ status: s, irritation: ir ?? undefined, notes: n })}
+        onSaveSkin={(sev, n) => saveSkin({ severity: sev, notes: n || undefined })}
         saving={saving}
       />
     </SafeAreaView>
@@ -548,6 +766,21 @@ const styles = StyleSheet.create({
   header: { marginBottom: Spacing.lg },
   title: { ...Typography.largeTitle, color: Colors.textPrimary },
   subtitle: { ...Typography.body, color: Colors.textSecondary, marginTop: 4 },
+  syncBanner: {
+    marginBottom: Spacing.lg,
+    backgroundColor: Colors.surfaceAlt,
+    borderColor: Colors.primaryMid,
+  },
+  syncBannerText: {
+    ...Typography.body,
+    color: Colors.primaryDark,
+    lineHeight: 20,
+  },
+  syncBannerErrorText: {
+    ...Typography.body,
+    color: Colors.error,
+    lineHeight: 20,
+  },
   quickLogSection: { marginBottom: Spacing.xl },
   sectionLabel: {
     ...Typography.bodyMedium,
@@ -624,6 +857,15 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: Spacing.sm,
   },
+  modalHint: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    lineHeight: 18,
+    marginTop: -4,
+    marginBottom: Spacing.sm,
+  },
+  timeRow: { flexDirection: "row", gap: Spacing.sm },
+  timeInput: { flex: 1 },
   option: {
     padding: Spacing.md,
     borderRadius: BorderRadius.md,

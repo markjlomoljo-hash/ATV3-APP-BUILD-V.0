@@ -15,7 +15,9 @@ import { useAuthStore } from "../../src/stores/auth";
 import { useProfileStore } from "../../src/stores/profile";
 import {
   fetchTodayLogs,
+  fetchLoggingStreak,
   TodaySummary,
+  StreakSummary,
 } from "../../src/lib/daily-logs-service";
 import {
   Colors,
@@ -58,6 +60,16 @@ function getModules(summary: TodaySummary | undefined): LogModule[] {
       title: "Stress Level",
       subtitle: summary?.stressLogged ? "Stress logged" : "Log today's stress",
       logged: summary?.stressLogged ?? false,
+      route: "/(tabs)/logs",
+    },
+    {
+      key: "skin_state",
+      icon: "🪞",
+      title: "Skin State",
+      subtitle: summary?.skinStateLogged
+        ? "Skin state logged"
+        : "Log how your skin looks today",
+      logged: summary?.skinStateLogged ?? false,
       route: "/(tabs)/logs",
     },
     {
@@ -119,7 +131,7 @@ function LogCard({
 
 function ProgressCard({ summary }: { summary: TodaySummary | undefined }) {
   const count = summary?.logsCount ?? 0;
-  const total = 4; // sleep, food, stress, treatment
+  const total = 5; // sleep, food, stress, treatment, skin state
   const pct = Math.min(count / total, 1);
 
   return (
@@ -148,6 +160,55 @@ function ProgressCard({ summary }: { summary: TodaySummary | undefined }) {
   );
 }
 
+/**
+ * Streak computed only from logs that exist on the server. Zero history
+ * renders honestly as "no streak yet" — never a seeded number. When the
+ * streak cannot be computed (e.g. offline), the card says so.
+ */
+function StreakCard({
+  streak,
+  errored,
+}: {
+  streak: StreakSummary | undefined;
+  errored: boolean;
+}) {
+  if (errored) {
+    return (
+      <Card style={styles.streakCard}>
+        <Text style={styles.streakTitle}>Logging Streak</Text>
+        <Text style={styles.streakHint}>
+          Streak unavailable right now — it needs a connection to read your
+          logged history.
+        </Text>
+      </Card>
+    );
+  }
+  if (!streak) return null;
+
+  const days = streak.currentStreakDays;
+  return (
+    <Card style={styles.streakCard}>
+      <View style={styles.streakRow}>
+        <Text style={styles.streakEmoji}>{days > 0 ? "🔥" : "🌱"}</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.streakTitle}>
+            {days > 0
+              ? `${days}-day logging streak`
+              : "No streak yet"}
+          </Text>
+          <Text style={styles.streakHint}>
+            {days === 0
+              ? "Log anything today to start one."
+              : streak.todayLogged
+              ? "Today is counted — keep it going tomorrow."
+              : "Log something today to keep it alive."}
+          </Text>
+        </View>
+      </View>
+    </Card>
+  );
+}
+
 export default function TodayScreen() {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -164,9 +225,20 @@ export default function TodayScreen() {
     enabled: !!user,
   });
 
+  const {
+    data: streak,
+    isError: streakErrored,
+    refetch: refetchStreak,
+  } = useQuery({
+    queryKey: ["logging-streak", user?.id],
+    queryFn: () => fetchLoggingStreak(user!.id),
+    enabled: !!user,
+  });
+
   const onRefresh = useCallback(() => {
     refetch();
-  }, [refetch]);
+    refetchStreak();
+  }, [refetch, refetchStreak]);
 
   const today = format(new Date(), "EEEE, MMMM d");
   const displayName = profile?.display_name ?? "there";
@@ -199,6 +271,9 @@ export default function TodayScreen() {
         {/* Progress */}
         {!isLoading && <ProgressCard summary={summary} />}
 
+        {/* Streak — real history only */}
+        <StreakCard streak={streak} errored={streakErrored} />
+
         {/* Today's Modules */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Today's Logs</Text>
@@ -228,9 +303,9 @@ export default function TodayScreen() {
                 🧠 CutisAI Insights
               </Text>
               <Text style={styles.insightsTeaserText}>
-                {(summary?.logsCount ?? 0) < 7
-                  ? `Log for ${Math.max(0, 7 - (summary?.logsCount ?? 0))} more days to unlock pattern analysis.`
-                  : "Tap to view your skin patterns and insights."}
+                {(summary?.logsCount ?? 0) === 0
+                  ? "Start logging — insights unlock once enough real data exists."
+                  : "Tap to view patterns derived from your logged data."}
               </Text>
             </View>
             <Text style={styles.logArrow}>›</Text>
@@ -291,6 +366,15 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
   },
   progressHint: { ...Typography.caption, color: Colors.textSecondary },
+  streakCard: { marginBottom: Spacing.lg },
+  streakRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  streakEmoji: { fontSize: 28 },
+  streakTitle: { ...Typography.bodyMedium, color: Colors.textPrimary },
+  streakHint: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    marginTop: 2,
+  },
   section: { marginBottom: Spacing.md },
   sectionTitle: { ...Typography.title3, color: Colors.textPrimary },
   sectionSubtitle: {

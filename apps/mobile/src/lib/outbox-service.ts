@@ -22,7 +22,8 @@ export type OutboxEventType =
   | "sleep_log.created"
   | "food_log.created"
   | "daily_log.updated"
-  | "treatment_checkin.created";
+  | "treatment_checkin.created"
+  | "skin_state.logged";
 
 export interface OutboxEvent {
   id: string;

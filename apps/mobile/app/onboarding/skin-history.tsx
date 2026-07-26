@@ -13,8 +13,10 @@ import { Button } from "../../src/components/ui";
 import { OnboardingProgress } from "../../src/components/ui/OnboardingProgress";
 import { Colors, Spacing, Typography, BorderRadius } from "../../src/components/ui/theme";
 import { useAuthStore } from "../../src/stores/auth";
-import { upsertProfile } from "../../src/lib/profile-service";
-import { supabase } from "../../src/lib/supabase";
+import {
+  upsertProfile,
+  upsertProfileSection,
+} from "../../src/lib/profile-service";
 
 const SKIN_TONES = [
   { value: "very_fair", label: "Very Fair", color: "#FDDBB4" },
@@ -113,6 +115,8 @@ export default function SkinHistoryScreen() {
       // Get timezone
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
+      // Both writes fall back to the on-device outbox when offline and are
+      // replayed automatically, so onboarding can continue either way.
       await upsertProfile(user.id, {
         display_name: data.displayName.trim(),
         skin_tone: data.skinTone,
@@ -121,19 +125,10 @@ export default function SkinHistoryScreen() {
       });
 
       // Save acne history section
-      await supabase.from("profile_sections").upsert(
-        {
-          user_id: user.id,
-          section_key: "acne_history",
-          value_json: {
-            onset: data.acneOnset,
-            current_severity: data.currentSeverity || "not_specified",
-          },
-          version: 1,
-          updated_by: "user",
-        },
-        { onConflict: "user_id,section_key" }
-      );
+      await upsertProfileSection(user.id, "acne_history", {
+        onset: data.acneOnset,
+        current_severity: data.currentSeverity || "not_specified",
+      });
 
       router.push("/onboarding/goals");
     } catch (e) {

@@ -1,0 +1,30 @@
+{
+  "images": [
+    {
+      "angle": "front",
+      "width": 1280,
+      "height": 720,
+      "bytes": 500000,
+      "mean_brightness": 0.52,
+      "contrast": 0.2,
+      "laplacian_variance": 240,
+      "mean_r": 132,
+      "mean_g": 110,
+      "mean_b": 98
+    },
+    {
+      "angle": "chin_lower",
+      "width": 1280,
+      "height": 720,
+      "bytes": 480000
+    }
+  ],
+  "expected": {
+    "state": "partial",
+    "redness_index": 0.033,
+    "texture_contrast_index": 0.35,
+    "metadata_completeness": 0.667,
+    "zones_with_metadata": ["front"],
+    "zones_missing_metadata": ["chin_lower"]
+  }
+}

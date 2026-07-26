@@ -68,6 +68,22 @@ describe("durable ML analysis job contracts", () => {
     }
   });
 
+  it("accepts a descriptive skin image metadata summary request", () => {
+    const result = mlAnalysisRequestSchema.safeParse({
+      engine: "skin_image",
+      operation: "metadata_summary",
+      inputRecordRefs: [{ table: "face_scans", id: "scan-1" }],
+      features: { images: [{ angle: "front", contrast: 0.2 }] },
+      metadata: { featureSchemaVersion: "skin_image.v1" },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.engine).toBe("skin_image");
+    }
+    expect(mlAnalysisRequestSchema.shape.engine.options).toContain("skin_image");
+  });
+
   it("rejects an unbounded or unsupported request", () => {
     expect(
       mlAnalysisRequestSchema.safeParse({

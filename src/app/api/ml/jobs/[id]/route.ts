@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { DatabaseConfigurationError } from "@/db";
 import { getMlAnalysisJob } from "@/lib/acnetrex/ml-analysis-jobs";
+import { kickMlWorker } from "@/lib/acnetrex/ml-worker-kick";
 import { classifyDatabaseFailure } from "@/lib/acnetrex/services/database-error-classifier";
 import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
 
@@ -20,6 +21,9 @@ export async function GET(request: Request, routeContext: { params: Promise<{ id
   try {
     const job = await getMlAnalysisJob({ actorId: auth.userId, jobId: parsedId.data });
     if (!job) return NextResponse.json({ ok: false, error: "analysis_job_not_found" }, { status: 404 });
+    // Non-terminal reads double as an opportunistic worker kick so polled jobs
+    // make progress without a scheduler; the response never depends on it.
+    if (job.status === "queued" || job.status === "processing") kickMlWorker("status_read");
     return NextResponse.json({ ok: true, job });
   } catch (error) {
     if (error instanceof DatabaseConfigurationError) {

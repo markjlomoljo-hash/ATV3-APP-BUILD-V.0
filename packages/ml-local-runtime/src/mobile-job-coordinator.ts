@@ -1,7 +1,7 @@
 import type { OfflineOperation } from "./offline-queue-contract";
 
 export type MobileMlJobRequest = Readonly<{
-  engine: "faceatlas" | "sleepderm" | "dermdiet" | "triggergraph" | "forecast" | "skin_twin" | "cutisai";
+  engine: "faceatlas" | "sleepderm" | "dermdiet" | "triggergraph" | "forecast" | "skin_twin" | "cutisai" | "skin_image";
   operation: string;
   inputRecordRefs: ReadonlyArray<{ table: string; id: string }>;
   features: Readonly<Record<string, unknown>>;

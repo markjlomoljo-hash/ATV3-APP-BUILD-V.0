@@ -105,9 +105,13 @@ export default function ConsentScreen() {
     setSaving(true);
     setError(null);
     try {
-      const savedConsents = await upsertConsents(user.id, consents);
+      // Both writes fall back to the on-device outbox when offline; the
+      // store only caches consents the server actually confirmed.
+      const consentOutcome = await upsertConsents(user.id, consents);
       await markOnboardingComplete(user.id);
-      setConsents(savedConsents);
+      if (consentOutcome.status === "saved") {
+        setConsents(consentOutcome.data);
+      }
       setOnboardingCompleted(true);
       setStatus("authenticated");
       // Navigation handled by AuthGate in _layout.tsx

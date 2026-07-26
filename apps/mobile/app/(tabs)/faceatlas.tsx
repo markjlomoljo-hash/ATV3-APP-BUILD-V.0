@@ -1,38 +1,131 @@
 import { View, Text, StyleSheet, ScrollView } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "../../src/stores/auth";
-import { supabase } from "../../src/lib/supabase";
-import { Card, EmptyState, Badge } from "../../src/components/ui";
-import { Colors, Spacing, Typography, BorderRadius } from "../../src/components/ui/theme";
+import { Button, Card, EmptyState, Badge } from "../../src/components/ui";
+import { Colors, Spacing, Typography } from "../../src/components/ui/theme";
+import {
+  fetchFaceAtlasScanSummaries,
+  fetchFaceScans,
+  type FaceAtlasScanSummary,
+  type FaceScanRecord,
+} from "../../src/lib/faceatlas-service";
 
-interface FaceScan {
-  id: string;
-  user_id: string;
-  status: string;
-  created_at: string;
-  metadata: Record<string, unknown>;
+function statusBadgeColors(status: string): { color: string; textColor: string } {
+  if (status === "complete") {
+    return { color: Colors.primaryLight, textColor: Colors.primary };
+  }
+  return { color: "#fef3c7", textColor: "#92400e" };
 }
 
-async function fetchFaceScans(userId: string): Promise<FaceScan[]> {
-  const { data, error } = await supabase
-    .from("face_atlas_scans")
-    .select("*")
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false })
-    .limit(20);
-  if (error) throw new Error(error.message);
-  return (data ?? []) as FaceScan[];
+function CaptureRow({ scan }: { scan: FaceScanRecord }) {
+  const badge = statusBadgeColors(scan.status);
+  // Speak only from known server state: a null storage_path means the scan
+  // record references no image — it does NOT prove no image exists (mobile
+  // uploads land in the private bucket without a registration contract), so
+  // we never claim "no raw image stored".
+  const storageLine = scan.raw_image_deleted_at
+    ? "Raw image deleted"
+    : scan.storage_path
+      ? "Image registered in your private storage"
+      : "No image registered on this scan record";
+  return (
+    <Card style={styles.scanCard}>
+      <View style={styles.scanRow}>
+        <Text style={styles.scanIcon}>📷</Text>
+        <View style={styles.scanContent}>
+          <View style={styles.scanHeader}>
+            <Text style={styles.scanDate}>
+              {new Date(scan.captured_at).toLocaleDateString()}
+              {scan.angle ? ` · ${scan.angle}` : ""}
+            </Text>
+            <Badge label={scan.status} color={badge.color} textColor={badge.textColor} />
+          </View>
+          <Text style={styles.scanDetail}>{storageLine}</Text>
+          {scan.image_quality !== null && (
+            <Text style={styles.scanDetail}>Image quality: {scan.image_quality}</Text>
+          )}
+          {scan.oiliness_estimate !== null && (
+            <Text style={styles.scanDetail}>
+              Oiliness estimate: {scan.oiliness_estimate}
+            </Text>
+          )}
+        </View>
+      </View>
+    </Card>
+  );
+}
+
+function SummaryRow({ scan }: { scan: FaceAtlasScanSummary }) {
+  const badge = statusBadgeColors(scan.confidence === "insufficient_data" ? "pending" : "complete");
+  return (
+    <Card style={styles.scanCard}>
+      <View style={styles.scanRow}>
+        <Text style={styles.scanIcon}>🖼️</Text>
+        <View style={styles.scanContent}>
+          <View style={styles.scanHeader}>
+            <Text style={styles.scanDate}>
+              {new Date(scan.scan_date).toLocaleDateString()}
+            </Text>
+            <Badge label={scan.confidence} color={badge.color} textColor={badge.textColor} />
+          </View>
+          {scan.user_lesion_count !== null && (
+            <Text style={styles.scanDetail}>
+              Your lesion count: {scan.user_lesion_count}
+            </Text>
+          )}
+          {scan.model_lesion_count !== null && (
+            <Text style={styles.scanDetail}>
+              Model lesion count: {scan.model_lesion_count}
+            </Text>
+          )}
+          {scan.agreement_pct !== null && (
+            <Text style={styles.scanDetail}>
+              Agreement: {Math.round(scan.agreement_pct)}%
+            </Text>
+          )}
+          {scan.oiliness_user !== null && (
+            <Text style={styles.scanDetail}>Oiliness (you): {scan.oiliness_user}</Text>
+          )}
+          {scan.oiliness_model !== null && (
+            <Text style={styles.scanDetail}>
+              Oiliness (model): {scan.oiliness_model}
+            </Text>
+          )}
+        </View>
+      </View>
+    </Card>
+  );
 }
 
 export default function FaceAtlasScreen() {
+  const router = useRouter();
   const { user } = useAuthStore();
 
-  const { data: scans = [], isLoading } = useQuery({
+  const {
+    data: captures = [],
+    isLoading: loadingCaptures,
+    error: capturesError,
+  } = useQuery({
     queryKey: ["face-scans", user?.id],
     queryFn: () => fetchFaceScans(user!.id),
     enabled: !!user,
   });
+
+  const {
+    data: summaries = [],
+    isLoading: loadingSummaries,
+    error: summariesError,
+  } = useQuery({
+    queryKey: ["face-atlas-scans", user?.id],
+    queryFn: () => fetchFaceAtlasScanSummaries(user!.id),
+    enabled: !!user,
+  });
+
+  const isLoading = loadingCaptures || loadingSummaries;
+  const isEmpty = !isLoading && captures.length === 0 && summaries.length === 0;
+  const startCapture = () => router.push("/faceatlas/capture" as never);
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -40,56 +133,44 @@ export default function FaceAtlasScreen() {
         <View style={styles.header}>
           <Text style={styles.title}>FaceAtlas</Text>
           <Text style={styles.subtitle}>
-            Capture and track your skin over time with guided photo analysis.
+            Capture and track your skin over time with guided photo capture.
           </Text>
         </View>
 
-        {/* Readiness notice */}
-        <Card style={styles.readinessCard}>
-          <View style={styles.readinessRow}>
-            <Text style={styles.readinessIcon}>📷</Text>
-            <View style={styles.readinessContent}>
-              <View style={styles.readinessHeader}>
-                <Text style={styles.readinessTitle}>Camera Capture</Text>
-                <Badge label="native_device_required" color="#fef3c7" textColor="#92400e" />
-              </View>
-              <Text style={styles.readinessText}>
-                FaceAtlas photo capture requires a physical iOS or Android device.
-                The capture workflow, annotation tools, and lesion tracking are
-                implemented and ready — connect a device to use them.
-              </Text>
-            </View>
-          </View>
-        </Card>
+        <Button
+          title="Start guided capture"
+          onPress={startCapture}
+          style={{ marginBottom: Spacing.lg }}
+        />
 
         {/* Scan history */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Scan History</Text>
-          {isLoading && (
-            <Text style={styles.loadingText}>Loading scans...</Text>
+          {isLoading && <Text style={styles.loadingText}>Loading scans...</Text>}
+          {(capturesError || summariesError) && (
+            <Card style={styles.errorCard}>
+              <Text style={styles.errorText}>
+                Scan history could not be loaded:{" "}
+                {capturesError instanceof Error
+                  ? capturesError.message
+                  : summariesError instanceof Error
+                    ? summariesError.message
+                    : "unknown_error"}
+              </Text>
+            </Card>
           )}
-          {!isLoading && scans.length === 0 && (
+          {isEmpty && (
             <EmptyState
               title="No scans yet"
-              message="Your FaceAtlas scan history will appear here once you capture your first scan on a physical device."
+              message="Run a guided capture to record your first FaceAtlas scan. New scans start as pending_upload until server-side processing completes."
+              action={{ label: "Start guided capture", onPress: startCapture }}
             />
           )}
-          {scans.map((scan) => (
-            <Card key={scan.id} style={styles.scanCard}>
-              <View style={styles.scanRow}>
-                <Text style={styles.scanIcon}>🖼️</Text>
-                <View style={styles.scanContent}>
-                  <Text style={styles.scanDate}>
-                    {new Date(scan.created_at).toLocaleDateString()}
-                  </Text>
-                  <Badge
-                    label={scan.status}
-                    color={scan.status === "complete" ? Colors.primaryLight : "#fef3c7"}
-                    textColor={scan.status === "complete" ? Colors.primary : "#92400e"}
-                  />
-                </View>
-              </View>
-            </Card>
+          {captures.map((scan) => (
+            <CaptureRow key={scan.id} scan={scan} />
+          ))}
+          {summaries.map((scan) => (
+            <SummaryRow key={scan.id} scan={scan} />
           ))}
         </View>
 
@@ -97,9 +178,12 @@ export default function FaceAtlasScreen() {
         <Card style={styles.infoCard}>
           <Text style={styles.infoTitle}>🔒 Privacy-First Design</Text>
           <Text style={styles.infoText}>
-            Raw face images are stored privately in your personal storage bucket.
-            They are never shared without your explicit consent. You can delete
-            all images at any time from Profile → Privacy.
+            Raw face images are stored privately in your personal storage bucket
+            and only if you have given raw-image consent. They are never shared
+            without your explicit consent. You can withdraw consent at any time
+            in Profile → Privacy &amp; Consent, which stops future uploads.
+            In-app deletion of already-stored images is not available yet; you
+            can request account deletion from the Profile tab.
           </Text>
         </Card>
       </ScrollView>
@@ -113,21 +197,24 @@ const styles = StyleSheet.create({
   header: { marginBottom: Spacing.lg },
   title: { ...Typography.largeTitle, color: Colors.textPrimary },
   subtitle: { ...Typography.body, color: Colors.textSecondary, marginTop: 4 },
-  readinessCard: { marginBottom: Spacing.lg },
-  readinessRow: { flexDirection: "row", gap: Spacing.md, alignItems: "flex-start" },
-  readinessIcon: { fontSize: 28, marginTop: 2 },
-  readinessContent: { flex: 1 },
-  readinessHeader: { flexDirection: "row", alignItems: "center", gap: Spacing.sm, marginBottom: 6, flexWrap: "wrap" },
-  readinessTitle: { ...Typography.bodyMedium, color: Colors.textPrimary },
-  readinessText: { ...Typography.caption, color: Colors.textSecondary, lineHeight: 18 },
   section: { marginBottom: Spacing.lg },
   sectionTitle: { ...Typography.title3, color: Colors.textPrimary, marginBottom: Spacing.md },
   loadingText: { ...Typography.body, color: Colors.textMuted, textAlign: "center", padding: Spacing.xl },
+  errorCard: { marginBottom: Spacing.sm, borderColor: "#fecaca", backgroundColor: "#fef2f2" },
+  errorText: { ...Typography.caption, color: Colors.error, lineHeight: 18 },
   scanCard: { marginBottom: Spacing.sm },
-  scanRow: { flexDirection: "row", alignItems: "center", gap: Spacing.md },
+  scanRow: { flexDirection: "row", alignItems: "flex-start", gap: Spacing.md },
   scanIcon: { fontSize: 24 },
   scanContent: { flex: 1, gap: 4 },
+  scanHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.sm,
+    flexWrap: "wrap",
+  },
   scanDate: { ...Typography.bodyMedium, color: Colors.textPrimary },
+  scanDetail: { ...Typography.caption, color: Colors.textSecondary, lineHeight: 18 },
   infoCard: { backgroundColor: Colors.primaryLight, borderColor: Colors.primaryMid },
   infoTitle: { ...Typography.bodyMedium, color: Colors.primaryDark, marginBottom: 6 },
   infoText: { ...Typography.caption, color: Colors.primaryDark, lineHeight: 18 },

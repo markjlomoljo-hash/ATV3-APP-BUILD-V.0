@@ -9,6 +9,7 @@ import {
   Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuthStore } from "../../src/stores/auth";
 import { useProfileStore } from "../../src/stores/profile";
@@ -67,6 +68,7 @@ function ProfileRow({
 }
 
 export default function ProfileScreen() {
+  const router = useRouter();
   const { user, reset: resetAuth } = useAuthStore();
   const { reset: resetProfile } = useProfileStore();
   const queryClient = useQueryClient();
@@ -89,8 +91,14 @@ export default function ProfileScreen() {
       if (!user) throw new Error("auth_required");
       return upsertConsents(user.id, updates);
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["consents", user?.id] });
+      if (result.status === "queued_offline") {
+        Alert.alert(
+          "Saved on Device",
+          "You're offline, so this change is queued securely on your device and will sync automatically when you're back online. Until then, the toggles show the last state the server confirmed."
+        );
+      }
     },
     onError: (e) => {
       Alert.alert(
@@ -119,11 +127,7 @@ export default function ProfileScreen() {
   };
 
   const handleDeleteAccount = () => {
-    Alert.alert(
-      "Delete Account",
-      "This will permanently delete your account and all associated data. This action cannot be undone.\n\nTo proceed, please contact support@acnetrex.com.",
-      [{ text: "OK" }]
-    );
+    router.push("/account-deletion" as never);
   };
 
   const toggle = (key: string, currentValue: boolean) => {
@@ -289,12 +293,22 @@ export default function ProfileScreen() {
               <Text style={styles.aboutValue}>Phase 1</Text>
             </View>
             <Divider style={{ marginVertical: 0 }} />
-            <Pressable style={styles.aboutRow}>
+            <Pressable
+              style={styles.aboutRow}
+              onPress={() => router.push("/legal/privacy" as never)}
+              accessibilityRole="button"
+              accessibilityLabel="View privacy information"
+            >
               <Text style={styles.aboutLabel}>Privacy Policy</Text>
               <Text style={styles.aboutLink}>View →</Text>
             </Pressable>
             <Divider style={{ marginVertical: 0 }} />
-            <Pressable style={styles.aboutRow}>
+            <Pressable
+              style={styles.aboutRow}
+              onPress={() => router.push("/legal/terms" as never)}
+              accessibilityRole="button"
+              accessibilityLabel="View terms of use"
+            >
               <Text style={styles.aboutLabel}>Terms of Service</Text>
               <Text style={styles.aboutLink}>View →</Text>
             </Pressable>

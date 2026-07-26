@@ -10,7 +10,7 @@ from .faceatlas_quality import assess_faceatlas_quality
 from .forecast import analyze_forecast_readiness
 from .formula_lens import analyze_formula
 from .readiness import assess_readiness
-from .skin_cnn import analyze_skin_image
+from .skin_image_summary import summarize_skin_image_metadata
 from .skin_twin import validate_skin_twin
 from .sleepderm import analyze_sleep
 from .treatment_adherence import analyze_adherence
@@ -54,7 +54,7 @@ ENGINES: dict[tuple[str, str], Engine] = {
     ("cycle_sync", "context_summary"): analyze_cycle,
     ("contact_guard", "context_summary"): analyze_contact,
     ("treatment_adherence", "consistency_summary"): analyze_adherence,
-    ("skin_cnn", "image_severity_analysis"): analyze_skin_image,
+    ("skin_image", "metadata_summary"): summarize_skin_image_metadata,
 }
 
 

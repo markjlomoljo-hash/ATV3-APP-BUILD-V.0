@@ -3,6 +3,7 @@
 import { SignInButton, SignUpButton, UserButton, useAuth, useUser } from "@clerk/nextjs";
 import Link from "next/link";
 import { normalizeRole } from "@/lib/auth/roles";
+import { SupabaseAccountControls } from "./SupabaseAccountControls";
 
 function AdminLink() {
   const { user } = useUser();
@@ -18,7 +19,11 @@ export function AuthControls() {
     <div className="border-b border-slate-200 bg-white px-4 py-3 md:px-8">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
         <Link href="/" className="font-semibold text-slate-950">AcneTrex V3</Link>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-2">
+          {/* Supabase app account: the identity the acnetrex data APIs authorize. */}
+          <SupabaseAccountControls />
+          {/* Clerk stays in charge of admin/RBAC — dual auth is deliberate. */}
+          <div className="flex items-center gap-2">
           {isLoaded && !isSignedIn ? (
             <>
             <SignInButton mode="redirect"><button type="button" className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-semibold text-slate-700">Sign in</button></SignInButton>
@@ -31,6 +36,7 @@ export function AuthControls() {
             <UserButton />
             </>
           ) : null}
+          </div>
         </div>
       </div>
     </div>

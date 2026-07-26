@@ -6,6 +6,7 @@ import { readJsonBodyLimited } from "@/lib/http/read-json-body";
 import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
 import { classifyDatabaseFailure } from "@/lib/acnetrex/services/database-error-classifier";
 import { enqueueMlAnalysisJob, mlAnalysisRequestSchema } from "@/lib/acnetrex/ml-analysis-jobs";
+import { kickMlWorker } from "@/lib/acnetrex/ml-worker-kick";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,9 @@ export async function POST(request: Request) {
       request: parsed.data,
       requestId: correlationId,
     });
+    // Opportunistic post-response worker pass; the enqueue response never
+    // depends on it (kickMlWorker is a logged no-op on any failure).
+    kickMlWorker("enqueue");
     return NextResponse.json(result, {
       status: result.replayed ? 200 : 202,
       headers: { "x-request-id": correlationId },

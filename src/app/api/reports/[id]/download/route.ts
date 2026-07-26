@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { DatabaseConfigurationError } from "@/db";
 import { withSession } from "@/lib/session";
 import { getReportFileBuffer } from "@/lib/reports/service";
+import { StorageBackendError } from "@/lib/storage";
 import { classifyDatabaseFailure } from "@/lib/acnetrex/services/database-error-classifier";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,9 @@ export const GET = withSession<{ params: Promise<{ id: string }> }>(async (_req,
   try {
     buffer = await getReportFileBuffer(userId, id);
   } catch (error) {
+    if (error instanceof StorageBackendError) {
+      return NextResponse.json({ ok: false, error: error.reason }, { status: 503 });
+    }
     const reason = error instanceof DatabaseConfigurationError ? "database_unavailable" : classifyDatabaseFailure(error);
     return NextResponse.json({ ok: false, error: reason }, { status: 503 });
   }

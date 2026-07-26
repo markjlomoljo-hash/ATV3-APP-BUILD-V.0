@@ -81,6 +81,7 @@ function canonicalTask(engine: ClaimedJob["engine"], operation: string): string 
     forecast: "readiness",
     skin_twin: "scenario_validation",
     cutisai: "evidence_assistance",
+    skin_image: "metadata_summary",
   };
   return tasks[engine];
 }

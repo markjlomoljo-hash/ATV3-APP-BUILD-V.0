@@ -197,6 +197,40 @@ describe("ML analysis worker", () => {
     expect(queries.some((sql) => sql.includes("status='processed'"))).toBe(false);
   });
 
+  it("routes skin image jobs to the descriptive metadata summary task", async () => {
+    const skinImageJob = {
+      ...job,
+      engine: "skin_image" as const,
+      operation: "metadata_summary",
+      features: { images: [{ angle: "front", contrast: 0.2, laplacian_variance: 240 }] },
+      featureSchemaVersion: "skin_image.v1",
+    };
+    fakeClient.query.mockImplementation(async (sql: string) => {
+      if (sql === "begin" || sql === "commit" || sql === "rollback") return { rows: [], rowCount: 0 };
+      if (sql.includes("with candidate")) return { rows: [skinImageJob], rowCount: 1 };
+      return { rows: [], rowCount: 1 };
+    });
+    const fetcher = vi.fn().mockResolvedValue(upstream(canonicalResponse({
+      module: "skin_image",
+      task: "metadata_summary",
+      result: { state: "ready", redness_index: 0.033, texture_contrast_index: 0.35 },
+      features_used: ["images"],
+    })));
+
+    const result = await processNextMlAnalysisJob({ workerId: "worker-skin-image", fetcher });
+
+    expect(result).toEqual({ status: "completed", jobId: job.jobId, outboxId: job.outboxId });
+    const request = fetcher.mock.calls[0]?.[1];
+    expect(JSON.parse(String(request?.body))).toMatchObject({
+      module: "skin_image",
+      task: "metadata_summary",
+      inputs: skinImageJob.features,
+    });
+    const queries = fakeClient.query.mock.calls.map(([sql]) => String(sql));
+    expect(queries.some((sql) => sql.includes("insert into public.ml_analysis_results"))).toBe(true);
+    expect(queries.some((sql) => sql.includes("status='processed'"))).toBe(true);
+  });
+
   it("requeues transient upstream failures with bounded retry state", async () => {
     claimQueries();
     const result = await processNextMlAnalysisJob({

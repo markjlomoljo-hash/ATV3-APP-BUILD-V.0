@@ -16,15 +16,20 @@ vi.mock("@/db", () => ({
   getDb: vi.fn(),
   DatabaseConfigurationError: class DatabaseConfigurationError extends Error {},
 }));
+vi.mock("@/lib/acnetrex/ml-worker-kick", () => ({
+  kickMlWorker: vi.fn(),
+}));
 
 import { POST } from "./route";
 import { DatabaseConfigurationError, getDb } from "@/db";
 import { enqueueMlAnalysisJob } from "@/lib/acnetrex/ml-analysis-jobs";
+import { kickMlWorker } from "@/lib/acnetrex/ml-worker-kick";
 import { authenticateSupabaseRequest } from "@/lib/supabase-request-auth";
 
 const auth = vi.mocked(authenticateSupabaseRequest);
 const database = vi.mocked(getDb);
 const enqueue = vi.mocked(enqueueMlAnalysisJob);
+const kick = vi.mocked(kickMlWorker);
 
 function request(body: unknown, headers: Record<string, string> = {}) {
   return new Request("https://example.test/api/ml/jobs", {
@@ -68,6 +73,7 @@ describe("POST /api/ml/jobs", () => {
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ ok: false, error: "database_unavailable" });
     expect(enqueue).not.toHaveBeenCalled();
+    expect(kick).not.toHaveBeenCalled();
   });
 
   it("returns the durable queued reference from the service", async () => {
@@ -88,12 +94,37 @@ describe("POST /api/ml/jobs", () => {
       ),
     );
     expect(response.status).toBe(202);
-    expect(await response.json()).toMatchObject({ ok: true, status: "queued_for_cloud" });
+    // The opportunistic worker kick must never change the enqueue contract.
+    expect(await response.json()).toEqual({
+      ok: true,
+      status: "queued_for_cloud",
+      jobId: "00000000-0000-0000-0000-000000000002",
+      engine: "sleepderm",
+      operation: "readiness",
+      runtimeMode: "queued_for_cloud",
+      syncStatus: "pending",
+      replayed: false,
+    });
     expect(enqueue).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: "00000000-0000-0000-0000-000000000001",
         idempotencyKey: "ml-job-key-000001",
       }),
     );
+    expect(kick).toHaveBeenCalledTimes(1);
+    expect(kick).toHaveBeenCalledWith("enqueue");
+  });
+
+  it("does not kick the worker when the enqueue fails", async () => {
+    enqueue.mockRejectedValue(new Error("operation_in_progress"));
+    const response = await POST(
+      request(
+        { engine: "sleepderm", operation: "readiness" },
+        { "idempotency-key": "ml-job-key-000001" },
+      ),
+    );
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ ok: false, error: "operation_in_progress" });
+    expect(kick).not.toHaveBeenCalled();
   });
 });

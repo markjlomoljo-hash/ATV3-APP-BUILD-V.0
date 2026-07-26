@@ -63,6 +63,10 @@ export interface GoalsInput {
 
 export interface SleepLogInput {
   quality: 1 | 2 | 3 | 4 | 5;
+  /** Local clock bed time "HH:MM" (24h) — enables SleepDerm analysis. */
+  sleep_time?: string;
+  /** Local clock wake time "HH:MM" (24h). */
+  wake_time?: string;
   notes?: string;
 }
 
@@ -83,6 +87,13 @@ export interface TreatmentCheckinInput {
   notes?: string;
 }
 
+export type SkinStateSeverity = "clear" | "mild" | "moderate" | "severe";
+
+export interface SkinStateLogInput {
+  severity: SkinStateSeverity;
+  notes?: string;
+}
+
 // ─── Consent Contracts ────────────────────────────────────────────────────────
 
 export interface ConsentUpdateRequest {
@@ -96,6 +107,23 @@ export interface ConsentUpdateRequest {
   streak_risk_notifications?: boolean;
   weather_alert_notifications?: boolean;
 }
+
+/**
+ * Default values written when a consent_settings row is first created.
+ * Shared between the online insert path (profile-service) and the offline
+ * outbox replay path (local-outbox) so both create identical rows.
+ */
+export const CONSENT_DEFAULTS = {
+  anonymous_learning: false,
+  raw_image_learning: false,
+  include_faceatlas_photos_in_reports: false,
+  include_treatment_details_in_reports: false,
+  marketing_notifications: false,
+  product_analysis_notifications: true,
+  report_ready_notifications: true,
+  streak_risk_notifications: true,
+  weather_alert_notifications: false,
+} as const;
 
 // ─── API Response Contracts ───────────────────────────────────────────────────
 

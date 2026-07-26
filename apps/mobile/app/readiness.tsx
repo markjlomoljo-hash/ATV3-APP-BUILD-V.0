@@ -4,7 +4,7 @@
  * Not part of the user-facing app flow.
  */
 import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, Pressable } from "react-native";
+import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../src/lib/supabase";
 
@@ -84,8 +84,6 @@ export default function ReadinessScreen() {
     </SafeAreaView>
   );
 }
-
-import { View } from "react-native";
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#f5faf8" },

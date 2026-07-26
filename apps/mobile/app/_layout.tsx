@@ -1,11 +1,18 @@
 import { useEffect } from "react";
+import { Alert, AppState } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { SafeAreaProvider } from "react-native-safe-area-context";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { supabase } from "../src/lib/supabase";
 import { useAuthStore } from "../src/stores/auth";
 import { useProfileStore } from "../src/stores/profile";
 import { fetchProfile } from "../src/lib/profile-service";
+import { replayPendingOutboxEvents } from "../src/lib/local-outbox";
+import { replayQueuedMlJobs } from "../src/lib/ml";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -78,11 +85,59 @@ function AuthGate() {
   return null;
 }
 
+/**
+ * Replays offline queues (local write outbox + queued ML jobs) whenever the
+ * app returns to the foreground with an authenticated session. Replay is
+ * idempotent and honest: nothing is marked synced unless the server write
+ * actually succeeded.
+ */
+function OfflineReplayGate() {
+  const { status } = useAuthStore();
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (status !== "authenticated") return;
+
+    const replay = () => {
+      void replayPendingOutboxEvents()
+        .then((result) => {
+          if (result.replayed > 0 || result.failed > 0) {
+            // Synced writes may change what the visible screens show, and
+            // the Logs outbox banner must pick up terminal failures.
+            queryClient.invalidateQueries();
+          }
+          if (result.failed > 0) {
+            // result.failed is non-zero only on the pass where an event
+            // transitioned to terminal failure, so this alerts exactly once
+            // per event. The "will sync automatically" promise broke — say
+            // so instead of letting the queue drain silently.
+            Alert.alert(
+              "Some Logs Could Not Sync",
+              `${result.failed} log${result.failed === 1 ? "" : "s"} saved on this device could not be synced and will not retry automatically. Open the Logs tab to see the error and retry.`
+            );
+          }
+        })
+        .catch(() => undefined);
+      void replayQueuedMlJobs().catch(() => undefined);
+    };
+
+    // Once on becoming authenticated, then on every return to foreground.
+    replay();
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") replay();
+    });
+    return () => subscription.remove();
+  }, [status, queryClient]);
+
+  return null;
+}
+
 export default function RootLayout() {
   return (
     <QueryClientProvider client={queryClient}>
       <SafeAreaProvider>
         <AuthGate />
+        <OfflineReplayGate />
         <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="auth" />
           <Stack.Screen name="onboarding" />

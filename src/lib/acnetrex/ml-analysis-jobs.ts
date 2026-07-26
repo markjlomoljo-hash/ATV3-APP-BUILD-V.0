@@ -11,7 +11,7 @@ const inputRecordRefSchema = z.object({
 });
 
 export const mlAnalysisRequestSchema = z.object({
-  engine: z.enum(["faceatlas", "sleepderm", "dermdiet", "triggergraph", "forecast", "skin_twin", "cutisai"]),
+  engine: z.enum(["faceatlas", "sleepderm", "dermdiet", "triggergraph", "forecast", "skin_twin", "cutisai", "skin_image"]),
   operation: z.string().min(1).max(120),
   inputRecordRefs: z.array(inputRecordRefSchema).max(100).default([]),
   features: z.record(z.string(), z.unknown()).default({}),

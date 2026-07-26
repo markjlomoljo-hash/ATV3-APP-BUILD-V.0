@@ -7,6 +7,7 @@ import {
   analyzeSleep,
   assessFaceCapture,
   evaluateReadiness,
+  summarizeSkinImageMetadata,
 } from "../src/index";
 
 describe("deterministic local engines", () => {
@@ -96,6 +97,61 @@ describe("deterministic local engines", () => {
       missingRequired: ["outcome"],
       missingOptional: ["wearable"],
     });
+  });
+
+  it("matches the shared cloud/local skin image metadata parity fixture", () => {
+    const fixture = JSON.parse(
+      readFileSync(resolve("packages/ml-local-runtime/tests/fixtures/skin-image-parity.json"), "utf8"),
+    ) as {
+      images: Array<{
+        angle: string;
+        width?: number;
+        height?: number;
+        bytes?: number;
+        mean_brightness?: number;
+        contrast?: number;
+        laplacian_variance?: number;
+        mean_r?: number;
+        mean_g?: number;
+        mean_b?: number;
+      }>;
+      expected: Record<string, unknown>;
+    };
+    const result = summarizeSkinImageMetadata(fixture.images.map((image) => ({
+      angle: image.angle,
+      width: image.width,
+      height: image.height,
+      bytes: image.bytes,
+      meanBrightness: image.mean_brightness,
+      contrast: image.contrast,
+      laplacianVariance: image.laplacian_variance,
+      meanR: image.mean_r,
+      meanG: image.mean_g,
+      meanB: image.mean_b,
+    })));
+
+    expect({
+      state: result.state,
+      redness_index: result.rednessIndex,
+      texture_contrast_index: result.textureContrastIndex,
+      metadata_completeness: result.metadataCompleteness,
+      zones_with_metadata: result.zonesWithMetadata,
+      zones_missing_metadata: result.zonesMissingMetadata,
+    }).toEqual(fixture.expected);
+  });
+
+  it("fails closed on skin image metadata without inventing descriptive indices", () => {
+    const empty = summarizeSkinImageMetadata([]);
+    expect(empty.state).toBe("insufficient_data");
+    expect(empty.rednessIndex).toBeNull();
+    expect(empty.textureContrastIndex).toBeNull();
+    expect(empty.metadataCompleteness).toBe(0);
+
+    const metadataFree = summarizeSkinImageMetadata([{ angle: "front", width: 1280, height: 720 }]);
+    expect(metadataFree.state).toBe("insufficient_data");
+    expect(metadataFree.zonesMissingMetadata).toEqual(["front"]);
+    expect(metadataFree.zoneSummaries[0]?.rednessIndex).toBeNull();
+    expect(metadataFree.limitations[1]).toMatch(/no skin condition is detected, graded, classified, or assessed/i);
   });
 
   it("checks five-angle capture metadata without claiming lesion detection", () => {
