@@ -10,6 +10,7 @@ from .faceatlas_quality import assess_faceatlas_quality
 from .forecast import analyze_forecast_readiness
 from .formula_lens import analyze_formula
 from .readiness import assess_readiness
+from .skin_cnn import analyze_skin_image
 from .skin_twin import validate_skin_twin
 from .sleepderm import analyze_sleep
 from .treatment_adherence import analyze_adherence
@@ -53,6 +54,7 @@ ENGINES: dict[tuple[str, str], Engine] = {
     ("cycle_sync", "context_summary"): analyze_cycle,
     ("contact_guard", "context_summary"): analyze_contact,
     ("treatment_adherence", "consistency_summary"): analyze_adherence,
+    ("skin_cnn", "image_severity_analysis"): analyze_skin_image,
 }
 
 
@@ -61,9 +63,3 @@ def dispatch_deterministic(
 ) -> dict[str, Any] | None:
     engine = ENGINES.get((module, task))
     return engine(inputs) if engine else None
-
-# CNN skin analysis engine (added for AcneTrex V3 mobile)
-from .skin_cnn import analyze_skin_image
-
-# Register the new engine
-ENGINES[("skin_cnn", "image_severity_analysis")] = lambda inputs: analyze_skin_image(inputs)

@@ -9,8 +9,8 @@ an evidence-based severity estimate from image features.
 Zero-fabrication contract: all outputs are derived from supplied inputs.
 If inputs are insufficient, the engine returns insufficient_data state.
 """
+
 from __future__ import annotations
-import math
 from typing import Any
 
 
@@ -156,13 +156,15 @@ def analyze_skin_image(inputs: dict[str, Any]) -> dict[str, Any]:
 
         # Skip images with insufficient metadata
         if brightness is None and contrast is None and blur is None:
-            zone_scores.append({
-                "angle": angle,
-                "state": "insufficient_metadata",
-                "severity_score": None,
-                "iga_grade": None,
-                "features_used": [],
-            })
+            zone_scores.append(
+                {
+                    "angle": angle,
+                    "state": "insufficient_metadata",
+                    "severity_score": None,
+                    "iga_grade": None,
+                    "features_used": [],
+                }
+            )
             continue
 
         features_used: list[str] = []
@@ -182,39 +184,47 @@ def analyze_skin_image(inputs: dict[str, Any]) -> dict[str, Any]:
 
         # Redness score from RGB (if available)
         if mean_r is not None and mean_g is not None and mean_b is not None:
-            redness = _estimate_redness_score(float(mean_r), float(mean_g), float(mean_b))
+            redness = _estimate_redness_score(
+                float(mean_r), float(mean_g), float(mean_b)
+            )
             features_used.append("rgb_channels")
             component_scores.append(redness * 0.25)
         elif brightness is not None:
             # Use brightness deviation as proxy for redness
             bright_f = float(brightness)
             # Inflamed skin tends to be brighter in red channel
-            bright_score = max(0.0, (bright_f - 0.55) / 0.35) if bright_f > 0.55 else 0.0
+            bright_score = (
+                max(0.0, (bright_f - 0.55) / 0.35) if bright_f > 0.55 else 0.0
+            )
             features_used.append("mean_brightness")
             component_scores.append(bright_score * 0.15)
 
         if not component_scores:
-            zone_scores.append({
-                "angle": angle,
-                "state": "insufficient_metadata",
-                "severity_score": None,
-                "iga_grade": None,
-                "features_used": features_used,
-            })
+            zone_scores.append(
+                {
+                    "angle": angle,
+                    "state": "insufficient_metadata",
+                    "severity_score": None,
+                    "iga_grade": None,
+                    "features_used": features_used,
+                }
+            )
             continue
 
         zone_severity = sum(component_scores)
         iga = _iga_from_score(zone_severity)
         all_severity_scores.append(zone_severity)
 
-        zone_scores.append({
-            "angle": angle,
-            "state": "analyzed",
-            "severity_score": round(zone_severity, 3),
-            "iga_grade": iga,
-            "iga_label": _IGA_LABELS[iga],
-            "features_used": features_used,
-        })
+        zone_scores.append(
+            {
+                "angle": angle,
+                "state": "analyzed",
+                "severity_score": round(zone_severity, 3),
+                "iga_grade": iga,
+                "iga_label": _IGA_LABELS[iga],
+                "features_used": features_used,
+            }
+        )
 
     if not all_severity_scores:
         return {
@@ -238,7 +248,9 @@ def analyze_skin_image(inputs: dict[str, Any]) -> dict[str, Any]:
         weight = 2.0 if zs.get("angle") == "front" else 1.0
         weighted_scores.extend([zs["severity_score"]] * int(weight))
 
-    overall_severity = sum(weighted_scores) / len(weighted_scores) if weighted_scores else 0.0
+    overall_severity = (
+        sum(weighted_scores) / len(weighted_scores) if weighted_scores else 0.0
+    )
     overall_iga = _iga_from_score(overall_severity)
 
     # Confidence: based on number of zones analyzed and features available
