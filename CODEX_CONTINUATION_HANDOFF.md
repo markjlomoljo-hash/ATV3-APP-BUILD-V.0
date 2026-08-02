@@ -379,3 +379,25 @@ When all requirements are actually satisfied:
 5. call `update_goal` with `complete` only after every requirement is proven.
 
 The strongest currently supported claim is: **software foundation, deterministic ML integration, Cloud Run deployment, Vercel/Supabase connectivity, branch promotion, security gates, and durable authenticated inference are production verified; predictive modeling and installed physical mobile validation remain externally blocked.**
+
+## 2026-07-15 Railway deployment hardening handoff
+
+This session added repo-owned Railway deployment configuration for the Next.js app:
+
+- `railway.json` uses Railpack, runs `npm ci && npm run build`, starts Next on `0.0.0.0` with Railway's `$PORT`, runs a pre-deploy database migration command, and points Railway health checks at `/api/railway/health`.
+- `/api/railway/health` is intentionally liveness-only so Railway can perform zero-downtime activation even when the deeper `/api/health` integration readiness endpoint is reporting a degraded database, Clerk, ML, or worker dependency.
+- `npm run db:migrate:railway` executes all `supabase/migrations/*.sql` files against `DATABASE_URL` once, tracked in `public.schema_migrations`, under a Postgres advisory lock. Configure `SUPABASE_DB_CA_CERT` in Railway for verified TLS when using Supabase.
+
+Required Railway variables before production deploy:
+
+- `DATABASE_URL` from Railway Postgres or Supabase transaction pooler.
+- `SUPABASE_DB_CA_CERT` when using Supabase with verified TLS.
+- `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`/`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`.
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, `CLERK_SECRET_KEY`, and `ACNETREX_OWNER_CLERK_USER_ID`.
+- `ACNETREX_ML_API_URL`, `ACNETREX_ML_SHARED_SECRET`, `ACNETREX_ML_WORKER_SECRET`, `ACNETREX_ML_WORKER_ENABLED=true`, and `CRON_SECRET` if the Railway app will process durable ML jobs.
+
+Validation run in this session:
+
+- `npm run typecheck`
+- `npm run build`
+- `npm run lint`
